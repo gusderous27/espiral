@@ -303,7 +303,7 @@ html[data-tema="oscuro"] #splash{background:#0E1621}
     var sp=document.getElementById("splash");
     if(sp && sp.parentNode) sp.parentNode.removeChild(sp);
   }
-  setTimeout(fueraSplash, 1600);
+  setTimeout(fueraSplash, 8000);
 })();
 </script>
 <header>
@@ -11392,7 +11392,7 @@ async function arrancarSesion(){
   if(spslo) spslo.textContent = t("app.slogan");
 
   // el splash se muestra con su animación y se desvanece a los 2.2s
-  setTimeout(quitarSplash, 4200);
+  setTimeout(quitarSplash, 4000);
 
   // ¿Venimos de cerrar sesión o dar de baja?
   let veniaDeLogout = false, veniaDeBaja = false;
@@ -11406,7 +11406,7 @@ async function arrancarSesion(){
   // dibujo el login DEBAJO del splash opaco a los 1.5s (el splash lo tapa hasta 1.9s),
   // así cuando el splash se desvanece, el login ya está listo detrás. Cero cruce visual.
   P.authModo = "elegir";
-  if(!sesionActiva()){ setTimeout(()=>{ if(!sesionActiva()) go("login"); }, 3700); }
+  if(!sesionActiva()){ setTimeout(()=>{ if(!sesionActiva()) go("login"); }, 3500); }
 
   sbInit();
   if(veniaDeLogout && sbOn()){ try{ await sbSalir(); }catch(e){} }
