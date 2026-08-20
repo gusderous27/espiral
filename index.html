@@ -418,7 +418,7 @@ async function sbCargarEmpresas(){
   if(!SB) return null;
   try{
     const { data, error } = await SB.from("esp_empresas")
-      .select("id, owner, razon, equipo, datos, actualizado_en")
+      .select("id, owner, razon, codigo, equipo, datos, actualizado_en")
       .order("actualizado_en", { ascending:false });
     if(error){ console.warn("cargar empresas:", error); return null; }
     return data || [];
@@ -433,6 +433,7 @@ async function sbGuardarEmpresa(emp){
     datos: emp.datos || {},
     actualizado_en: new Date().toISOString()
   };
+  if(emp.codigo) fila.codigo = emp.codigo;
   // owner solo se setea al crear; en update no se toca
   try{
     const u = await sbUsuario();
@@ -446,6 +447,24 @@ async function sbGuardarEmpresa(emp){
 async function sbBorrarEmpresa(id){
   if(!SB) return;
   try{ await SB.from("esp_empresas").delete().eq("id", id); }catch(e){ console.warn(e); }
+}
+/* Pide al servidor un código único para una empresa nueva */
+async function sbNuevoCodigo(){
+  if(!SB) return null;
+  try{
+    const { data, error } = await SB.rpc("esp_generar_codigo");
+    if(error){ console.warn(error); return null; }
+    return data;
+  }catch(e){ console.warn(e); return null; }
+}
+/* Unirse a una empresa por su código. Devuelve {ok, id, rol, razon} o {ok:false, error} */
+async function sbUnirsePorCodigo(codigo){
+  if(!SB) return { ok:false, error:"offline" };
+  try{
+    const { data, error } = await SB.rpc("esp_unirse_por_codigo", { p_codigo: codigo });
+    if(error){ console.warn(error); return { ok:false, error:"servidor" }; }
+    return data;
+  }catch(e){ return { ok:false, error:"servidor" }; }
 }
 const COLECCIONES = ["insp","personal","epp","inv","iper","docs","cap","ptt","lux","aud","crono","parte","agua","idea"];
 /* ============================================================
@@ -997,7 +1016,7 @@ function volver(){
 }
 
 function render(){
-  const v = {login:vLogin, mundos:vMundos, inicioMC:vInicioMC, nueva:vNueva, form:vForm, historial:vHistorial, ver:vVer, panel:vPanel,
+  const v = {login:vLogin, onboarding:vOnboarding, mundos:vMundos, inicioMC:vInicioMC, nueva:vNueva, form:vForm, historial:vHistorial, ver:vVer, panel:vPanel,
     inicio:vInicio, inicioRH:vInicioRH, ideaEdit:vIdeaEdit, verIdea:vVerIdea, ideaGestion:vIdeaGestion, notificaciones:vNotificaciones,
     ajustes:vAjustes, personal:vPersonal, entrega:vEntrega, uso:vUso, ropa:vRopa, talles:vTalles, verEpp:vVerEpp,
     inv:vInv, verInv:vVerInv, acciones:vAcciones,
@@ -1009,7 +1028,7 @@ function render(){
     agua:vAgua, aguaEdit:vAguaEdit, verAgua:vVerAgua,
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
     verAud:()=>vVerAud(P.verId), pro:vPro}[P.page] || vInicio;
-  const enAuth = (P.page==="login");
+  const enAuth = (P.page==="login" || P.page==="onboarding");
   const hdr=document.querySelector("header"), nv=document.querySelector("nav");
   if(hdr) hdr.style.display = enAuth ? "none" : "";
   if(nv) nv.style.display = enAuth ? "none" : "";
@@ -4295,6 +4314,33 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"¿Cómo querés empezar?":["How do you want to start?","Como você quer começar?"],
+"Crear una empresa nueva":["Create a new company","Criar uma nova empresa"],
+"Vas a ser su administrador.":["You'll be its administrator.","Você será o administrador."],
+"Unirme a una empresa con un código":["Join a company with a code","Entrar em uma empresa com um código"],
+"Te lo pasa quien ya la creó.":["Whoever created it gives it to you.","Quem a criou te passa."],
+"Creá tu empresa. Se le asigna un código para que tu equipo se sume.":["Create your company. It gets a code so your team can join.","Crie sua empresa. Ela recebe um código para sua equipe entrar."],
+"Nombre de la empresa":["Company name","Nome da empresa"],
+"Razón social o nombre":["Legal or business name","Razão social ou nome"],
+"Crear empresa":["Create company","Criar empresa"],
+"Poné el código de la empresa a la que te sumás.":["Enter the code of the company you're joining.","Informe o código da empresa que você quer entrar."],
+"Código de la empresa":["Company code","Código da empresa"],
+"Unirme":["Join","Entrar"],
+"Hola":["Hi","Olá"],
+"Poné el nombre de la empresa":["Enter the company name","Informe o nome da empresa"],
+"Tu empresa se creó. Código para invitar a tu equipo: ":["Your company was created. Code to invite your team: ","Sua empresa foi criada. Código para convidar sua equipe: "],
+"Poné el código":["Enter the code","Informe o código"],
+"Para unirte por código necesitás conexión.":["You need a connection to join by code.","Você precisa de conexão para entrar por código."],
+"No existe ninguna empresa con ese código.":["No company found with that code.","Nenhuma empresa encontrada com esse código."],
+"No se pudo unir. Revisá el código.":["Couldn't join. Check the code.","Não foi possível entrar. Verifique o código."],
+"Te uniste a ":["You joined ","Você entrou em "],
+" como miembro.":[" as a member."," como membro."],
+"la empresa":["the company","a empresa"],
+"Buscando…":["Searching…","Buscando…"],
+"Código de esta empresa · compartilo para que se sumen":["This company's code · share it so others can join","Código desta empresa · compartilhe para outros entrarem"],
+"Copiar código":["Copy code","Copiar código"],
+"Código copiado":["Code copied","Código copiado"],
+"Las secciones trabajan sobre la empresa que tengas elegida arriba.":["The sections work on the company selected above.","As seções trabalham sobre a empresa escolhida acima."],
 "Sesión cerrada":["Signed out","Sessão encerrada"],
 "El acceso con Google se está terminando de configurar. Por ahora entrá con tu correo.":["Google sign-in is still being set up. For now, use your email.","O acesso com Google ainda está sendo configurado. Por enquanto, use seu e-mail."],
 "¿Dar de baja tu cuenta? Se borrará al instante toda la información que cargaste: empresas, personal y registros. Esta acción no se puede deshacer.":["Delete your account? Everything you loaded — companies, staff and records — will be erased instantly. This can't be undone.","Excluir sua conta? Tudo o que você carregou — empresas, pessoal e registros — será apagado na hora. Isso não pode ser desfeito."],
@@ -8750,6 +8796,11 @@ function bloqueEquipo(){
   return `<section class="block">
     <div class="section-title"><h2>${tx("Equipo")}</h2>
       <button class="btn sm" onclick="invitarMiembro()">${tx("+ Invitar")}</button></div>
+    ${e.codigo?`<div class="card pad" style="margin-bottom:10px;text-align:center">
+      <p class="tiny muted" style="margin:0 0 4px">${tx("Código de esta empresa · compartilo para que se sumen")}</p>
+      <div style="font-size:26px;font-weight:800;letter-spacing:4px;color:var(--primary)">${esc(e.codigo)}</div>
+      <button class="btn ghost sm" style="margin-top:10px;width:auto;padding:6px 14px" onclick="copiarCodigo('${esc(e.codigo)}')">${tx("Copiar código")}</button>
+    </div>`:""}
     <div class="card pad">
       <p class="small muted" style="margin:0 0 10px">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
       <div class="row">
@@ -8772,6 +8823,10 @@ function bloqueEquipo(){
       <p class="tiny muted" style="margin:12px 2px 0">${tx("Nota: mientras la app funcione sin conexión, esto queda en este dispositivo. Las invitaciones reales llegan cuando conectemos las cuentas en línea.")}</p>
     </div>
   </section>`;
+}
+function copiarCodigo(cod){
+  try{ navigator.clipboard.writeText(cod); toast(tx("Código copiado")); }
+  catch(e){ toast(cod); }
 }
 function invitarMiembro(){
   modalCampos(tx("Invitar a la empresa"), [
@@ -10072,7 +10127,22 @@ async function entrarConUsuario(u){
   guardar();
   S.mundo = "";
   pintarShell();
-  go("mundos");
+  // ¿Es su primer ingreso? (no tiene ninguna empresa real donde participe)
+  const propias = (S.empresas||[]).filter(e=> tieneEmpresa(e));
+  if(!propias.length){
+    P.onbNombre = nombre;
+    go("onboarding");
+  } else {
+    go("mundos");
+  }
+}
+/* ¿El usuario actual participa realmente en esta empresa? */
+function tieneEmpresa(e){
+  const u = S.sesion; if(!u) return false;
+  if(e.ownerId && e.ownerId===u.uid) return true;
+  if(e.ownerEmail && e.ownerEmail===u.email) return true;
+  if(e.roles && e.roles[u.email]) return true;
+  return false;
 }
 
 /* Convierte una fila del servidor en el formato de empresa que usa la app */
@@ -10080,6 +10150,7 @@ function filaAEmpresa(f){
   return {
     id: f.id,
     razon: f.razon || "",
+    codigo: f.codigo || "",
     ownerId: f.owner || "",
     ownerEmail: (S.sesion && S.sesion.uid===f.owner) ? S.sesion.email : (f._ownerEmail||""),
     roles: f.equipo || {},
@@ -10144,15 +10215,123 @@ function irInicio(){ go(MUNDOS[S.mundo]?MUNDOS[S.mundo].inicio:"mundos"); }
 function entrarMundo(k){ S.mundo = k; guardar(); go(MUNDOS[k].inicio); }
 function cambiarMundo(){ S.mundo = ""; guardar(); go("mundos"); }
 
+/* ============================================================
+   ALTA / ONBOARDING  ·  primer ingreso
+   Elegís: crear empresa nueva (quedás admin, con código) o
+   unirte a una existente por su código (quedás miembro).
+   ============================================================ */
+function vOnboarding(){
+  const paso = P.onbPaso || "elegir"; // elegir | crear | unirse
+  const iso = `<svg class="auth-iso" viewBox="0 0 100 100" aria-hidden="true">${(document.querySelector('#splash .sp-iso')||{innerHTML:""}).innerHTML}</svg>`;
+  let cuerpo;
+  if(paso==="elegir"){
+    cuerpo = `
+      <p class="sub">${tx("¿Cómo querés empezar?")}</p>
+      <button class="authbtn prim" onclick="P.onbPaso='crear';render()">${tx("Crear una empresa nueva")}</button>
+      <p class="tiny muted" style="text-align:center;margin:-6px 0 4px">${tx("Vas a ser su administrador.")}</p>
+      <div class="authsep">${tx("o")}</div>
+      <button class="authbtn" onclick="P.onbPaso='unirse';render()">${tx("Unirme a una empresa con un código")}</button>
+      <p class="tiny muted" style="text-align:center;margin:-6px 0 0">${tx("Te lo pasa quien ya la creó.")}</p>`;
+  } else if(paso==="crear"){
+    cuerpo = `
+      <p class="sub">${tx("Creá tu empresa. Se le asigna un código para que tu equipo se sume.")}</p>
+      <div class="fld"><label>${tx("Nombre de la empresa")}</label>
+        <input id="onb_razon" type="text" placeholder="${tx("Razón social o nombre")}" value="${esc(P.onbRazon||'')}"></div>
+      <button class="authbtn prim" onclick="crearEmpresaOnb()">${tx("Crear empresa")}</button>
+      <div class="toglink" onclick="P.onbPaso='elegir';render()">${tx("Volver")}</div>`;
+  } else {
+    cuerpo = `
+      <p class="sub">${tx("Poné el código de la empresa a la que te sumás.")}</p>
+      <div class="fld"><label>${tx("Código de la empresa")}</label>
+        <input id="onb_codigo" type="text" placeholder="Ej: A7K2P9" autocapitalize="characters"
+          style="text-transform:uppercase;letter-spacing:2px;font-weight:700;text-align:center;font-size:18px"></div>
+      <button class="authbtn prim" onclick="unirseEmpresaOnb()">${tx("Unirme")}</button>
+      <div class="toglink" onclick="P.onbPaso='elegir';render()">${tx("Volver")}</div>`;
+  }
+  return `<div class="authwrap">
+    ${iso}
+    <h1>${tx("Hola")}${P.onbNombre?", "+esc(P.onbNombre.split(" ")[0]):""} 👋</h1>
+    ${cuerpo}
+  </div>`;
+}
+async function crearEmpresaOnb(){
+  const razon = (($("#onb_razon")||{}).value||"").trim();
+  if(!razon) return toast(tx("Poné el nombre de la empresa"));
+  const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Creando…"); }
+  // pido un código al servidor (si hay); si no, uno local
+  let codigo = null;
+  if(sbOn()) codigo = await sbNuevoCodigo();
+  if(!codigo) codigo = codigoLocal();
+  // creo la empresa como propia
+  const e = {
+    id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : uid(),
+    razon, codigo,
+    ownerId: S.sesion ? S.sesion.uid : "",
+    ownerEmail: S.sesion ? S.sesion.email : "",
+    roles: {}, datos: {}
+  };
+  (S.empresas = S.empresas||[]).push(e);
+  S.activa = e.id;
+  definirActiva();
+  // saco la "Mi empresa" vacía que se hubiera creado sola
+  limpiarEmpresaVacia(e.id);
+  if(sbOn()) await sbGuardarEmpresa(e);
+  await guardar();
+  P.onbPaso=null; P.onbRazon=null;
+  pintarShell();
+  S.mundo="";
+  modalAviso(tx("Tu empresa se creó. Código para invitar a tu equipo: ")+codigo);
+  go("mundos");
+}
+async function unirseEmpresaOnb(){
+  const codigo = (($("#onb_codigo")||{}).value||"").trim().toUpperCase();
+  if(!codigo) return toast(tx("Poné el código"));
+  if(!sbOn()) return toast(tx("Para unirte por código necesitás conexión."));
+  const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Buscando…"); }
+  const r = await sbUnirsePorCodigo(codigo);
+  if(btn){ btn.disabled=false; btn.textContent=tx("Unirme"); }
+  if(!r || !r.ok){
+    if(r && r.error==="no_existe") return toast(tx("No existe ninguna empresa con ese código."));
+    return toast(tx("No se pudo unir. Revisá el código."));
+  }
+  // me uní: recargo mis empresas del servidor y activo esa
+  await sincronizarDesdeServidor();
+  if(S.empresas.some(e=>e.id===r.id)) S.activa = r.id;
+  definirActiva();
+  limpiarEmpresaVacia(r.id);
+  await guardar();
+  P.onbPaso=null;
+  pintarShell();
+  S.mundo="";
+  modalAviso(tx("Te uniste a ")+(r.razon||tx("la empresa"))+tx(" como miembro."));
+  go("mundos");
+}
+/* saca la empresa "Mi empresa" vacía autogenerada, si quedó una además de la elegida */
+function limpiarEmpresaVacia(idConservar){
+  S.empresas = (S.empresas||[]).filter(e=>{
+    if(e.id===idConservar) return true;
+    const vacia = !e.codigo && !e.ownerId && (e.razon==="Mi empresa"||e.razon==="My company"||e.razon==="Minha empresa");
+    const sinDatos = !COLECCIONES.some(k=>((e.datos||{})[k]||[]).length);
+    return !(vacia && sinDatos);
+  });
+  if(!S.empresas.some(e=>e.id===S.activa)) S.activa = idConservar;
+  definirActiva();
+}
+/* código local de respaldo (sin servidor), mismo formato */
+function codigoLocal(){
+  const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let c="";
+  for(let i=0;i<6;i++) c+=a[Math.floor(Math.random()*a.length)];
+  return c;
+}
+
 function vMundos(){
   const e = S.empresa||{};
   return `
   <section class="block">
     <div class="card pad" style="text-align:center">
-      ${e.logo?`<img src="${e.logo}" style="max-height:56px;max-width:160px;object-fit:contain;margin-bottom:8px">`:""}
-      <span class="eyebrow">${esc(e.razon||tx("Empresa"))}</span>
+      ${e.logo?`<img src="${e.logo}" style="max-height:56px;max-width:160px;object-fit:contain;margin-bottom:10px">`:""}
       <h2 style="font-size:22px;font-weight:700;margin:4px 0 2px">${tx("¿Con qué querés trabajar?")}</h2>
-      <p class="small muted" style="margin:0">${tx("Las dos secciones trabajan sobre la empresa que tengas elegida arriba.")}</p>
+      <p class="small muted" style="margin:0">${tx("Las secciones trabajan sobre la empresa que tengas elegida arriba.")}</p>
     </div>
   </section>
   <section class="block">
