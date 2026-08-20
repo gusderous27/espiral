@@ -4292,6 +4292,14 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"¿Dar de baja tu cuenta? Se borrará al instante toda la información que cargaste: empresas, personal y registros. Esta acción no se puede deshacer.":["Delete your account? Everything you loaded — companies, staff and records — will be erased instantly. This can't be undone.","Excluir sua conta? Tudo o que você carregou — empresas, pessoal e registros — será apagado na hora. Isso não pode ser desfeito."],
+"Confirmación final":["Final confirmation","Confirmação final"],
+"Escribí BORRAR para confirmar":["Type DELETE to confirm","Digite EXCLUIR para confirmar"],
+"No se dio de baja: no escribiste BORRAR.":["Not deleted: you didn't type DELETE.","Não excluído: você não digitou EXCLUIR."],
+"Dando de baja tu cuenta…":["Deleting your account…","Excluindo sua conta…"],
+"Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras.":["Your account was deleted and your data erased. You can create a new one anytime.","Sua conta foi excluída e seus dados apagados. Você pode criar uma nova quando quiser."],
+"Dar de baja mi cuenta":["Delete my account","Excluir minha conta"],
+"Borra tu cuenta y toda tu información de forma permanente.":["Permanently deletes your account and all your data.","Exclui permanentemente sua conta e todos os seus dados."],
 "No hay conexión con el servidor.":["No connection to the server.","Sem conexão com o servidor."],
 "Ese correo ya tiene una cuenta. Probá iniciar sesión.":["That email already has an account. Try logging in.","Esse e-mail já tem conta. Tente entrar."],
 "Correo o contraseña incorrectos.":["Wrong email or password.","E-mail ou senha incorretos."],
@@ -8802,6 +8810,10 @@ function vAjustes(){
       </div>
       <p class="tiny muted" style="margin:10px 2px 0">${rol==="admin"?tx("Sos administrador de esta empresa: podés gestionar el personal y el equipo."):tx("Sos miembro de esta empresa: podés cargar y consultar, pero no cambiar el personal.")}</p>
       <button class="btn ghost sm" style="margin-top:12px" onclick="cerrarSesion()">${tx("Cerrar sesión")}</button>
+      <div style="border-top:1px solid var(--line);margin:14px 0 0;padding-top:12px">
+        <button class="btn ghost sm" style="color:var(--no)" onclick="bajaCuenta()">${tx("Dar de baja mi cuenta")}</button>
+        <p class="tiny muted" style="margin:8px 2px 0">${tx("Borra tu cuenta y toda tu información de forma permanente.")}</p>
+      </div>
     </div>
   </section>
   ${rol==="admin"?bloqueEquipo():""}`:""}
@@ -9875,10 +9887,53 @@ function iniciarSesion(email, nombre, via, uid){
   pintarShell();
 }
 function cerrarSesion(){
-  gate(tx("¿Cerrar sesión?"), async ()=>{
-    await sbSalir();
-    S.sesion = null; S.mundo=""; guardar(); pintarShell(); go("login");
+  modalConfirm(tx("¿Cerrar sesión?"), async ()=>{
+    try{ await sbSalir(); }catch(e){}
+    S.sesion = null; S.mundo="";
+    await guardar();
+    pintarShell();
+    P.authModo = "elegir";
+    go("login");
+  }, false);
+}
+
+/* --- dar de baja la cuenta: borra TODO lo del usuario --- */
+function bajaCuenta(){
+  const u = sesionActiva(); if(!u) return;
+  modalConfirm(
+    tx("¿Dar de baja tu cuenta? Se borrará al instante toda la información que cargaste: empresas, personal y registros. Esta acción no se puede deshacer."),
+    ()=> pedirBajaFinal(),
+    true
+  );
+}
+function pedirBajaFinal(){
+  // segunda confirmación: escribir BORRAR
+  modalCampos(tx("Confirmación final"), [
+    {l:tx("Escribí BORRAR para confirmar"), ph:"BORRAR"}
+  ], async v=>{
+    if((v[0]||"").trim().toUpperCase()!=="BORRAR") return toast(tx("No se dio de baja: no escribiste BORRAR."));
+    await ejecutarBaja();
   });
+}
+async function ejecutarBaja(){
+  toast(tx("Dando de baja tu cuenta…"));
+  // 1) borro en el servidor las empresas donde soy dueño
+  if(sbOn() && sesionActiva()){
+    const mias = (S.empresas||[]).filter(e=> e.ownerId===S.sesion.uid || e.ownerEmail===S.sesion.email);
+    for(const e of mias){ await sbBorrarEmpresa(e.id); }
+    // borro mi perfil
+    try{ if(SB && S.sesion.uid) await SB.from("esp_perfiles").delete().eq("id", S.sesion.uid); }catch(e){}
+    // cierro sesión en el servidor
+    try{ await sbSalir(); }catch(e){}
+  }
+  // 2) limpio todo lo local
+  S.sesion = null; S.mundo=""; S.empresas=[]; S.activa=null; S.usuarios={};
+  nuevaEmpresa("Mi empresa");
+  await guardar();
+  pintarShell();
+  P.authModo = "elegir";
+  go("login");
+  modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras."));
 }
 
 /* --- pantalla de acceso --- */
@@ -10102,7 +10157,7 @@ function vInicioRH(){
       <span class="eyebrow">${tx("Recursos Humanos")}</span>
       <h2 style="font-size:24px;font-weight:700;margin:2px 0 2px">${esc(e.razon||tx("Empresa"))}</h2>
       <p class="small muted" style="margin:0">${tx("La gente de la empresa y su información.")}</p>
-      <div class="kpis">
+      <div class="kpis" style="grid-template-columns:repeat(${examVenc?3:2},minmax(0,140px));justify-content:center">
         <div class="kpi"><b>${pers.length}</b><span class="tiny muted">${tx("personas")}</span></div>
         <div class="kpi"><b>${activos}</b><span class="tiny muted">${tx("activas")}</span></div>
         ${examVenc?`<div class="kpi" style="border-color:var(--no)"><b style="color:var(--no)">${examVenc}</b><span class="tiny muted">${tx("exámenes por vencer")}</span></div>`:""}
