@@ -1126,7 +1126,8 @@ function render(){
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
     verAud:()=>vVerAud(P.verId), pro:vPro}[P.page] || vInicio;
   const enAuth = (P.page==="login" || P.page==="onboarding");
-  if(enAuth){ try{ matarSplash(); }catch(e){} }  // el splash no debe tapar los botones de acceso
+  // el splash tiene pointer-events:none, así que no hace falta matarlo acá;
+  // se desvanece solo con su animación desde arrancarSesion.
   const hdr=document.querySelector("header"), nv=document.querySelector("nav");
   if(hdr) hdr.style.display = enAuth ? "none" : "";
   if(nv) nv.style.display = enAuth ? "none" : "";
@@ -4412,6 +4413,11 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Revisá tu correo":["Check your email","Verifique seu e-mail"],
+"Te enviamos un mensaje a":["We sent a message to","Enviamos uma mensagem para"],
+"Abrí ese correo y tocá el enlace para confirmar tu cuenta. Después volvé acá e iniciá sesión.":["Open that email and tap the link to confirm your account. Then come back and log in.","Abra esse e-mail e toque no link para confirmar sua conta. Depois volte e entre."],
+"Ya confirmé · Iniciar sesión":["I confirmed · Log in","Já confirmei · Entrar"],
+"Casi listo":["Almost there","Quase lá"],
 "Poné tu contraseña":["Enter your password","Informe sua senha"],
 "No se pudo iniciar sesión. Probá de nuevo.":["Couldn't sign in. Try again.","Não foi possível entrar. Tente de novo."],
 "Nombre":["Name","Nome"],
@@ -10229,6 +10235,17 @@ function vLogin(){
         <input id="au_pass" type="password" placeholder="${tx("Elegí una contraseña")}"></div>
       <button class="authbtn prim" onclick="hacerRegistro()">${tx("Crear mi cuenta")}</button>
       <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
+  } else if(modo==="confirmar"){
+    cuerpo = `
+      <div style="text-align:center;padding:8px 0 4px">
+        <div style="font-size:44px;margin-bottom:8px">📬</div>
+        <p class="small" style="margin:0 0 6px;font-weight:600">${tx("Revisá tu correo")}</p>
+        <p class="small muted" style="margin:0 0 4px">${tx("Te enviamos un mensaje a")}</p>
+        <p class="small" style="margin:0 0 14px;font-weight:600;word-break:break-all">${esc(P.authMail||"")}</p>
+        <p class="small muted" style="margin:0 0 18px">${tx("Abrí ese correo y tocá el enlace para confirmar tu cuenta. Después volvé acá e iniciá sesión.")}</p>
+      </div>
+      <button class="authbtn prim" onclick="authIr('mail')">${tx("Ya confirmé · Iniciar sesión")}</button>
+      <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
   } else {
     cuerpo = `
       <div class="fld"><label>${tx("Correo")}</label>
@@ -10240,8 +10257,8 @@ function vLogin(){
   }
   return `<div class="authwrap">
     ${iso}
-    <h1>${modo==="registro"?tx("Crear tu cuenta"):modo==="mail"?tx("Iniciar sesión"):tx("Bienvenido a Espiral")}</h1>
-    <div style="text-align:center;font-size:11px;color:var(--muted);margin:-8px 0 4px">v2.0 · ${new Date().toISOString().slice(0,10)}</div>
+    <h1>${modo==="registro"?tx("Crear tu cuenta"):modo==="mail"?tx("Iniciar sesión"):modo==="confirmar"?tx("Casi listo"):tx("Bienvenido a Espiral")}</h1>
+    <div style="text-align:center;font-size:11px;color:var(--muted);margin:-8px 0 4px">v2.1 · ${new Date().toISOString().slice(0,10)}</div>
     <p class="sub">${t("app.slogan")}</p>
     ${cuerpo}
   </div>`;
@@ -10283,7 +10300,7 @@ async function hacerRegistro(){
     // Si el proyecto exige confirmar el correo, no hay sesión todavía
     const u = (r.data && r.data.user && r.data.session) ? r.data.user : await sbUsuario();
     if(u){ await entrarConUsuario(u); }
-    else { P.authModo="mail"; render(); modalAviso(tx("Te enviamos un correo para confirmar tu cuenta. Confirmalo y después iniciá sesión.")); }
+    else { P.authMail = mail; P.authModo="confirmar"; render(); }
     return;
   }
   // Sin servidor: maqueta local
@@ -11374,8 +11391,8 @@ async function arrancarSesion(){
   const spslo = document.getElementById("spslo");
   if(spslo) spslo.textContent = t("app.slogan");
 
-  // el splash se va sí o sí a los 1.8s, pase lo que pase con el servidor
-  setTimeout(quitarSplash, 1800);
+  // el splash se muestra con su animación y se desvanece a los 2.2s
+  setTimeout(quitarSplash, 2200);
 
   // ¿Venimos de cerrar sesión o dar de baja?
   let veniaDeLogout = false, veniaDeBaja = false;
