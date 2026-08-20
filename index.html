@@ -233,9 +233,10 @@ label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ===== Bienvenida (splash) y acceso ===== */
-#splash{position:fixed;inset:0;z-index:9999;pointer-events:none;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:16px;background:var(--bg);
-  transition:opacity .6s ease;text-align:center;padding:24px}
+#splash{position:fixed;inset:0;z-index:99999;pointer-events:none;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;background:#F4F6F9;
+  transition:opacity .5s ease;text-align:center;padding:24px}
+html[data-tema="oscuro"] #splash{background:#0E1621}
 #splash.oculto{opacity:0;pointer-events:none}
 #splash .sp-iso{width:132px;height:132px}
 #splash .sp-iso path{stroke-dasharray:220;stroke-dashoffset:220;
@@ -10258,7 +10259,6 @@ function vLogin(){
   return `<div class="authwrap">
     ${iso}
     <h1>${modo==="registro"?tx("Crear tu cuenta"):modo==="mail"?tx("Iniciar sesión"):modo==="confirmar"?tx("Casi listo"):tx("Bienvenido a Espiral")}</h1>
-    <div style="text-align:center;font-size:11px;color:var(--muted);margin:-8px 0 4px">v2.1 · ${new Date().toISOString().slice(0,10)}</div>
     <p class="sub">${t("app.slogan")}</p>
     ${cuerpo}
   </div>`;
@@ -11392,7 +11392,7 @@ async function arrancarSesion(){
   if(spslo) spslo.textContent = t("app.slogan");
 
   // el splash se muestra con su animación y se desvanece a los 2.2s
-  setTimeout(quitarSplash, 2200);
+  setTimeout(quitarSplash, 2900);
 
   // ¿Venimos de cerrar sesión o dar de baja?
   let veniaDeLogout = false, veniaDeBaja = false;
@@ -11403,9 +11403,10 @@ async function arrancarSesion(){
   }catch(e){}
   if(veniaDeLogout){ ACABA_DE_SALIR = true; try{ limpiarTokenSB(); }catch(e){} }
 
-  // muestro el login de entrada, para que la pantalla esté lista y usable YA
+  // dibujo el login DEBAJO del splash opaco a los 1.5s (el splash lo tapa hasta 1.9s),
+  // así cuando el splash se desvanece, el login ya está listo detrás. Cero cruce visual.
   P.authModo = "elegir";
-  if(!sesionActiva()) go("login");
+  if(!sesionActiva()){ setTimeout(()=>{ if(!sesionActiva()) go("login"); }, 2400); }
 
   sbInit();
   if(veniaDeLogout && sbOn()){ try{ await sbSalir(); }catch(e){} }
