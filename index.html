@@ -399,7 +399,7 @@ async function sbLogin(email, pass){
   if(!SB) return { error: tx("No hay conexión con el servidor.") };
   const { data, error } = await SB.auth.signInWithPassword({ email, password: pass });
   if(error) return { error: sbMsgError(error) };
-  return { data };
+  return { data, user: data && data.user };
 }
 async function sbGoogle(){
   if(!SB) return { error: tx("No hay conexión con el servidor.") };
@@ -4370,6 +4370,8 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Poné tu contraseña":["Enter your password","Informe sua senha"],
+"No se pudo iniciar sesión. Probá de nuevo.":["Couldn't sign in. Try again.","Não foi possível entrar. Tente de novo."],
 "Nombre":["Name","Nome"],
 "Rol":["Role","Papel"],
 "Agregar empresa":["Add company","Adicionar empresa"],
@@ -10225,12 +10227,13 @@ async function hacerRegistro(){
   if(!mail || !/@/.test(mail)) return toast(tx("Poné un correo válido"));
   if(!pass || pass.length<6) return toast(tx("La contraseña necesita al menos 6 caracteres."));
   if(sbOn()){
+    ACABA_DE_SALIR = false;   // vamos a entrar: destrabo la bandera de logout
     const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Creando…"); }
     const r = await sbRegistro(mail, pass, nom);
     if(btn){ btn.disabled=false; btn.textContent=tx("Crear mi cuenta"); }
     if(r.error) return toast(r.error);
     // Si el proyecto exige confirmar el correo, no hay sesión todavía
-    const u = await sbUsuario();
+    const u = (r.data && r.data.user && r.data.session) ? r.data.user : await sbUsuario();
     if(u){ await entrarConUsuario(u); }
     else { P.authModo="mail"; render(); modalAviso(tx("Te enviamos un correo para confirmar tu cuenta. Confirmalo y después iniciá sesión.")); }
     return;
@@ -10243,13 +10246,16 @@ async function hacerRegistro(){
 async function hacerLogin(){
   const mail=(($("#au_mail")||{}).value||"").trim(), pass=($("#au_pass")||{}).value;
   if(!mail || !/@/.test(mail)) return toast(tx("Poné un correo válido"));
+  if(!pass) return toast(tx("Poné tu contraseña"));
   if(sbOn()){
+    ACABA_DE_SALIR = false;   // vamos a entrar: destrabo la bandera de logout
     const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Entrando…"); }
     const r = await sbLogin(mail, pass);
     if(btn){ btn.disabled=false; btn.textContent=tx("Entrar"); }
     if(r.error) return toast(r.error);
-    const u = await sbUsuario();
+    const u = r.user || await sbUsuario();
     if(u) await entrarConUsuario(u);
+    else toast(tx("No se pudo iniciar sesión. Probá de nuevo."));
     return;
   }
   // Sin servidor: maqueta local
