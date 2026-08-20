@@ -391,9 +391,12 @@ async function sbLogin(email, pass){
 }
 async function sbGoogle(){
   if(!SB) return { error: tx("No hay conexión con el servidor.") };
+  // Vuelta explícita a Espiral (sin hash ni query), para que el default de
+  // Supabase (que puede apuntar a otra app) no se lleve la sesión a otro lado.
+  const volverA = location.origin + location.pathname;
   const { error } = await SB.auth.signInWithOAuth({
     provider:"google",
-    options:{ redirectTo: location.href.split("#")[0] }
+    options:{ redirectTo: volverA }
   });
   if(error) return { error: sbMsgError(error) };
   return {};
@@ -4292,6 +4295,8 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Sesión cerrada":["Signed out","Sessão encerrada"],
+"El acceso con Google se está terminando de configurar. Por ahora entrá con tu correo.":["Google sign-in is still being set up. For now, use your email.","O acesso com Google ainda está sendo configurado. Por enquanto, use seu e-mail."],
 "¿Dar de baja tu cuenta? Se borrará al instante toda la información que cargaste: empresas, personal y registros. Esta acción no se puede deshacer.":["Delete your account? Everything you loaded — companies, staff and records — will be erased instantly. This can't be undone.","Excluir sua conta? Tudo o que você carregou — empresas, pessoal e registros — será apagado na hora. Isso não pode ser desfeito."],
 "Confirmación final":["Final confirmation","Confirmação final"],
 "Escribí BORRAR para confirmar":["Type DELETE to confirm","Digite EXCLUIR para confirmar"],
@@ -9887,14 +9892,31 @@ function iniciarSesion(email, nombre, via, uid){
   pintarShell();
 }
 function cerrarSesion(){
-  modalConfirm(tx("¿Cerrar sesión?"), async ()=>{
-    try{ await sbSalir(); }catch(e){}
+  modalConfirm(tx("¿Cerrar sesión?"), ()=>{
+    // 1) primero te saco de la cuenta acá, sin esperar al servidor
     S.sesion = null; S.mundo="";
-    await guardar();
+    guardar();
     pintarShell();
     P.authModo = "elegir";
     go("login");
+    toast(tx("Sesión cerrada"));
+    // 2) recién después aviso al servidor y limpio su token (en segundo plano)
+    setTimeout(async ()=>{
+      try{ await sbSalir(); }catch(e){}
+      try{ limpiarTokenSB(); }catch(e){}
+    }, 0);
   }, false);
+}
+
+/* Borra el token que la librería de Supabase deja en el navegador,
+   para que al recargar la página no vuelva a reconocer la sesión. */
+function limpiarTokenSB(){
+  try{
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k = localStorage.key(i);
+      if(k && (k.indexOf("sb-")===0 || k.indexOf("supabase")>=0)) localStorage.removeItem(k);
+    }
+  }catch(e){}
 }
 
 /* --- dar de baja la cuenta: borra TODO lo del usuario --- */
@@ -9973,12 +9995,20 @@ function vLogin(){
   return `<div class="authwrap">
     ${iso}
     <h1>${modo==="registro"?tx("Crear tu cuenta"):modo==="mail"?tx("Iniciar sesión"):tx("Bienvenido a Espiral")}</h1>
-    <p class="sub">${tx("Tu sistema de gestión de seguridad, higiene y mejora.")}</p>
+    <p class="sub">${t("app.slogan")}</p>
     ${cuerpo}
   </div>`;
 }
+/* Poné GOOGLE_LISTO=true recién cuando el proveedor Google esté configurado
+   en Supabase con la URL de retorno de Espiral (no la de otra app). */
+const GOOGLE_LISTO = true;
 async function loginGoogle(){
   if(sbOn()){
+    if(!GOOGLE_LISTO){
+      modalAviso(tx("El acceso con Google se está terminando de configurar. Por ahora entrá con tu correo."));
+      P.authModo="registro"; render();
+      return;
+    }
     toast(tx("Abriendo Google…"));
     const r = await sbGoogle();
     if(r.error) toast(r.error);
