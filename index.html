@@ -274,6 +274,17 @@ label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
   background:var(--card);color:var(--text);font-size:15px}
 .authwrap .legal{font-size:11px;color:var(--muted);text-align:center;margin-top:4px;line-height:1.5}
 .authwrap .toglink{font-size:13px;color:var(--primary);text-align:center;cursor:pointer;font-weight:600}
+
+/* ===== Acordeón de Ajustes ===== */
+.acc{border:1px solid var(--line);border-radius:14px;background:var(--card);margin-bottom:10px;overflow:hidden}
+.acc-h{display:flex;align-items:center;gap:10px;padding:15px 16px;cursor:pointer;user-select:none}
+.acc-h .acc-ic{font-size:19px;flex:none;width:24px;text-align:center}
+.acc-h .acc-t{flex:1;font-weight:700;font-size:15.5px}
+.acc-h .acc-ch{transition:transform .2s;color:var(--muted);font-size:18px}
+.acc[data-open="1"] .acc-h .acc-ch{transform:rotate(90deg)}
+.acc-body{display:none;padding:0 16px 16px}
+.acc[data-open="1"] .acc-body{display:block}
+.acc-sub{border-top:1px solid var(--line);padding-top:14px;margin-top:2px}
 </style>
 </head>
 <body>
@@ -355,6 +366,7 @@ let S = { tema:'claro', empresas:[], activa:null, mundo:'' };
 const SB_URL = "https://ojslewybmcayfmvuhqsc.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qc2xld3libWNheWZtdnVocXNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MTAzNjgsImV4cCI6MjA5ODI4NjM2OH0.onJwn_5Gpn9FlH09Q8wZYMiL4YkKKFzTvs4jO7h6Gmc";
 let SB = null;
+let ACABA_DE_SALIR = false;  // evita que el arranque re-loguee justo tras cerrar sesión / dar de baja
 function sbInit(){
   try{
     if(window.supabase && window.supabase.createClient){
@@ -402,7 +414,8 @@ async function sbGoogle(){
   return {};
 }
 async function sbSalir(){
-  if(SB){ try{ await SB.auth.signOut(); }catch(e){} }
+  if(SB){ try{ await SB.auth.signOut({ scope:"global" }); }catch(e){ try{ await SB.auth.signOut(); }catch(_){} } }
+  try{ limpiarTokenSB(); }catch(e){}
 }
 function sbMsgError(error){
   const m = (error && error.message || "").toLowerCase();
@@ -4314,6 +4327,10 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Cambiar a oscuro":["Switch to dark","Mudar para escuro"],
+"Cambiar a claro":["Switch to light","Mudar para claro"],
+"Datos de":["Details of","Dados de"],
+"Código de esta empresa":["This company's code","Código desta empresa"],
 "¿Cómo querés empezar?":["How do you want to start?","Como você quer começar?"],
 "Crear una empresa nueva":["Create a new company","Criar uma nova empresa"],
 "Vas a ser su administrador.":["You'll be its administrator.","Você será o administrador."],
@@ -8788,41 +8805,39 @@ function exportarExcel(){
    AJUSTES
    ============================================================ */
 /* --- equipo de la empresa: el admin invita y asigna roles (maqueta) --- */
-function bloqueEquipo(){
+function bloqueEquipoBody(){
   const e = S.empresa||{};
   const roles = e.roles||{};
   const owner = e.ownerEmail||"";
   const miembros = Object.keys(roles);
-  return `<section class="block">
-    <div class="section-title"><h2>${tx("Equipo")}</h2>
-      <button class="btn sm" onclick="invitarMiembro()">${tx("+ Invitar")}</button></div>
-    ${e.codigo?`<div class="card pad" style="margin-bottom:10px;text-align:center">
+  return `
+    ${e.codigo?`<div style="text-align:center;padding:6px 0 12px;border-bottom:1px solid var(--line);margin-bottom:12px">
       <p class="tiny muted" style="margin:0 0 4px">${tx("Código de esta empresa · compartilo para que se sumen")}</p>
-      <div style="font-size:26px;font-weight:800;letter-spacing:4px;color:var(--primary)">${esc(e.codigo)}</div>
-      <button class="btn ghost sm" style="margin-top:10px;width:auto;padding:6px 14px" onclick="copiarCodigo('${esc(e.codigo)}')">${tx("Copiar código")}</button>
+      <div style="font-size:24px;font-weight:800;letter-spacing:4px;color:var(--primary)">${esc(e.codigo)}</div>
+      <button class="btn ghost sm" style="margin-top:8px;width:auto;padding:6px 14px" onclick="copiarCodigo('${esc(e.codigo)}')">${tx("Copiar código")}</button>
     </div>`:""}
-    <div class="card pad">
-      <p class="small muted" style="margin:0 0 10px">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
-      <div class="row">
-        <span class="dot" style="background:var(--ok)"></span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:14.5px">${esc(owner||tx("Vos"))}</div>
-          <div class="tiny muted">${tx("Creó la empresa")}</div>
-        </div>
-        <span class="pill" style="background:var(--ok);color:#fff">${tx("Administrador")}</span>
-      </div>
-      ${miembros.length?miembros.map(m=>`<div class="row">
-        <span class="dot" style="background:var(--c5)"></span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:14.5px">${esc(m)}</div>
-          <div class="tiny muted">${roles[m]==="admin"?tx("Administrador"):tx("Miembro")}</div>
-        </div>
-        <button class="btn ghost sm" style="width:auto;padding:6px 10px" onclick="cambiarRolMiembro('${esc(m)}')">${tx("Cambiar")}</button>
-        <button class="btn ghost sm" style="width:auto;padding:6px 10px;color:var(--no)" onclick="quitarMiembro('${esc(m)}')">✕</button>
-      </div>`).join(""):`<p class="tiny muted" style="margin:8px 2px 0">${tx("Todavía no invitaste a nadie.")}</p>`}
-      <p class="tiny muted" style="margin:12px 2px 0">${tx("Nota: mientras la app funcione sin conexión, esto queda en este dispositivo. Las invitaciones reales llegan cuando conectemos las cuentas en línea.")}</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <p class="small muted" style="margin:0">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
+      <button class="btn sm" style="width:auto;padding:6px 12px" onclick="invitarMiembro()">${tx("+ Invitar")}</button>
     </div>
-  </section>`;
+    <div class="row">
+      <span class="dot" style="background:var(--ok)"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14.5px">${esc(owner||tx("Vos"))}</div>
+        <div class="tiny muted">${tx("Creó la empresa")}</div>
+      </div>
+      <span class="pill" style="background:var(--ok);color:#fff">${tx("Administrador")}</span>
+    </div>
+    ${miembros.length?miembros.map(m=>`<div class="row">
+      <span class="dot" style="background:var(--c5)"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14.5px">${esc(m)}</div>
+        <div class="tiny muted">${roles[m]==="admin"?tx("Administrador"):tx("Miembro")}</div>
+      </div>
+      <button class="btn ghost sm" style="width:auto;padding:6px 10px" onclick="cambiarRolMiembro('${esc(m)}')">${tx("Cambiar")}</button>
+      <button class="btn ghost sm" style="width:auto;padding:6px 10px;color:var(--no)" onclick="quitarMiembro('${esc(m)}')">✕</button>
+    </div>`).join(""):`<p class="tiny muted" style="margin:8px 2px 0">${tx("Todavía no invitaste a nadie.")}</p>`}
+    <p class="tiny muted" style="margin:12px 2px 0">${tx("Nota: mientras la app funcione sin conexión, esto queda en este dispositivo. Las invitaciones reales llegan cuando conectemos las cuentas en línea.")}</p>`;
 }
 function copiarCodigo(cod){
   try{ navigator.clipboard.writeText(cod); toast(tx("Código copiado")); }
@@ -8856,70 +8871,60 @@ function vAjustes(){
     <input type="${t||"text"}" value="${esc(e[k]||"")}" oninput="setEmp('${k}',this.value)"></label>`;
   const u = sesionActiva();
   const rol = rolActual();
-  return `
-  ${u?`<section class="block">
-    <div class="section-title"><h2>${tx("Mi cuenta")}</h2></div>
-    <div class="card pad">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:44px;height:44px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex:none">${esc((u.nombre||u.email||"?")[0].toUpperCase())}</div>
-        <div style="min-width:0">
-          <div style="font-weight:700">${esc(u.nombre||"—")}</div>
-          <div class="tiny muted">${esc(u.email)}</div>
-        </div>
-        <span class="pill" style="margin-left:auto;background:${rol==="admin"?"var(--ok)":"var(--c5)"};color:#fff">${rol==="admin"?tx("Administrador"):tx("Miembro")}</span>
+  const abierta = P.accAjustes || "";
+  // helper de carpeta plegable
+  const acc = (id, ic, titulo, cuerpo) => `
+    <div class="acc" data-open="${abierta===id?1:0}">
+      <div class="acc-h" onclick="toggleAcc('${id}')">
+        <span class="acc-ic">${ic}</span>
+        <span class="acc-t">${titulo}</span>
+        <span class="acc-ch">›</span>
       </div>
-      <p class="tiny muted" style="margin:10px 2px 0">${rol==="admin"?tx("Sos administrador de esta empresa: podés gestionar el personal y el equipo."):tx("Sos miembro de esta empresa: podés cargar y consultar, pero no cambiar el personal.")}</p>
-      <button class="btn ghost sm" style="margin-top:12px" onclick="cerrarSesion()">${tx("Cerrar sesión")}</button>
-      <div style="border-top:1px solid var(--line);margin:14px 0 0;padding-top:12px">
-        <button class="btn ghost sm" style="color:var(--no)" onclick="bajaCuenta()">${tx("Dar de baja mi cuenta")}</button>
-        <p class="tiny muted" style="margin:8px 2px 0">${tx("Borra tu cuenta y toda tu información de forma permanente.")}</p>
-      </div>
-    </div>
-  </section>
-  ${rol==="admin"?bloqueEquipo():""}`:""}
-  <section class="block">
-    <div class="section-title"><h2>${t("aj.empresas")}</h2>
-      <button class="btn sm" onclick="crearEmpresaPrompt()">${t("aj.agregar")}${puedeEmpresa()?"":" 🔒"}</button></div>
-    <div class="card pad">
-      <p class="small muted" style="margin:0 0 10px">${t("aj.trabajando")} <b>${esc(e.razon||"—")}</b>. ${t("aj.trabajandoTxt")}</p>
-      ${(S.empresas||[]).map(x=>`<div class="row" onclick="cambiarEmpresa('${x.id}')">
-        <span class="dot" style="background:${x.id===S.activa?"var(--ok)":"var(--line)"}"></span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:14.5px">${esc(x.razon||"Sin nombre")}</div>
-          <div class="tiny muted">${esc(x.obra||x.direccion||t("aj.sinDatos"))}</div>
-        </div>
-        ${x.id===S.activa?`<span class="pill" style="border-color:var(--ok);color:var(--ok)">${t("aj.activa")}</span>`:""}
-      </div>`).join("")}
-    </div>
-  </section>
+      <div class="acc-body">${cuerpo}</div>
+    </div>`;
 
-  <section class="block">
-    <div class="section-title"><h2>${tx("País de la empresa")}</h2></div>
-    <div class="card pad">
-      <div class="opts" style="margin-left:0">
-        ${PAISES.map(x=>`<button class="opt" data-on="${(e.pais||"AR")===x.k?1:0}" data-k="${(e.pais||"AR")===x.k?"ok":""}"
-          onclick="setEmp('pais','${x.k}');render()">${x.f} ${esc(x.n)}</button>`).join("")}
+  // --- Mi cuenta ---
+  const cuentaBody = !u ? "" : `
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:44px;height:44px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex:none">${esc((u.nombre||u.email||"?")[0].toUpperCase())}</div>
+      <div style="min-width:0">
+        <div style="font-weight:700">${esc(u.nombre||"—")}</div>
+        <div class="tiny muted">${esc(u.email)}</div>
       </div>
-      <p class="tiny muted" style="margin:10px 0 0">${tx("Define qué documentación se le exige a los contratistas y cómo se llama el seguro de accidentes en")} ${esc(paisAct().n)}: <b>${esc(paisAct().seguro)}</b> · <b>${esc(paisAct().id)}</b>.</p>
-      <button class="btn soft sm" style="margin-top:10px" onclick="go('equiv')">${tx("Ver equivalencias entre países")}</button>
+      <span class="pill" style="margin-left:auto;background:${rol==="admin"?"var(--ok)":"var(--c5)"};color:#fff">${rol==="admin"?tx("Administrador"):tx("Miembro")}</span>
     </div>
-  </section>
+    <p class="tiny muted" style="margin:10px 2px 0">${rol==="admin"?tx("Sos administrador de esta empresa: podés gestionar el personal y el equipo."):tx("Sos miembro de esta empresa: podés cargar y consultar, pero no cambiar el personal.")}</p>
+    <button class="btn ghost sm" style="margin-top:12px" onclick="cerrarSesion()">${tx("Cerrar sesión")}</button>`;
 
-  <section class="block">
-    <div class="section-title"><h2>${t("aj.idioma")}</h2></div>
-    <div class="card pad">
-      <div class="opts" style="margin-left:0">
-        ${IDIOMAS.map(x=>`<button class="opt" data-on="${(S.idioma||"es")===x.k?1:0}" data-k="${(S.idioma||"es")===x.k?"ok":""}"
-          onclick="setIdioma('${x.k}')">${x.f} ${x.n}</button>`).join("")}
+  // --- Mis empresas (todo lo de empresa junto, sin duplicar) ---
+  const esAdm = puedeAdministrar();
+  const empresasBody = `
+    <p class="small muted" style="margin:0 0 10px">${t("aj.trabajando")} <b>${esc(e.razon||"—")}</b>. ${t("aj.trabajandoTxt")}</p>
+    ${(S.empresas||[]).map(x=>`<div class="row" onclick="cambiarEmpresa('${x.id}')">
+      <span class="dot" style="background:${x.id===S.activa?"var(--ok)":"var(--line)"}"></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14.5px">${esc(x.razon||"Sin nombre")}</div>
+        <div class="tiny muted">${esc(x.obra||x.direccion||t("aj.sinDatos"))}</div>
       </div>
-      <p class="tiny muted" style="margin:10px 0 0">${tx("Los menús, las secciones y los informes cambian de idioma. Los textos legales de cada check list se traducen módulo por módulo.")}</p>
-    </div>
-  </section>
+      ${x.id===S.activa?`<span class="pill" style="border-color:var(--ok);color:var(--ok)">${t("aj.activa")}</span>`:""}
+    </div>`).join("")}
+    <button class="btn soft sm" style="margin-top:10px" onclick="crearEmpresaPrompt()">${t("aj.agregar")}${puedeEmpresa()?"":" 🔒"}</button>
 
-  <section class="block">
-    <div class="section-title"><h2>${t("aj.logo")}</h2></div>
-    <div class="card pad">
-      <p class="small muted" style="margin:0 0 12px">${tx("Aparece en el encabezado de cada informe, en el panel y en el PDF que se imprime.")}</p>
+    <div class="acc-sub">
+      <div class="grp" style="margin-top:0">${tx("Datos de")} ${esc(e.razon||tx("la empresa"))}</div>
+      ${f("razon","Razón social")}
+      <div class="grid2">${f("cuit","CUIT / identificación")}${f("obra","Obra o planta")}</div>
+      ${f("direccion","Dirección")}
+      <div class="grid2">${f("contacto","Contacto")}${f("responsable","Responsable de S&H")}</div>
+
+      <label class="f"><span class="lb">${tx("País de la empresa")}</span>
+        <select onchange="setEmp('pais',this.value);render()">
+          ${PAISES.map(x=>`<option value="${x.k}" ${(e.pais||"AR")===x.k?"selected":""}>${x.f} ${esc(x.n)}</option>`).join("")}
+        </select></label>
+      <p class="tiny muted" style="margin:4px 2px 0">${tx("Define qué documentación se le exige a los contratistas y cómo se llama el seguro de accidentes en")} ${esc(paisAct().n)}: <b>${esc(paisAct().seguro)}</b> · <b>${esc(paisAct().id)}</b>.</p>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="go('equiv')">${tx("Ver equivalencias entre países")}</button>
+
+      <div class="grp">${t("aj.logo")}</div>
       <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
         <div class="logobox">${e.logo?`<img src="${e.logo}">`:`<span class="tiny muted">${tx("Sin logo")}</span>`}</div>
         <div style="flex:1;min-width:170px;display:flex;gap:8px;flex-wrap:wrap">
@@ -8931,49 +8936,58 @@ function vAjustes(){
           ${e.logo?`<button class="btn ghost sm" style="color:var(--no)" onclick="quitarLogo()">${tx("Quitar")}</button>`:""}
         </div>
       </div>
-    </div>
-  </section>
 
-  <section class="block">
-    <div class="section-title"><h2>${tx("Datos de la empresa")}</h2></div>
-    <div class="card pad">
-      <p class="small muted" style="margin:0 0 12px">${tx("Se completan solos en cada inspección y salen impresos en el reporte.")}</p>
-      ${f("razon","Razón social")}
-      <div class="grid2">${f("cuit","CUIT / identificación")}${f("obra","Obra o planta")}</div>
-      ${f("direccion","Dirección")}
-      <div class="grid2">${f("contacto","Contacto")}${f("responsable","Responsable de S&H")}</div>
-      <button class="btn" onclick="guardarAjustes()">${tx("Guardar cambios")}</button>
-      <button class="btn ghost" style="margin-top:8px" onclick="go('inicio')">${tx("Salir sin cambios")}</button>
-    </div>
-  </section>
+      ${e.codigo?`<div class="grp">${tx("Código de esta empresa")}</div>
+      <div style="text-align:center;padding:8px 0">
+        <div style="font-size:24px;font-weight:800;letter-spacing:4px;color:var(--primary)">${esc(e.codigo)}</div>
+        <button class="btn ghost sm" style="margin-top:8px;width:auto;padding:6px 14px" onclick="copiarCodigo('${esc(e.codigo)}')">${tx("Copiar código")}</button>
+      </div>`:""}
 
-  <section class="block">
-    <div class="section-title"><h2>${tx("Preferencias")}</h2></div>
-    <div class="card pad">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div><b>${tx("Tema de pantalla")}</b><div class="tiny muted">${tx("Claro por defecto")}</div></div>
-        <button class="btn ghost sm" onclick="toggleTema()">${S.tema==="claro"?"Cambiar a oscuro":"Cambiar a claro"}</button>
+      <button class="btn" style="margin-top:12px" onclick="guardarAjustes()">${tx("Guardar cambios")}</button>
+      ${esAdm?`<button class="btn ghost sm" style="margin-top:10px;color:var(--no)" onclick="borrarEmpresa()">${t("aj.eliminarEmp")}</button>`:""}
+    </div>`;
+
+  // --- Preferencias ---
+  const prefsBody = `
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div><b>${tx("Tema de pantalla")}</b><div class="tiny muted">${tx("Claro por defecto")}</div></div>
+      <button class="btn ghost sm" onclick="toggleTema()">${S.tema==="claro"?tx("Cambiar a oscuro"):tx("Cambiar a claro")}</button>
+    </div>
+    <div class="acc-sub">
+      <div class="grp" style="margin-top:0">${t("aj.idioma")}</div>
+      <div class="opts" style="margin-left:0">
+        ${IDIOMAS.map(x=>`<button class="opt" data-on="${(S.idioma||"es")===x.k?1:0}" data-k="${(S.idioma||"es")===x.k?"ok":""}"
+          onclick="setIdioma('${x.k}')">${x.f} ${x.n}</button>`).join("")}
       </div>
-      <div style="height:14px"></div>
+    </div>
+    <div class="acc-sub">
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div><b>${t("aj.registros")}</b><div class="tiny muted">${COLECCIONES.reduce((a,k)=>a+S[k].length,0)} ${t("aj.enTotal")}</div></div>
         <button class="btn ghost sm" style="color:var(--no)" onclick="resetTodo()">${t("aj.borrar")}</button>
       </div>
-    </div>
-  </section>
+    </div>`;
 
-  ${proBloque()}
-  ${bkBloque()}
+  return `
+  ${acc("cuenta","👤",tx("Mi cuenta"),cuentaBody)}
+  ${rol==="admin"?acc("equipo","👥",tx("Equipo"),bloqueEquipoBody()):""}
+  ${acc("empresas","🏢",t("aj.empresas"),empresasBody)}
+  ${acc("prefs","⚙️",tx("Preferencias"),prefsBody)}
+  ${acc("pro","⭐",tx("Tu versión"),proBloqueBody())}
+  ${acc("backup","💾",tx("Copia de seguridad"),bkBloqueBody())}
 
   <section class="block">
     <div class="card pad" style="text-align:center">
       <div class="bars" style="max-width:180px;margin:0 auto 10px"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
       <div class="tiny muted">Espiral · Proyecto HS · v1.0<br><span style="opacity:.75">${t("app.slogan")}</span></div>
-      <button class="btn ghost sm" style="margin-top:12px;color:var(--no)" onclick="borrarEmpresa()">${t("aj.eliminarEmp")}</button>
+      ${u?`<div style="border-top:1px solid var(--line);margin:14px 0 0;padding-top:14px">
+        <button class="btn ghost sm" style="color:var(--no)" onclick="bajaCuenta()">${tx("Dar de baja mi cuenta")}</button>
+        <p class="tiny muted" style="margin:8px 2px 0">${tx("Borra tu cuenta y toda tu información de forma permanente.")}</p>
+      </div>`:""}
     </div>
   </section>
   <div style="height:10px"></div>`;
 }
+function toggleAcc(id){ P.accAjustes = (P.accAjustes===id) ? "" : id; render(); }
 function setEmp(k,v){ S.empresa[k]=v; guardar(); }
 function quitarLogo(){ delete S.empresa.logo; guardar(); render(); toast(tx("Logo quitado")); }
 async function guardarAjustes(){ await guardar(); toast(tx("Datos guardados")); setTimeout(()=>go("inicio"),700); }
@@ -9947,21 +9961,21 @@ function iniciarSesion(email, nombre, via, uid){
   pintarShell();
 }
 function cerrarSesion(){
-  modalConfirm(tx("¿Cerrar sesión?"), ()=>{
-    // 1) primero te saco de la cuenta acá, sin esperar al servidor
+  modalConfirm(tx("¿Cerrar sesión?"), async ()=>{
+    ACABA_DE_SALIR = true;            // que el arranque no me vuelva a loguear
+    // limpio el token del navegador YA (no espero al servidor para esto)
+    try{ limpiarTokenSB(); }catch(e){}
+    // aviso al servidor con un límite de tiempo, para no colgarnos
+    try{ await Promise.race([ sbSalir(), esperar(1200) ]); }catch(e){}
     S.sesion = null; S.mundo="";
-    guardar();
-    pintarShell();
-    P.authModo = "elegir";
-    go("login");
-    toast(tx("Sesión cerrada"));
-    // 2) recién después aviso al servidor y limpio su token (en segundo plano)
-    setTimeout(async ()=>{
-      try{ await sbSalir(); }catch(e){}
-      try{ limpiarTokenSB(); }catch(e){}
-    }, 0);
+    await guardar();
+    // recarga limpia: garantiza que no quede rastro de la sesión (sobre todo con Google)
+    try{ sessionStorage.setItem("esp_logout","1"); }catch(e){}
+    location.reload();
   }, false);
 }
+/* pequeña espera con tope, para no quedarnos colgados esperando al servidor */
+function esperar(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
 /* Borra el token que la librería de Supabase deja en el navegador,
    para que al recargar la página no vuelva a reconocer la sesión. */
@@ -10003,14 +10017,14 @@ async function ejecutarBaja(){
     // cierro sesión en el servidor
     try{ await sbSalir(); }catch(e){}
   }
-  // 2) limpio todo lo local
+  ACABA_DE_SALIR = true;
+  try{ await Promise.race([ sbSalir(), esperar(1200) ]); }catch(e){}
+  try{ limpiarTokenSB(); }catch(e){}
+  // 2) limpio todo lo local (sin recrear "Mi empresa": el onboarding la pedirá al volver a entrar)
   S.sesion = null; S.mundo=""; S.empresas=[]; S.activa=null; S.usuarios={};
-  nuevaEmpresa("Mi empresa");
   await guardar();
-  pintarShell();
-  P.authModo = "elegir";
-  go("login");
-  modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras."));
+  try{ sessionStorage.setItem("esp_logout","1"); sessionStorage.setItem("esp_baja","1"); }catch(e){}
+  location.reload();
 }
 
 /* --- pantalla de acceso --- */
@@ -10783,6 +10797,18 @@ function vPro(){
   <div style="height:10px"></div>`;
 }
 /* bloque para la pantalla de Ajustes */
+function proBloqueBody(){
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <div><b>${esPro()?tx("Espiral Pro"):tx("Espiral gratis")}</b>
+        <div class="tiny muted">${esPro()
+          ? tx("Todos los módulos habilitados")
+          : tx("Auditoría, IPER, permisos, protocolos, contratistas y panel están bloqueados")}</div></div>
+      ${esPro()
+        ? `<button class="btn ghost sm" onclick="desactivarPro()">${tx("Volver a gratis")}</button>`
+        : `<button class="btn sm" onclick="irPro('')">${tx("Ver Pro")}</button>`}
+    </div>`;
+}
 function proBloque(){
   return `
   <section class="block">
@@ -11057,6 +11083,26 @@ function bkAplicar(modo){
   go("ajustes");
 }
 /* bloque para la pantalla de Ajustes */
+function bkBloqueBody(){
+  const reg  = bkContar(S.empresas);
+  const ult  = S.ultBackup ? fecha(S.ultBackup) : null;
+  const dias = S.ultBackup ? Math.floor((Date.now()-new Date(S.ultBackup))/86400000) : null;
+  const aviso = !ult && reg>0
+    ? `<p class="small" style="margin:0 0 12px;color:var(--c1)"><b>${tx("Todavía no hiciste ninguna copia.")}</b>
+        ${tx("Los datos viven en este navegador: si borrás la caché o cambiás de teléfono, se pierden.")}</p>`
+    : (dias!==null && dias>30
+      ? `<p class="small" style="margin:0 0 12px;color:var(--c2)">${tx("Tu última copia es de hace")} ${dias} ${tx("días")}. ${tx("Conviene hacer una nueva.")}</p>`
+      : `<p class="small muted" style="margin:0 0 12px">${tx("Última copia:")} <b>${ult?esc(ult):"—"}</b></p>`);
+  return `
+    ${aviso}
+    <div class="tiny muted" style="margin:0 0 12px">
+      ${(S.empresas||[]).length} ${(S.empresas||[]).length===1?tx("empresa"):tx("empresas")} ·
+      ${reg} ${tx("registros")} · ${bkPeso()} KB</div>
+    <button class="btn" onclick="bkExportar()">${tx("Descargar copia de seguridad")}</button>
+    <p class="tiny muted" style="margin:6px 2px 12px">${tx("Guarda un archivo con todas tus empresas y registros. Mandátelo por mail o subilo a la nube.")}</p>
+    <button class="btn soft" onclick="bkAbrir()">${tx("Restaurar desde un archivo")}</button>
+    <input type="file" accept=".json,application/json" id="fBk" style="display:none" onchange="bkArchivo(this)">`;
+}
 function bkBloque(){
   const reg  = bkContar(S.empresas);
   const ult  = S.ultBackup ? fecha(S.ultBackup) : null;
@@ -11114,12 +11160,22 @@ async function arrancarSesion(){
   const spslo = document.getElementById("spslo");
   if(spslo) spslo.textContent = t("app.slogan");
 
+  // ¿Venimos de cerrar sesión o dar de baja? Entonces no re-logueamos.
+  let veniaDeLogout = false, veniaDeBaja = false;
+  try{
+    veniaDeLogout = sessionStorage.getItem("esp_logout")==="1";
+    veniaDeBaja = sessionStorage.getItem("esp_baja")==="1";
+    sessionStorage.removeItem("esp_logout"); sessionStorage.removeItem("esp_baja");
+  }catch(e){}
+  if(veniaDeLogout){ ACABA_DE_SALIR = true; try{ limpiarTokenSB(); }catch(e){} }
+
   // 1) intento conectar con el servidor
   sbInit();
+  if(veniaDeLogout && sbOn()){ try{ await sbSalir(); }catch(e){} }
 
   // 2) si el servidor está y hay una sesión real (o volvemos del redirect de Google)
   if(sbOn()){
-    let u = await sbUsuario();
+    let u = ACABA_DE_SALIR ? null : await sbUsuario();
     if(u){
       await entrarConUsuario(u);          // deja la pantalla en "mundos"
     } else {
@@ -11137,7 +11193,8 @@ async function arrancarSesion(){
   if(sbOn()){
     try{
       SB.auth.onAuthStateChange(async (evt, sess)=>{
-        if(evt==="SIGNED_IN" && sess && sess.user && !sesionActiva()){
+        if(evt==="SIGNED_OUT"){ ACABA_DE_SALIR = false; return; }
+        if(evt==="SIGNED_IN" && sess && sess.user && !sesionActiva() && !ACABA_DE_SALIR){
           await entrarConUsuario(sess.user);
           const sp=document.getElementById("splash"); if(sp) sp.remove();
         }
@@ -11148,6 +11205,7 @@ async function arrancarSesion(){
   setTimeout(()=>{
     const sp = document.getElementById("splash");
     if(sp){ sp.classList.add("oculto"); setTimeout(()=>sp.remove(), 650); }
+    if(veniaDeBaja){ modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras.")); }
   }, 2200);
 }
 </script>
