@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --c1:#E4572E; --c2:#F5A524; --c3:#F2CD31; --c4:#3FA34D;
@@ -344,6 +345,105 @@ const DB = {
 };
 
 let S = { tema:'claro', empresas:[], activa:null, mundo:'' };
+
+/* ============================================================
+   SUPABASE  ·  conexión con el servidor
+   La clave "anon" es pública por diseño: sola no da acceso a nada,
+   porque las reglas (RLS) del servidor deciden quién ve qué.
+   Si el servidor no está disponible, la app sigue andando local.
+   ============================================================ */
+const SB_URL = "https://ojslewybmcayfmvuhqsc.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qc2xld3libWNheWZtdnVocXNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MTAzNjgsImV4cCI6MjA5ODI4NjM2OH0.onJwn_5Gpn9FlH09Q8wZYMiL4YkKKFzTvs4jO7h6Gmc";
+let SB = null;
+function sbInit(){
+  try{
+    if(window.supabase && window.supabase.createClient){
+      SB = window.supabase.createClient(SB_URL, SB_KEY);
+      return true;
+    }
+  }catch(e){ console.warn("Supabase no disponible:", e); }
+  return false;
+}
+function sbOn(){ return !!SB; }
+
+/* --- Auth real --- */
+async function sbUsuario(){
+  if(!SB) return null;
+  try{
+    const { data } = await SB.auth.getUser();
+    return data && data.user ? data.user : null;
+  }catch(e){ return null; }
+}
+async function sbRegistro(email, pass, nombre){
+  if(!SB) return { error: tx("No hay conexión con el servidor.") };
+  const { data, error } = await SB.auth.signUp({
+    email, password: pass,
+    options:{ data:{ nombre }, emailRedirectTo: location.href.split("#")[0] }
+  });
+  if(error) return { error: sbMsgError(error) };
+  return { data };
+}
+async function sbLogin(email, pass){
+  if(!SB) return { error: tx("No hay conexión con el servidor.") };
+  const { data, error } = await SB.auth.signInWithPassword({ email, password: pass });
+  if(error) return { error: sbMsgError(error) };
+  return { data };
+}
+async function sbGoogle(){
+  if(!SB) return { error: tx("No hay conexión con el servidor.") };
+  const { error } = await SB.auth.signInWithOAuth({
+    provider:"google",
+    options:{ redirectTo: location.href.split("#")[0] }
+  });
+  if(error) return { error: sbMsgError(error) };
+  return {};
+}
+async function sbSalir(){
+  if(SB){ try{ await SB.auth.signOut(); }catch(e){} }
+}
+function sbMsgError(error){
+  const m = (error && error.message || "").toLowerCase();
+  if(m.indexOf("already registered")>=0 || m.indexOf("already been registered")>=0) return tx("Ese correo ya tiene una cuenta. Probá iniciar sesión.");
+  if(m.indexOf("invalid login")>=0) return tx("Correo o contraseña incorrectos.");
+  if(m.indexOf("email not confirmed")>=0) return tx("Falta confirmar tu correo. Revisá tu casilla.");
+  if(m.indexOf("password")>=0 && m.indexOf("6")>=0) return tx("La contraseña necesita al menos 6 caracteres.");
+  return error.message || tx("No se pudo completar. Probá de nuevo.");
+}
+
+/* --- Empresas en el servidor --- */
+async function sbCargarEmpresas(){
+  if(!SB) return null;
+  try{
+    const { data, error } = await SB.from("esp_empresas")
+      .select("id, owner, razon, equipo, datos, actualizado_en")
+      .order("actualizado_en", { ascending:false });
+    if(error){ console.warn("cargar empresas:", error); return null; }
+    return data || [];
+  }catch(e){ console.warn(e); return null; }
+}
+async function sbGuardarEmpresa(emp){
+  if(!SB) return { error:"offline" };
+  const fila = {
+    id: emp.id,
+    razon: emp.razon || "",
+    equipo: emp.roles || {},
+    datos: emp.datos || {},
+    actualizado_en: new Date().toISOString()
+  };
+  // owner solo se setea al crear; en update no se toca
+  try{
+    const u = await sbUsuario();
+    if(!u) return { error:"sin sesión" };
+    fila.owner = emp.ownerId || u.id;
+    const { error } = await SB.from("esp_empresas").upsert(fila);
+    if(error) return { error };
+    return {};
+  }catch(e){ return { error:e }; }
+}
+async function sbBorrarEmpresa(id){
+  if(!SB) return;
+  try{ await SB.from("esp_empresas").delete().eq("id", id); }catch(e){ console.warn(e); }
+}
 const COLECCIONES = ["insp","personal","epp","inv","iper","docs","cap","ptt","lux","aud","crono","parte","agua","idea"];
 /* ============================================================
    IDIOMAS · español · english · português
@@ -522,9 +622,11 @@ function crearEmpresaPrompt(){
   });
 }
 function borrarEmpresa(){
+  if(!exigeAdmin()) return;
   if((S.empresas||[]).length<2) return toast(tx("Tiene que quedar al menos una empresa"));
   if(!gate("Se elimina «"+(S.empresa.razon||"")+"» con TODOS sus registros. ¿Continuar?", ()=>borrarEmpresa())) return;
   const id = S.activa;
+  sbBorrarEmpresa(id);   // borra en el servidor si hay sesión
   S.empresas = S.empresas.filter(e=>e.id!==id);
   S.activa = S.empresas[0].id;
   guardar(); pintarEmpresa(); go("inicio"); toast(tx("Empresa eliminada"));
@@ -802,7 +904,21 @@ async function guardar(){
     AVISO_GUARDA = true;
     toast(tx("No se pudo guardar en este dispositivo. Bajá una copia de seguridad."));
   }
+  empujarEmpresaActiva();   // sube al servidor si hay sesión (no bloquea)
   return ok;
+}
+let EMPUJE_T = null;
+function empujarEmpresaActiva(){
+  if(!sbOn() || !sesionActiva()) return;
+  const e = S.empresa;
+  if(!e || !e.id) return;
+  // solo empujo empresas donde soy dueño o miembro (las mías); con debounce
+  clearTimeout(EMPUJE_T);
+  const snapshot = { id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos };
+  EMPUJE_T = setTimeout(async ()=>{
+    const r = await sbGuardarEmpresa(snapshot);
+    if(r && r.error){ /* si falla, queda guardado local igual */ }
+  }, 900);
 }
 
 function toggleTema(){
@@ -4176,6 +4292,18 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"No hay conexión con el servidor.":["No connection to the server.","Sem conexão com o servidor."],
+"Ese correo ya tiene una cuenta. Probá iniciar sesión.":["That email already has an account. Try logging in.","Esse e-mail já tem conta. Tente entrar."],
+"Correo o contraseña incorrectos.":["Wrong email or password.","E-mail ou senha incorretos."],
+"Falta confirmar tu correo. Revisá tu casilla.":["You still need to confirm your email. Check your inbox.","Falta confirmar seu e-mail. Verifique sua caixa."],
+"La contraseña necesita al menos 6 caracteres.":["Password needs at least 6 characters.","A senha precisa de ao menos 6 caracteres."],
+"No se pudo completar. Probá de nuevo.":["Couldn't complete it. Try again.","Não foi possível concluir. Tente de novo."],
+"Abriendo Google…":["Opening Google…","Abrindo o Google…"],
+"Creando…":["Creating…","Criando…"],
+"Entrando…":["Entering…","Entrando…"],
+"Te enviamos un correo para confirmar tu cuenta. Confirmalo y después iniciá sesión.":["We sent you an email to confirm your account. Confirm it and then log in.","Enviamos um e-mail para confirmar sua conta. Confirme e depois entre."],
+"¿Cerrar sesión?":["Log out?","Sair?"],
+"Entendido":["Got it","Entendi"],
 "Continuar con Google":["Continue with Google","Continuar com o Google"],
 "o":["or","ou"],
 "Registrarme con mi correo":["Sign up with email","Cadastrar com e-mail"],
@@ -9734,17 +9862,21 @@ function esAdmin(){ return rolActual()==="admin"; }
 /* ¿puede el usuario hacer tareas de administración? (personal, empresas, borrados sensibles) */
 function puedeAdministrar(){ return esAdmin(); }
 
-function iniciarSesion(email, nombre, via){
-  S.sesion = { email:(email||"").trim().toLowerCase(), nombre:(nombre||"").trim()||(email||"").split("@")[0], via:via||"mail", desde:hoy() };
+function iniciarSesion(email, nombre, via, uid){
+  S.sesion = { email:(email||"").trim().toLowerCase(), nombre:(nombre||"").trim()||(email||"").split("@")[0], via:via||"mail", uid:uid||null, desde:hoy() };
   // al primer login, si hay empresas sin dueño, lo adopto como admin
-  (S.empresas||[]).forEach(e=>{ if(!e.ownerEmail){ e.ownerEmail = S.sesion.email; } });
+  (S.empresas||[]).forEach(e=>{
+    if(!e.ownerEmail){ e.ownerEmail = S.sesion.email; }
+    if(!e.ownerId && uid){ e.ownerId = uid; }
+  });
   guardar();
   S.mundo = "";
   go("mundos");
   pintarShell();
 }
 function cerrarSesion(){
-  gate(tx("¿Cerrar sesión en este dispositivo?"), ()=>{
+  gate(tx("¿Cerrar sesión?"), async ()=>{
+    await sbSalir();
     S.sesion = null; S.mundo=""; guardar(); pintarShell(); go("login");
   });
 }
@@ -9790,8 +9922,14 @@ function vLogin(){
     ${cuerpo}
   </div>`;
 }
-function loginGoogle(){
-  // MAQUETA: sin Supabase no hay Google real. Simulamos una cuenta.
+async function loginGoogle(){
+  if(sbOn()){
+    toast(tx("Abriendo Google…"));
+    const r = await sbGoogle();
+    if(r.error) toast(r.error);
+    return; // Google redirige; al volver, arrancarSesion detecta la sesión
+  }
+  // Sin servidor: maqueta local
   modalCampos(tx("Entrar con Google (demo)"), [
     {l:tx("Correo de Google"), ph:"tu@gmail.com"},
     {l:tx("Tu nombre"), ph:tx("Nombre y apellido")}
@@ -9800,21 +9938,113 @@ function loginGoogle(){
     iniciarSesion(v[0], v[1], "google");
   });
 }
-function hacerRegistro(){
-  const nom=($("#au_nom")||{}).value, mail=($("#au_mail")||{}).value, pass=($("#au_pass")||{}).value;
+async function hacerRegistro(){
+  const nom=($("#au_nom")||{}).value, mail=(($("#au_mail")||{}).value||"").trim(), pass=($("#au_pass")||{}).value;
   if(!mail || !/@/.test(mail)) return toast(tx("Poné un correo válido"));
-  if(!pass || pass.length<4) return toast(tx("La contraseña es muy corta"));
-  // MAQUETA: guardamos el usuario en el dispositivo, sin verificación real
+  if(!pass || pass.length<6) return toast(tx("La contraseña necesita al menos 6 caracteres."));
+  if(sbOn()){
+    const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Creando…"); }
+    const r = await sbRegistro(mail, pass, nom);
+    if(btn){ btn.disabled=false; btn.textContent=tx("Crear mi cuenta"); }
+    if(r.error) return toast(r.error);
+    // Si el proyecto exige confirmar el correo, no hay sesión todavía
+    const u = await sbUsuario();
+    if(u){ await entrarConUsuario(u); }
+    else { P.authModo="mail"; render(); modalAviso(tx("Te enviamos un correo para confirmar tu cuenta. Confirmalo y después iniciá sesión.")); }
+    return;
+  }
+  // Sin servidor: maqueta local
   S.usuarios = S.usuarios || {};
   S.usuarios[mail.trim().toLowerCase()] = { nombre:nom, pass, desde:hoy() };
   iniciarSesion(mail, nom, "mail");
 }
-function hacerLogin(){
-  const mail=(($("#au_mail")||{}).value||"").trim().toLowerCase(), pass=($("#au_pass")||{}).value;
-  const u = (S.usuarios||{})[mail];
+async function hacerLogin(){
+  const mail=(($("#au_mail")||{}).value||"").trim(), pass=($("#au_pass")||{}).value;
+  if(!mail || !/@/.test(mail)) return toast(tx("Poné un correo válido"));
+  if(sbOn()){
+    const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Entrando…"); }
+    const r = await sbLogin(mail, pass);
+    if(btn){ btn.disabled=false; btn.textContent=tx("Entrar"); }
+    if(r.error) return toast(r.error);
+    const u = await sbUsuario();
+    if(u) await entrarConUsuario(u);
+    return;
+  }
+  // Sin servidor: maqueta local
+  const ml = mail.toLowerCase();
+  const u = (S.usuarios||{})[ml];
   if(!u){ return toast(tx("No encontramos esa cuenta. ¿Te registraste?")); }
   if(u.pass !== pass){ return toast(tx("Contraseña incorrecta")); }
-  iniciarSesion(mail, u.nombre, "mail");
+  iniciarSesion(ml, u.nombre, "mail");
+}
+
+/* Con un usuario real del servidor: traigo sus empresas y entro */
+async function entrarConUsuario(u){
+  const email = (u.email||"").toLowerCase();
+  const nombre = (u.user_metadata && (u.user_metadata.nombre || u.user_metadata.full_name)) || email.split("@")[0];
+  S.sesion = { email, nombre, via:"sb", uid:u.id, desde:hoy() };
+  await sincronizarDesdeServidor();
+  guardar();
+  S.mundo = "";
+  pintarShell();
+  go("mundos");
+}
+
+/* Convierte una fila del servidor en el formato de empresa que usa la app */
+function filaAEmpresa(f){
+  return {
+    id: f.id,
+    razon: f.razon || "",
+    ownerId: f.owner || "",
+    ownerEmail: (S.sesion && S.sesion.uid===f.owner) ? S.sesion.email : (f._ownerEmail||""),
+    roles: f.equipo || {},
+    datos: f.datos || {},
+    _serverTs: f.actualizado_en || ""
+  };
+}
+
+/* Trae las empresas del servidor y las fusiona con lo local.
+   Regla simple: el servidor manda para lo que ya existe allá;
+   lo que está solo en el dispositivo (creado offline) se sube. */
+async function sincronizarDesdeServidor(){
+  if(!sbOn() || !sesionActiva()) return;
+  const remotas = await sbCargarEmpresas();
+  if(remotas===null){ return; } // sin conexión: seguimos con lo local
+  const locales = S.empresas || [];
+  const porId = {};
+  locales.forEach(e=> porId[e.id]=e);
+
+  // 1) las del servidor entran / pisan a las locales del mismo id
+  remotas.forEach(f=>{ porId[f.id] = filaAEmpresa(f); });
+
+  // 2) las locales que NO están en el servidor y son mías → las subo
+  const idsRemotos = new Set(remotas.map(f=>f.id));
+  for(const e of locales){
+    if(!idsRemotos.has(e.id)){
+      // es una empresa creada en este dispositivo: la subo como propia
+      if(!e.ownerId && S.sesion.uid) e.ownerId = S.sesion.uid;
+      if(!e.ownerEmail) e.ownerEmail = S.sesion.email;
+      const r = await sbGuardarEmpresa(e);
+      if(!r.error) porId[e.id] = e;
+    }
+  }
+
+  S.empresas = Object.values(porId);
+  if(!S.empresas.length){ nuevaEmpresa("Mi empresa"); }
+  else if(!S.empresas.some(e=>e.id===S.activa)){ S.activa = S.empresas[0].id; }
+  definirActiva();
+}
+
+/* Aviso simple de una sola línea con botón Entendido */
+function modalAviso(msg){
+  cerrarModal();
+  const ov = document.createElement("div");
+  ov.className = "modal";
+  ov.innerHTML = `<div class="mcard" style="text-align:left">
+    <p class="small" style="margin:0 0 14px">${esc(msg)}</p>
+    <button class="btn" onclick="cerrarModal()">${tx("Entendido")}</button>
+  </div>`;
+  document.body.appendChild(ov);
 }
 
 const MUNDOS = {
@@ -10616,14 +10846,41 @@ function bkBloque(){
 })();
 
 /* Splash unos segundos y después: sesión → mundos; sin sesión → login */
-function arrancarSesion(){
+async function arrancarSesion(){
   const spslo = document.getElementById("spslo");
   if(spslo) spslo.textContent = t("app.slogan");
-  const destino = () => {
+
+  // 1) intento conectar con el servidor
+  sbInit();
+
+  // 2) si el servidor está y hay una sesión real (o volvemos del redirect de Google)
+  if(sbOn()){
+    let u = await sbUsuario();
+    if(u){
+      await entrarConUsuario(u);          // deja la pantalla en "mundos"
+    } else {
+      // limpio cualquier resto de sesión local: sin servidor validado, no hay sesión
+      if(S.sesion && S.sesion.via==="sb"){ S.sesion=null; }
+      P.authModo="elegir"; go("login");
+    }
+  } else {
+    // 3) sin servidor: uso la maqueta local como antes
     if(sesionActiva()){ S.mundo=""; go("mundos"); }
     else { P.authModo="elegir"; go("login"); }
-  };
-  destino();               // preparo la pantalla debajo del splash
+  }
+
+  // 4) escucho cambios de sesión (por si Google vuelve un instante después)
+  if(sbOn()){
+    try{
+      SB.auth.onAuthStateChange(async (evt, sess)=>{
+        if(evt==="SIGNED_IN" && sess && sess.user && !sesionActiva()){
+          await entrarConUsuario(sess.user);
+          const sp=document.getElementById("splash"); if(sp) sp.remove();
+        }
+      });
+    }catch(e){}
+  }
+
   setTimeout(()=>{
     const sp = document.getElementById("splash");
     if(sp){ sp.classList.add("oculto"); setTimeout(()=>sp.remove(), 650); }
