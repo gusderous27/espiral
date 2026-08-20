@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer onerror="window.__sbFail=1"></script>
 <style>
 :root{
   --c1:#E4572E; --c2:#F5A524; --c3:#F2CD31; --c4:#3FA34D;
@@ -233,7 +233,7 @@ label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ===== Bienvenida (splash) y acceso ===== */
-#splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;
+#splash{position:fixed;inset:0;z-index:9999;pointer-events:none;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:16px;background:var(--bg);
   transition:opacity .6s ease;text-align:center;padding:24px}
 #splash.oculto{opacity:0;pointer-events:none}
@@ -255,12 +255,12 @@ label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
 #splash .sp-slo{font-size:14px;color:var(--muted);opacity:0;
   animation:spfade .7s ease 1.2s forwards}
 @keyframes spfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.authwrap{max-width:400px;margin:0 auto;padding:30px 22px;min-height:80vh;
+.authwrap{position:relative;z-index:10001;max-width:400px;margin:0 auto;padding:30px 22px;min-height:80vh;
   display:flex;flex-direction:column;justify-content:center;gap:18px}
 .authwrap .auth-iso{width:66px;height:66px;margin:0 auto}
 .authwrap h1{font-size:24px;font-weight:800;text-align:center;margin:0}
 .authwrap .sub{font-size:14px;color:var(--muted);text-align:center;margin:-6px 0 6px}
-.authbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+.authbtn{position:relative;z-index:10002;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
   padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--card);
   font-size:15px;font-weight:600;color:var(--text);cursor:pointer;transition:.15s}
 .authbtn:active{transform:scale(.99)}
@@ -294,6 +294,17 @@ label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
   <div class="sp-name">Espiral</div>
   <div class="sp-slo" id="spslo">Cada vuelta, un nivel más arriba</div>
 </div>
+<script>
+/* Salvavidas del splash: se remueve solo a los 2s pase lo que pase con el resto del JS.
+   Así nunca queda una capa invisible tapando los botones de acceso. */
+(function(){
+  function fueraSplash(){
+    var sp=document.getElementById("splash");
+    if(sp && sp.parentNode) sp.parentNode.removeChild(sp);
+  }
+  setTimeout(fueraSplash, 1600);
+})();
+</script>
 <header>
   <div class="hrow">
     <button class="icb" id="bback" onclick="volver()" title="Volver" style="display:none;margin-right:10px">←</button>
@@ -328,6 +339,35 @@ label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
 <div class="toast" id="toast"></div>
 
 <script>
+/* ============================================================
+   DIAGNÓSTICO: muestra en pantalla cualquier error de JavaScript,
+   para poder verlo en el celular sin abrir la consola.
+   ============================================================ */
+function matarSplash(){
+  var sp=document.getElementById("splash");
+  if(sp && sp.parentNode){ sp.parentNode.removeChild(sp); }
+}
+function mostrarError(msg){
+  try{
+    var d=document.getElementById("errbox");
+    if(!d){
+      d=document.createElement("div");
+      d.id="errbox";
+      d.style.cssText="position:fixed;left:8px;right:8px;bottom:8px;z-index:2147483647;background:#B00020;color:#fff;font:13px/1.4 monospace;padding:12px 14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.4);max-height:45vh;overflow:auto;white-space:pre-wrap";
+      d.onclick=function(){ d.remove(); };
+      (document.body||document.documentElement).appendChild(d);
+    }
+    d.textContent="⚠️ "+msg+"\n\n(tocá este cartel para cerrarlo)";
+  }catch(e){}
+}
+window.addEventListener("error", function(ev){
+  mostrarError("Error: "+(ev.message||"")+"\nen "+((ev.filename||"").split("/").pop())+":"+ev.lineno+":"+ev.colno);
+});
+
+window.addEventListener("unhandledrejection", function(ev){
+  var r=ev.reason; mostrarError("Promesa rechazada: "+((r&&r.message)||r||"?"));
+});
+
 /* ============================================================
    ALMACENAMIENTO  (artifact storage -> localStorage -> memoria)
    ============================================================ */
@@ -366,6 +406,7 @@ let S = { tema:'claro', empresas:[], activa:null, mundo:'' };
 const SB_URL = "https://ojslewybmcayfmvuhqsc.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qc2xld3libWNheWZtdnVocXNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3MTAzNjgsImV4cCI6MjA5ODI4NjM2OH0.onJwn_5Gpn9FlH09Q8wZYMiL4YkKKFzTvs4jO7h6Gmc";
 let SB = null;
+const ISO_PATHS = `<path d="M75.2 58.6L75.6 56.8L75.7 55.0L75.8 53.2L75.7 51.5L75.6 49.8L75.3 48.1L74.9 46.4L74.4 44.8L73.7 43.2L73.0 41.7L72.2 40.3L71.3 38.9L70.3 37.6L69.3 36.4L68.2 35.3L67.0 34.2L65.7 33.3L64.4 32.5L63.1 31.7L61.7 31.1L60.3 30.5L58.9 30.1L57.5 29.7L56.0 29.5L54.6 29.3L53.2 29.3L51.7 29.3L50.3 29.5L49.0 29.7L47.6 30.0L46.3 30.5L45.1 31.0L43.9 31.5L42.8 32.2L41.7 32.9L40.7 33.7L39.7 34.6L38.8 35.5L38.0 36.4L37.3 37.4L36.6 38.4L36.1 39.5L35.6 40.5L35.2 41.6L34.8 42.8L34.6 43.9L34.4 45.0L34.3 46.1L34.3 47.2L34.4 48.3L34.5 49.3L34.7 50.4L35.0 51.4L35.3 52.3L35.8 53.3L36.2 54.2L36.7 55.0L37.3 55.8L37.9 56.5L38.6 57.2L39.2 57.8L40.0 58.4L40.7 58.9L41.5 59.3L42.3 59.7L43.0 60.0L43.8 60.3L44.7 60.5L45.5 60.6L46.3 60.7L47.0 60.7L47.8 60.7L48.6 60.6L49.3 60.4L50.0 60.2L50.7 60.0L51.3 59.7L51.9 59.4L52.5 59.0L53.0 58.6L53.5 58.2L53.9 57.8L54.3 57.3L54.7 56.8L55.0 56.3L55.3 55.8L55.5 55.3L55.7 54.8L55.8 54.2L55.9 53.7L55.9 53.2L55.9 52.7L55.9 52.2L55.8 51.8L55.7 51.3L55.6 50.9L55.4 50.5L55.2 50.1L55.0 49.8L54.7 49.5L54.5 49.2L54.2 49.0L53.9 48.7L53.6 48.6L53.3 48.4L53.0 48.3L52.7 48.2L52.4 48.2L52.1 48.2L51.8 48.2" fill="none" stroke="#0E7C86" stroke-width="8.4" stroke-linecap="round"/><path d="M75.3 15.2L74.0 14.5L72.7 13.8L71.4 13.1L70.1 12.5L68.8 11.9L67.4 11.4L66.1 11.0L64.7 10.5L63.3 10.2L61.9 9.8L60.5 9.6L59.1 9.3L57.7 9.2L56.3 9.0L54.9 9.0L53.5 8.9L52.1 8.9L50.7 9.0L49.3 9.1L47.9 9.3" fill="none" stroke="#E4572E" stroke-width="10.4" stroke-linecap="round"/><path d="M50.1 9.0L48.7 9.2L47.3 9.4L45.9 9.6L44.6 9.9L43.2 10.2L41.9 10.5L40.6 10.9L39.3 11.4L38.0 11.9L36.8 12.4L35.5 13.0L34.3 13.6L33.2 14.2L32.0 14.9L30.9 15.7L29.8 16.4L28.7 17.2L27.7 18.1L26.7 18.9L25.7 19.8" fill="none" stroke="#F5A524" stroke-width="10.1" stroke-linecap="round"/><path d="M27.2 18.4L26.2 19.3L25.3 20.2L24.4 21.2L23.5 22.1L22.6 23.1L21.8 24.2L21.0 25.2L20.3 26.3L19.6 27.4L18.9 28.5L18.3 29.6L17.7 30.7L17.2 31.9L16.7 33.1L16.2 34.3L15.8 35.5L15.4 36.7L15.1 37.9L14.8 39.1L14.6 40.3" fill="none" stroke="#F2CD31" stroke-width="9.8" stroke-linecap="round"/><path d="M15.0 38.4L14.7 39.7L14.5 40.9L14.3 42.1L14.2 43.4L14.1 44.6L14.0 45.8L14.0 47.1L14.1 48.3L14.1 49.5L14.2 50.7L14.4 52.0L14.6 53.2L14.8 54.3L15.1 55.5L15.4 56.7L15.8 57.8L16.2 59.0L16.6 60.1L17.1 61.2L17.6 62.2" fill="none" stroke="#3FA34D" stroke-width="9.6" stroke-linecap="round"/><path d="M16.8 60.6L17.3 61.6L17.8 62.7L18.4 63.7L18.9 64.8L19.6 65.8L20.2 66.7L20.9 67.7L21.6 68.6L22.3 69.5L23.1 70.3L23.9 71.2L24.7 72.0L25.6 72.7L26.4 73.5L27.3 74.2L28.2 74.9L29.1 75.5L30.1 76.1L31.1 76.7L32.0 77.2" fill="none" stroke="#17A2C6" stroke-width="9.3" stroke-linecap="round"/><path d="M30.5 76.4L31.5 76.9L32.5 77.4L33.5 77.9L34.5 78.4L35.5 78.8L36.5 79.2L37.6 79.5L38.6 79.8L39.7 80.1L40.7 80.3L41.8 80.5L42.9 80.6L43.9 80.8L45.0 80.8L46.1 80.9L47.1 80.9L48.2 80.9L49.2 80.8L50.3 80.7L51.3 80.5" fill="none" stroke="#2E5EAA" stroke-width="9.0" stroke-linecap="round"/><path d="M49.7 80.7L50.8 80.6L51.8 80.5L52.8 80.3L53.8 80.1L54.8 79.8L55.8 79.5L56.8 79.2L57.7 78.8L58.7 78.5L59.6 78.0L60.5 77.6L61.4 77.1L62.3 76.6L63.1 76.1L63.9 75.5L64.8 74.9L65.5 74.3L66.3 73.7L67.0 73.0L67.7 72.4" fill="none" stroke="#7B4EA8" stroke-width="8.7" stroke-linecap="round"/><path d="M66.6 73.4L67.3 72.7L68.0 72.1L68.7 71.3L69.3 70.6L69.9 69.9L70.5 69.1L71.1 68.3L71.6 67.5L72.1 66.7L72.6 65.9L73.0 65.1L73.4 64.2L73.8 63.4L74.1 62.5L74.4 61.6L74.7 60.7L74.9 59.8L75.2 59.0L75.3 58.1L75.5 57.2" fill="none" stroke="#E0457B" stroke-width="8.4" stroke-linecap="round"/>`;  // logo del espiral, para reusar sin depender del splash
 let ACABA_DE_SALIR = false;  // evita que el arranque re-loguee justo tras cerrar sesión / dar de baja
 function sbInit(){
   try{
@@ -1085,6 +1126,7 @@ function render(){
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
     verAud:()=>vVerAud(P.verId), pro:vPro}[P.page] || vInicio;
   const enAuth = (P.page==="login" || P.page==="onboarding");
+  if(enAuth){ try{ matarSplash(); }catch(e){} }  // el splash no debe tapar los botones de acceso
   const hdr=document.querySelector("header"), nv=document.querySelector("nav");
   if(hdr) hdr.style.display = enAuth ? "none" : "";
   if(nv) nv.style.display = enAuth ? "none" : "";
@@ -10158,9 +10200,14 @@ async function ejecutarBaja(){
 }
 
 /* --- pantalla de acceso --- */
+function authIr(modo){
+  matarSplash();
+  try{ P.authModo = modo; render(); }
+  catch(e){ mostrarError("Al abrir el formulario: "+(e&&e.message||e)); }
+}
 function vLogin(){
   const modo = P.authModo || "elegir"; // elegir | mail | registro
-  const iso = `<svg class="auth-iso" viewBox="0 0 100 100" aria-hidden="true">${document.querySelector('#splash .sp-iso').innerHTML}</svg>`;
+  const iso = `<svg class="auth-iso" viewBox="0 0 100 100" aria-hidden="true">${ISO_PATHS}</svg>`;
   let cuerpo;
   if(modo==="elegir"){
     cuerpo = `
@@ -10169,8 +10216,8 @@ function vLogin(){
         ${tx("Continuar con Google")}
       </button>
       <div class="authsep">${tx("o")}</div>
-      <button class="authbtn prim" onclick="P.authModo='registro';render()">${tx("Registrarme con mi correo")}</button>
-      <button class="authbtn" onclick="P.authModo='mail';render()">${tx("Ya tengo cuenta")}</button>
+      <button class="authbtn prim" onclick="authIr('registro')">${tx("Registrarme con mi correo")}</button>
+      <button class="authbtn" onclick="authIr('mail')">${tx("Ya tengo cuenta")}</button>
       <p class="legal">${tx("Al continuar aceptás nuestros términos y la política de privacidad.")}</p>`;
   } else if(modo==="registro"){
     cuerpo = `
@@ -10181,7 +10228,7 @@ function vLogin(){
       <div class="fld"><label>${tx("Contraseña")}</label>
         <input id="au_pass" type="password" placeholder="${tx("Elegí una contraseña")}"></div>
       <button class="authbtn prim" onclick="hacerRegistro()">${tx("Crear mi cuenta")}</button>
-      <div class="toglink" onclick="P.authModo='elegir';render()">${tx("Volver")}</div>`;
+      <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
   } else {
     cuerpo = `
       <div class="fld"><label>${tx("Correo")}</label>
@@ -10189,11 +10236,12 @@ function vLogin(){
       <div class="fld"><label>${tx("Contraseña")}</label>
         <input id="au_pass" type="password" placeholder="${tx("Tu contraseña")}"></div>
       <button class="authbtn prim" onclick="hacerLogin()">${tx("Entrar")}</button>
-      <div class="toglink" onclick="P.authModo='elegir';render()">${tx("Volver")}</div>`;
+      <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
   }
   return `<div class="authwrap">
     ${iso}
     <h1>${modo==="registro"?tx("Crear tu cuenta"):modo==="mail"?tx("Iniciar sesión"):tx("Bienvenido a Espiral")}</h1>
+    <div style="text-align:center;font-size:11px;color:var(--muted);margin:-8px 0 4px">v2.0 · ${new Date().toISOString().slice(0,10)}</div>
     <p class="sub">${t("app.slogan")}</p>
     ${cuerpo}
   </div>`;
@@ -10384,7 +10432,7 @@ function cambiarMundo(){ S.mundo = ""; guardar(); go("mundos"); }
    ============================================================ */
 function vOnboarding(){
   const paso = P.onbPaso || "elegir"; // elegir | crear | unirse
-  const iso = `<svg class="auth-iso" viewBox="0 0 100 100" aria-hidden="true">${(document.querySelector('#splash .sp-iso')||{innerHTML:""}).innerHTML}</svg>`;
+  const iso = `<svg class="auth-iso" viewBox="0 0 100 100" aria-hidden="true">${ISO_PATHS}</svg>`;
   let cuerpo;
   if(paso==="elegir"){
     cuerpo = `
@@ -11106,6 +11154,8 @@ document.addEventListener("pointercancel", swSoltar, {passive:true});
 
 /* si arrastró o la fila está abierta, el toque no abre el registro */
 document.addEventListener("click", e=>{
+  // en las pantallas de acceso no hay filas deslizables: no interferir con los botones
+  if(P.page==="login" || P.page==="onboarding") return;
   if(e.target.closest && e.target.closest(".swb")) return;
   const f = e.target.closest && e.target.closest(".swfront");
   if(!f){ swCerrar(); return; }
@@ -11300,15 +11350,34 @@ function bkBloque(){
   pintarShell();
   document.documentElement.setAttribute("data-tema", S.tema||"claro");
   $("#btema").textContent = S.tema==="oscuro" ? "☾" : "☀";
-  arrancarSesion();
+  // Arranco cuando la página terminó de cargar (así Supabase, que va con defer,
+  // ya tuvo su chance). Si ya está lista, arranco de una.
+  if(document.readyState==="complete" || document.readyState==="interactive"){
+    setTimeout(arrancarSesion, 0);
+  } else {
+    window.addEventListener("DOMContentLoaded", arrancarSesion);
+    window.addEventListener("load", ()=>{ if(!ARRANCADO) arrancarSesion(); });
+  }
 })();
+let ARRANCADO = false;
 
-/* Splash unos segundos y después: sesión → mundos; sin sesión → login */
+/* Splash unos segundos y después: sesión → mundos; sin sesión → login.
+   CLAVE: el splash se saca SIEMPRE con tiempo fijo, sin depender del servidor,
+   así nunca queda tapando la pantalla ni bloqueando los botones. */
+function quitarSplash(){
+  const sp = document.getElementById("splash");
+  if(sp){ sp.classList.add("oculto"); setTimeout(()=>{ if(sp&&sp.parentNode) sp.remove(); }, 650); }
+}
 async function arrancarSesion(){
+  if(ARRANCADO) return;   // que no corra dos veces
+  ARRANCADO = true;
   const spslo = document.getElementById("spslo");
   if(spslo) spslo.textContent = t("app.slogan");
 
-  // ¿Venimos de cerrar sesión o dar de baja? Entonces no re-logueamos.
+  // el splash se va sí o sí a los 1.8s, pase lo que pase con el servidor
+  setTimeout(quitarSplash, 1800);
+
+  // ¿Venimos de cerrar sesión o dar de baja?
   let veniaDeLogout = false, veniaDeBaja = false;
   try{
     veniaDeLogout = sessionStorage.getItem("esp_logout")==="1";
@@ -11317,44 +11386,41 @@ async function arrancarSesion(){
   }catch(e){}
   if(veniaDeLogout){ ACABA_DE_SALIR = true; try{ limpiarTokenSB(); }catch(e){} }
 
-  // 1) intento conectar con el servidor
+  // muestro el login de entrada, para que la pantalla esté lista y usable YA
+  P.authModo = "elegir";
+  if(!sesionActiva()) go("login");
+
   sbInit();
   if(veniaDeLogout && sbOn()){ try{ await sbSalir(); }catch(e){} }
 
-  // 2) si el servidor está y hay una sesión real (o volvemos del redirect de Google)
-  if(sbOn()){
-    let u = ACABA_DE_SALIR ? null : await sbUsuario();
-    if(u){
-      await entrarConUsuario(u);          // deja la pantalla en "mundos"
-    } else {
-      // limpio cualquier resto de sesión local: sin servidor validado, no hay sesión
+  // compruebo la sesión con un tope de tiempo, para no colgar la interfaz
+  if(sbOn() && !ACABA_DE_SALIR){
+    let u = null;
+    try{ u = await Promise.race([ sbUsuario(), esperar(3000).then(()=>null) ]); }catch(e){}
+    if(u){ await entrarConUsuario(u); quitarSplash(); }
+    else {
       if(S.sesion && S.sesion.via==="sb"){ S.sesion=null; }
       P.authModo="elegir"; go("login");
     }
-  } else {
-    // 3) sin servidor: uso la maqueta local como antes
+  } else if(!sbOn()){
     if(sesionActiva()){ S.mundo=""; go("mundos"); }
     else { P.authModo="elegir"; go("login"); }
   }
 
-  // 4) escucho cambios de sesión (por si Google vuelve un instante después)
+  // escucho el regreso de Google
   if(sbOn()){
     try{
       SB.auth.onAuthStateChange(async (evt, sess)=>{
         if(evt==="SIGNED_OUT"){ ACABA_DE_SALIR = false; return; }
         if(evt==="SIGNED_IN" && sess && sess.user && !sesionActiva() && !ACABA_DE_SALIR){
           await entrarConUsuario(sess.user);
-          const sp=document.getElementById("splash"); if(sp) sp.remove();
+          quitarSplash();
         }
       });
     }catch(e){}
   }
 
-  setTimeout(()=>{
-    const sp = document.getElementById("splash");
-    if(sp){ sp.classList.add("oculto"); setTimeout(()=>sp.remove(), 650); }
-    if(veniaDeBaja){ modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras.")); }
-  }, 2200);
+  if(veniaDeBaja){ setTimeout(()=>modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras.")), 1900); }
 }
 </script>
 </body>
