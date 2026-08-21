@@ -481,11 +481,18 @@ async function sbCargarEmpresas(){
 }
 async function sbGuardarEmpresa(emp){
   if(!SB) return { error:"offline" };
+  // meto los campos sueltos de la empresa (logo, país, cuit, etc.) dentro de datos._meta
+  // para que viajen al servidor y se compartan entre los miembros del equipo
+  const datos = Object.assign({}, emp.datos || {});
+  datos._meta = {
+    logo: emp.logo||"", pais: emp.pais||"", cuit: emp.cuit||"", obra: emp.obra||"",
+    direccion: emp.direccion||"", contacto: emp.contacto||"", responsable: emp.responsable||""
+  };
   const fila = {
     id: emp.id,
     razon: emp.razon || "",
     equipo: emp.roles || {},
-    datos: emp.datos || {},
+    datos: datos,
     actualizado_en: new Date().toISOString()
   };
   if(emp.codigo) fila.codigo = emp.codigo;
@@ -4414,6 +4421,7 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"¿Dónde querés trabajar hoy?":["Where do you want to work today?","Onde você quer trabalhar hoje?"],
 "Revisá tu correo":["Check your email","Verifique seu e-mail"],
 "Te enviamos un mensaje a":["We sent a message to","Enviamos uma mensagem para"],
 "Abrí ese correo y tocá el enlace para confirmar tu cuenta. Después volvé acá e iniciá sesión.":["Open that email and tap the link to confirm your account. Then come back and log in.","Abra esse e-mail e toque no link para confirmar sua conta. Depois volte e entre."],
@@ -8915,11 +8923,6 @@ function bloqueEquipoBody(){
   const owner = e.ownerEmail||"";
   const miembros = Object.keys(roles);
   return `
-    ${e.codigo?`<div style="text-align:center;padding:6px 0 12px;border-bottom:1px solid var(--line);margin-bottom:12px">
-      <p class="tiny muted" style="margin:0 0 4px">${tx("Código de esta empresa · compartilo para que se sumen")}</p>
-      <div style="font-size:24px;font-weight:800;letter-spacing:4px;color:var(--primary)">${esc(e.codigo)}</div>
-      <button class="btn ghost sm" style="margin-top:8px;width:auto;padding:6px 14px" onclick="copiarCodigo('${esc(e.codigo)}')">${tx("Copiar código")}</button>
-    </div>`:""}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <p class="small muted" style="margin:0">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
       <button class="btn sm" style="width:auto;padding:6px 12px" onclick="invitarMiembro()">${tx("+ Invitar")}</button>
@@ -9043,7 +9046,12 @@ function vAjustes(){
       <span class="dot" style="background:${x.id===S.activa?"var(--ok)":"var(--line)"}"></span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:14.5px">${esc(x.razon||"Sin nombre")}</div>
-        <div class="tiny muted">${esc(x.obra||x.direccion||t("aj.sinDatos"))}</div>
+        ${x.codigo
+          ? `<div class="tiny muted" style="display:flex;align-items:center;gap:6px">
+               <span style="letter-spacing:1.5px;font-weight:700;color:var(--primary)">${esc(x.codigo)}</span>
+               <span onclick="event.stopPropagation();copiarCodigo('${esc(x.codigo)}')" style="cursor:pointer" title="${tx("Copiar código")}">📋</span>
+             </div>`
+          : `<div class="tiny muted">${esc(x.obra||x.direccion||t("aj.sinDatos"))}</div>`}
       </div>
       ${x.id===S.activa?`<span class="pill" style="border-color:var(--ok);color:var(--ok)">${t("aj.activa")}</span>`:""}
     </div>`).join("")}
@@ -9075,12 +9083,6 @@ function vAjustes(){
           ${e.logo?`<button class="btn ghost sm" style="color:var(--no)" onclick="quitarLogo()">${tx("Quitar")}</button>`:""}
         </div>
       </div>
-
-      ${e.codigo?`<div class="grp">${tx("Código de esta empresa")}</div>
-      <div style="text-align:center;padding:8px 0">
-        <div style="font-size:24px;font-weight:800;letter-spacing:4px;color:var(--primary)">${esc(e.codigo)}</div>
-        <button class="btn ghost sm" style="margin-top:8px;width:auto;padding:6px 14px" onclick="copiarCodigo('${esc(e.codigo)}')">${tx("Copiar código")}</button>
-      </div>`:""}
 
       <button class="btn" style="margin-top:12px" onclick="guardarAjustes()">${tx("Guardar cambios")}</button>
       ${esAdm?`<button class="btn ghost sm" style="margin-top:10px;color:var(--no)" onclick="borrarEmpresa()">${t("aj.eliminarEmp")}</button>`:""}
@@ -9156,12 +9158,17 @@ async function guardarPerfil(){
   if(nombreCompleto) S.sesion.nombre = nombreCompleto;
   await guardar();
   pintarShell();
-  // guardo en el servidor si hay sesión
+  // guardo TODOS los campos del perfil en el servidor
   if(sbOn() && S.sesion && S.sesion.uid){
     try{
-      await SB.from("esp_perfiles").update({
-        nombre: S.sesion.nombre || null
-      }).eq("id", S.sesion.uid);
+      await SB.from("esp_perfiles").upsert({
+        id: S.sesion.uid,
+        email: S.sesion.email,
+        nombre: pf.nombre || null,
+        apellido: pf.apellido || null,
+        pais: pf.pais || null,
+        nacimiento: pf.nacimiento || null
+      });
     }catch(e){}
   }
   toast(tx("Datos guardados"));
@@ -10334,8 +10341,25 @@ async function hacerLogin(){
 /* Con un usuario real del servidor: traigo sus empresas y entro */
 async function entrarConUsuario(u){
   const email = (u.email||"").toLowerCase();
-  const nombre = (u.user_metadata && (u.user_metadata.nombre || u.user_metadata.full_name)) || email.split("@")[0];
-  S.sesion = { email, nombre, via:"sb", uid:u.id, desde:hoy() };
+  let nombre = (u.user_metadata && (u.user_metadata.nombre || u.user_metadata.full_name)) || email.split("@")[0];
+  S.sesion = { email, nombre, via:"sb", uid:u.id, desde:hoy(), perfil:{} };
+  // recupero el perfil guardado (nombre, apellido, país, fecha) del servidor
+  if(sbOn()){
+    try{
+      const { data:pf } = await SB.from("esp_perfiles").select("nombre, apellido, pais, nacimiento").eq("id", u.id).maybeSingle();
+      if(pf){
+        S.sesion.perfil = { nombre:pf.nombre||"", apellido:pf.apellido||"", pais:pf.pais||"", nacimiento:pf.nacimiento||"" };
+        // separo nombre/apellido si el perfil no los tiene pero sí el nombre completo
+        if(!S.sesion.perfil.nombre && pf.nombre){ S.sesion.perfil.nombre = pf.nombre; }
+        if(pf.nombre){ S.sesion.nombre = [pf.nombre, pf.apellido].filter(Boolean).join(" ").trim() || pf.nombre; nombre = S.sesion.nombre; }
+        if(pf.pais && S.idioma){ const pa=PAIS_IDIOMA.find(x=>x.k===pf.pais); if(pa&&pa.idi&&pa.idi!==S.idioma) setIdioma(pa.idi); }
+      } else {
+        // primera vez: separo el nombre de Google en nombre + apellido
+        const partes = (nombre||"").trim().split(" ");
+        S.sesion.perfil = { nombre: partes[0]||"", apellido: partes.slice(1).join(" ")||"", pais:"", nacimiento:"" };
+      }
+    }catch(e){}
+  }
   await sincronizarDesdeServidor();
   guardar();
   S.mundo = "";
@@ -10360,16 +10384,21 @@ function tieneEmpresa(e){
 
 /* Convierte una fila del servidor en el formato de empresa que usa la app */
 function filaAEmpresa(f){
-  return {
+  const datos = f.datos || {};
+  const meta = datos._meta || {};
+  const e = {
     id: f.id,
     razon: f.razon || "",
     codigo: f.codigo || "",
     ownerId: f.owner || "",
     ownerEmail: (S.sesion && S.sesion.uid===f.owner) ? S.sesion.email : (f._ownerEmail||""),
     roles: f.equipo || {},
-    datos: f.datos || {},
+    datos: datos,
+    logo: meta.logo||"", pais: meta.pais||"AR", cuit: meta.cuit||"", obra: meta.obra||"",
+    direccion: meta.direccion||"", contacto: meta.contacto||"", responsable: meta.responsable||"",
     _serverTs: f.actualizado_en || ""
   };
+  return e;
 }
 
 /* Trae las empresas del servidor y las fusiona con lo local.
@@ -10413,8 +10442,8 @@ async function sincronizarDesdeServidor(){
   }
 
   S.empresas = Object.values(porId);
-  if(!S.empresas.length){ nuevaEmpresa("Mi empresa"); }
-  else if(!S.empresas.some(e=>e.id===S.activa)){ S.activa = S.empresas[0].id; }
+  // NO creo empresa acá: si no hay, entrarConUsuario mostrará el onboarding
+  if(S.empresas.length && !S.empresas.some(e=>e.id===S.activa)){ S.activa = S.empresas[0].id; }
   definirActiva();
 }
 
@@ -10423,8 +10452,9 @@ function modalAviso(msg){
   cerrarModal();
   const ov = document.createElement("div");
   ov.className = "modal";
-  ov.innerHTML = `<div class="mcard" style="text-align:left">
-    <p class="small" style="margin:0 0 14px">${esc(msg)}</p>
+  ov.innerHTML = `<div class="mcard" style="text-align:left;position:relative">
+    <button onclick="cerrarModal()" aria-label="Cerrar" style="position:absolute;top:10px;right:10px;width:30px;height:30px;border:none;background:var(--soft);border-radius:50%;font-size:18px;line-height:1;color:var(--muted);cursor:pointer">×</button>
+    <p class="small" style="margin:4px 24px 16px 0;line-height:1.5">${esc(msg)}</p>
     <button class="btn" onclick="cerrarModal()">${tx("Entendido")}</button>
   </div>`;
   document.body.appendChild(ov);
@@ -10557,7 +10587,7 @@ function vMundos(){
   <section class="block">
     <div class="card pad" style="text-align:center">
       ${e.logo?`<img src="${e.logo}" style="max-height:56px;max-width:160px;object-fit:contain;margin-bottom:10px">`:""}
-      <h2 style="font-size:22px;font-weight:700;margin:4px 0 2px">${tx("¿Con qué querés trabajar?")}</h2>
+      <h2 style="font-size:22px;font-weight:700;margin:4px 0 2px">${tx("¿Dónde querés trabajar hoy?")}</h2>
       <p class="small muted" style="margin:0">${tx("Las secciones trabajan sobre la empresa que tengas elegida arriba.")}</p>
     </div>
   </section>
