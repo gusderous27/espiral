@@ -4425,6 +4425,7 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"¡Cuenta confirmada! 🎉 Ya podés empezar a usar Espiral.":["Account confirmed! 🎉 You can start using Espiral now.","Conta confirmada! 🎉 Já pode começar a usar o Espiral."],
 "Ya existe una cuenta con ese correo. Iniciá sesión con tu contraseña, o usá \"¿Olvidaste tu contraseña?\" si no la recordás.":["An account with that email already exists. Log in with your password.","Já existe uma conta com esse e-mail. Entre com sua senha."],
 "Repetir contraseña":["Repeat password","Repetir senha"],
 "Escribila de nuevo":["Type it again","Digite novamente"],
@@ -10554,10 +10555,16 @@ function vOnboarding(){
       <button class="authbtn prim" onclick="unirseEmpresaOnb()">${tx("Unirme")}</button>
       <div class="toglink" onclick="P.onbPaso='elegir';render()">${tx("Volver")}</div>`;
   }
+  // flecha atrás: en "elegir" vuelve al login (cerrando sesión); en los otros pasos, a "elegir"
+  const volverAtras = paso==="elegir" ? "cerrarSesion()" : "P.onbPaso='elegir';render()";
   return `<div class="authwrap">
+    <button onclick="${volverAtras}" aria-label="${tx("Volver")}" style="position:absolute;top:14px;left:14px;width:38px;height:38px;border:none;background:transparent;font-size:24px;color:var(--muted);cursor:pointer;line-height:1">←</button>
     ${iso}
     <h1>${tx("Hola")}${P.onbNombre?", "+esc(P.onbNombre.split(" ")[0]):""} 👋</h1>
     ${cuerpo}
+    <div style="text-align:center;margin-top:22px">
+      <span onclick="cerrarSesion()" style="color:var(--muted);font-size:14px;cursor:pointer;text-decoration:underline;text-underline-offset:3px">${tx("Cerrar sesión")}</span>
+    </div>
   </div>`;
 }
 async function crearEmpresaOnb(){
@@ -11471,6 +11478,13 @@ async function arrancarSesion(){
   const spslo = document.getElementById("spslo");
   if(spslo) spslo.textContent = t("app.slogan");
 
+  // ¿Venimos de confirmar el correo? Supabase agrega type=signup en el hash de la URL
+  let veniaDeConfirmar = false;
+  try{
+    const h = (location.hash||"") + (location.search||"");
+    if(/type=signup/.test(h) || /type=email_change/.test(h)) veniaDeConfirmar = true;
+  }catch(e){}
+
   // ¿Venimos de cerrar sesión o dar de baja? (leer ANTES, para decidir el splash)
   let veniaDeLogout = false, veniaDeBaja = false;
   try{
@@ -11496,7 +11510,10 @@ async function arrancarSesion(){
   if(sbOn() && !ACABA_DE_SALIR){
     let u = null;
     try{ u = await Promise.race([ sbUsuario(), esperar(3000).then(()=>null) ]); }catch(e){}
-    if(u){ await entrarConUsuario(u); quitarSplash(); }
+    if(u){
+      await entrarConUsuario(u); quitarSplash();
+      if(veniaDeConfirmar){ veniaDeConfirmar=false; setTimeout(()=>modalAviso(tx("¡Cuenta confirmada! 🎉 Ya podés empezar a usar Espiral.")), 500); }
+    }
     else {
       if(S.sesion && S.sesion.via==="sb"){ S.sesion=null; }
       P.authModo="elegir"; go("login");
@@ -11514,6 +11531,10 @@ async function arrancarSesion(){
         if(evt==="SIGNED_IN" && sess && sess.user && !sesionActiva() && !ACABA_DE_SALIR){
           await entrarConUsuario(sess.user);
           quitarSplash();
+          if(veniaDeConfirmar){
+            veniaDeConfirmar = false;
+            setTimeout(()=>modalAviso(tx("¡Cuenta confirmada! 🎉 Ya podés empezar a usar Espiral.")), 500);
+          }
         }
       });
     }catch(e){}
