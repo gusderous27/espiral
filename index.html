@@ -4421,6 +4421,11 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Ya existe una cuenta con ese correo. Iniciá sesión con tu contraseña, o usá \"¿Olvidaste tu contraseña?\" si no la recordás.":["An account with that email already exists. Log in with your password.","Já existe uma conta com esse e-mail. Entre com sua senha."],
+"Repetir contraseña":["Repeat password","Repetir senha"],
+"Escribila de nuevo":["Type it again","Digite novamente"],
+"Poné tu nombre":["Enter your name","Digite seu nome"],
+"Las dos contraseñas no coinciden.":["The two passwords do not match.","As duas senhas não coincidem."],
 "¿Dónde querés trabajar hoy?":["Where do you want to work today?","Onde você quer trabalhar hoje?"],
 "Revisá tu correo":["Check your email","Verifique seu e-mail"],
 "Te enviamos un mensaje a":["We sent a message to","Enviamos uma mensagem para"],
@@ -10194,19 +10199,24 @@ function pedirBajaFinal(){
 }
 async function ejecutarBaja(){
   toast(tx("Dando de baja tu cuenta…"));
-  // 1) borro en el servidor las empresas donde soy dueño
-  if(sbOn() && sesionActiva()){
-    const mias = (S.empresas||[]).filter(e=> e.ownerId===S.sesion.uid || e.ownerEmail===S.sesion.email);
-    for(const e of mias){ await sbBorrarEmpresa(e.id); }
-    // borro mi perfil
-    try{ if(SB && S.sesion.uid) await SB.from("esp_perfiles").delete().eq("id", S.sesion.uid); }catch(e){}
-    // cierro sesión en el servidor
-    try{ await sbSalir(); }catch(e){}
+  // 1) llamo a la función del servidor que borra TODO (datos + cuenta de acceso).
+  //    Necesita el token del usuario para verificar que es él quien lo pide.
+  if(sbOn() && sesionActiva() && SB){
+    try{
+      const { data: sess } = await SB.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      if(token){
+        await fetch(SB_URL + "/functions/v1/esp-baja-cuenta", {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json", "apikey": SB_KEY }
+        });
+      }
+    }catch(e){}
   }
   ACABA_DE_SALIR = true;
   try{ await Promise.race([ sbSalir(), esperar(1200) ]); }catch(e){}
   try{ limpiarTokenSB(); }catch(e){}
-  // 2) limpio todo lo local (sin recrear "Mi empresa": el onboarding la pedirá al volver a entrar)
+  // 2) limpio todo lo local
   S.sesion = null; S.mundo=""; S.empresas=[]; S.activa=null; S.usuarios={};
   await guardar();
   try{ sessionStorage.setItem("esp_logout","1"); sessionStorage.setItem("esp_baja","1"); }catch(e){}
@@ -10214,6 +10224,12 @@ async function ejecutarBaja(){
 }
 
 /* --- pantalla de acceso --- */
+function verPass(id, el){
+  const inp = document.getElementById(id);
+  if(!inp) return;
+  if(inp.type==="password"){ inp.type="text"; if(el) el.style.opacity="1"; }
+  else { inp.type="password"; if(el) el.style.opacity=".55"; }
+}
 function authIr(modo){
   matarSplash();
   try{ P.authModo = modo; render(); }
@@ -10240,7 +10256,15 @@ function vLogin(){
       <div class="fld"><label>${tx("Correo")}</label>
         <input id="au_mail" type="email" placeholder="tu@correo.com" autocapitalize="off"></div>
       <div class="fld"><label>${tx("Contraseña")}</label>
-        <input id="au_pass" type="password" placeholder="${tx("Elegí una contraseña")}"></div>
+        <div style="position:relative">
+          <input id="au_pass" type="password" placeholder="${tx("Elegí una contraseña")}" style="padding-right:44px">
+          <span onclick="verPass('au_pass',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:18px;user-select:none">👁</span>
+        </div></div>
+      <div class="fld"><label>${tx("Repetir contraseña")}</label>
+        <div style="position:relative">
+          <input id="au_pass2" type="password" placeholder="${tx("Escribila de nuevo")}" style="padding-right:44px">
+          <span onclick="verPass('au_pass2',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:18px;user-select:none">👁</span>
+        </div></div>
       <button class="authbtn prim" onclick="hacerRegistro()">${tx("Crear mi cuenta")}</button>
       <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
   } else if(modo==="confirmar"){
@@ -10295,17 +10319,26 @@ async function loginGoogle(){
   });
 }
 async function hacerRegistro(){
-  const nom=($("#au_nom")||{}).value, mail=(($("#au_mail")||{}).value||"").trim(), pass=($("#au_pass")||{}).value;
+  const nom=($("#au_nom")||{}).value, mail=(($("#au_mail")||{}).value||"").trim().toLowerCase(), pass=($("#au_pass")||{}).value, pass2=($("#au_pass2")||{}).value;
+  if(!nom || !nom.trim()) return toast(tx("Poné tu nombre"));
   if(!mail || !/@/.test(mail)) return toast(tx("Poné un correo válido"));
   if(!pass || pass.length<6) return toast(tx("La contraseña necesita al menos 6 caracteres."));
+  if(pass!==pass2) return toast(tx("Las dos contraseñas no coinciden."));
   if(sbOn()){
     ACABA_DE_SALIR = false;   // vamos a entrar: destrabo la bandera de logout
     const btn = document.querySelector(".authbtn.prim"); if(btn){ btn.disabled=true; btn.textContent=tx("Creando…"); }
     const r = await sbRegistro(mail, pass, nom);
     if(btn){ btn.disabled=false; btn.textContent=tx("Crear mi cuenta"); }
     if(r.error) return toast(r.error);
+    // ¿La cuenta YA existía? Supabase, si el mail ya está registrado, devuelve un user
+    // con identities vacío y sin sesión. Ahí avisamos en vez de "entrar" en silencio.
+    const yaExistia = r.data && r.data.user && Array.isArray(r.data.user.identities) && r.data.user.identities.length===0;
+    if(yaExistia){
+      P.authMail = mail; P.authModo="mail"; render();
+      return modalAviso(tx("Ya existe una cuenta con ese correo. Iniciá sesión con tu contraseña, o usá \"¿Olvidaste tu contraseña?\" si no la recordás."));
+    }
     // Si el proyecto exige confirmar el correo, no hay sesión todavía
-    const u = (r.data && r.data.user && r.data.session) ? r.data.user : await sbUsuario();
+    const u = (r.data && r.data.user && r.data.session) ? r.data.user : null;
     if(u){ await entrarConUsuario(u); }
     else { P.authMail = mail; P.authModo="confirmar"; render(); }
     return;
@@ -10342,6 +10375,15 @@ async function hacerLogin(){
 async function entrarConUsuario(u){
   const email = (u.email||"").toLowerCase();
   let nombre = (u.user_metadata && (u.user_metadata.nombre || u.user_metadata.full_name)) || email.split("@")[0];
+  // SEGURIDAD: al entrar con una cuenta, descarto empresas locales de OTRA cuenta.
+  // Solo conservo las que son de este usuario (por uid o por email en el equipo).
+  const mias = (S.empresas||[]).filter(e =>
+    (e.ownerId && e.ownerId===u.id) ||
+    (e.ownerEmail && e.ownerEmail===email) ||
+    (e.roles && e.roles[email])
+  );
+  S.empresas = mias;
+  S.activa = mias.length ? (mias.some(e=>e.id===S.activa)?S.activa:mias[0].id) : null;
   S.sesion = { email, nombre, via:"sb", uid:u.id, desde:hoy(), perfil:{} };
   // recupero el perfil guardado (nombre, apellido, país, fecha) del servidor
   if(sbOn()){
