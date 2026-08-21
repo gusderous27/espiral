@@ -10594,7 +10594,11 @@ const MUNDOS = {
   rh: { ic:"👥", nombre:"Recursos Humanos", desc:"nómina, legajos, exámenes médicos y licencias",
         color:"var(--c8)", inicio:"inicioRH" }
 };
-function irInicio(){ go(MUNDOS[S.mundo]?MUNDOS[S.mundo].inicio:"mundos"); }
+function irInicio(){
+  // la casita vuelve al selector de mundos: "¿Dónde querés trabajar hoy?"
+  S.mundo = "";
+  go("mundos");
+}
 function entrarMundo(k){ S.mundo = k; guardar(); go(MUNDOS[k].inicio); }
 function cambiarMundo(){ S.mundo = ""; guardar(); go("mundos"); }
 
