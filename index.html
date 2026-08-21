@@ -177,7 +177,7 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:var(--ink);color:var(--bg);
   padding:11px 18px;border-radius:11px;font-size:14px;z-index:99;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
-.modal{position:fixed;inset:0;background:rgba(8,14,22,.72);z-index:120;display:grid;place-items:center;padding:16px;overflow:auto}
+.modal{position:fixed;inset:0;background:rgba(8,14,22,.82);z-index:100000;display:grid;place-items:center;padding:16px;overflow:auto}
 .mcard{background:var(--card);border-radius:var(--r);padding:16px;max-width:560px;width:100%;text-align:center}
 .cwrap{position:relative;display:inline-block;line-height:0;max-width:100%;touch-action:none}
 #cimg{max-width:100%;max-height:52vh;display:block;border-radius:8px}
@@ -271,8 +271,12 @@ html[data-tema="oscuro"] #splash{background:#0E1621}
 .authsep::before,.authsep::after{content:"";flex:1;height:1px;background:var(--line)}
 .authwrap .fld{display:flex;flex-direction:column;gap:5px}
 .authwrap .fld label{font-size:12.5px;color:var(--muted);font-weight:600;padding-left:2px}
-.authwrap .fld input{padding:12px;border-radius:12px;border:1px solid var(--line);
+.authwrap .fld input{width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid var(--line);
   background:var(--card);color:var(--text);font-size:15px}
+.authwrap .fld .pwrap{position:relative;width:100%}
+.authwrap .fld .pwrap input{padding-right:44px}
+.authwrap .fld .pwrap .eye{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+  cursor:pointer;font-size:18px;user-select:none;opacity:.55;line-height:1}
 .authwrap .legal{font-size:11px;color:var(--muted);text-align:center;margin-top:4px;line-height:1.5}
 .authwrap .toglink{font-size:13px;color:var(--primary);text-align:center;cursor:pointer;font-weight:600}
 
@@ -10256,14 +10260,14 @@ function vLogin(){
       <div class="fld"><label>${tx("Correo")}</label>
         <input id="au_mail" type="email" placeholder="tu@correo.com" autocapitalize="off"></div>
       <div class="fld"><label>${tx("Contraseña")}</label>
-        <div style="position:relative">
-          <input id="au_pass" type="password" placeholder="${tx("Elegí una contraseña")}" style="padding-right:44px">
-          <span onclick="verPass('au_pass',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:18px;user-select:none">👁</span>
+        <div class="pwrap">
+          <input id="au_pass" type="password" placeholder="${tx("Elegí una contraseña")}">
+          <span class="eye" onclick="verPass('au_pass',this)">👁</span>
         </div></div>
       <div class="fld"><label>${tx("Repetir contraseña")}</label>
-        <div style="position:relative">
-          <input id="au_pass2" type="password" placeholder="${tx("Escribila de nuevo")}" style="padding-right:44px">
-          <span onclick="verPass('au_pass2',this)" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:18px;user-select:none">👁</span>
+        <div class="pwrap">
+          <input id="au_pass2" type="password" placeholder="${tx("Escribila de nuevo")}">
+          <span class="eye" onclick="verPass('au_pass2',this)">👁</span>
         </div></div>
       <button class="authbtn prim" onclick="hacerRegistro()">${tx("Crear mi cuenta")}</button>
       <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
@@ -10283,7 +10287,10 @@ function vLogin(){
       <div class="fld"><label>${tx("Correo")}</label>
         <input id="au_mail" type="email" placeholder="tu@correo.com" autocapitalize="off"></div>
       <div class="fld"><label>${tx("Contraseña")}</label>
-        <input id="au_pass" type="password" placeholder="${tx("Tu contraseña")}"></div>
+        <div class="pwrap">
+          <input id="au_pass" type="password" placeholder="${tx("Tu contraseña")}">
+          <span class="eye" onclick="verPass('au_pass',this)">👁</span>
+        </div></div>
       <button class="authbtn prim" onclick="hacerLogin()">${tx("Entrar")}</button>
       <div class="toglink" onclick="authIr('elegir')">${tx("Volver")}</div>`;
   }
@@ -11434,7 +11441,8 @@ function bkBloque(){
     S.empresas = [e]; S.activa = e.id;
   }
   definirActiva();
-  if(!S.empresas.length){ nuevaEmpresa("Mi empresa"); }
+  // NO crear empresa genérica acá: si el usuario entra sin empresas, arrancarSesion/entrarConUsuario
+  // muestran el onboarding. (Solo modo local sin servidor podría necesitar una, y eso se maneja aparte.)
   traducirTPL();
   pintarShell();
   document.documentElement.setAttribute("data-tema", S.tema||"claro");
@@ -11463,10 +11471,7 @@ async function arrancarSesion(){
   const spslo = document.getElementById("spslo");
   if(spslo) spslo.textContent = t("app.slogan");
 
-  // el splash se muestra con su animación y se desvanece a los 2.2s
-  setTimeout(quitarSplash, 4000);
-
-  // ¿Venimos de cerrar sesión o dar de baja?
+  // ¿Venimos de cerrar sesión o dar de baja? (leer ANTES, para decidir el splash)
   let veniaDeLogout = false, veniaDeBaja = false;
   try{
     veniaDeLogout = sessionStorage.getItem("esp_logout")==="1";
@@ -11475,10 +11480,14 @@ async function arrancarSesion(){
   }catch(e){}
   if(veniaDeLogout){ ACABA_DE_SALIR = true; try{ limpiarTokenSB(); }catch(e){} }
 
+  // bienvenida larga normal (4s), pero corta si venís de cerrar sesión o baja
+  const splashMs = (veniaDeLogout || veniaDeBaja) ? 800 : 4000;
+  setTimeout(quitarSplash, splashMs);
+
   // dibujo el login DEBAJO del splash opaco a los 1.5s (el splash lo tapa hasta 1.9s),
   // así cuando el splash se desvanece, el login ya está listo detrás. Cero cruce visual.
   P.authModo = "elegir";
-  if(!sesionActiva()){ setTimeout(()=>{ if(!sesionActiva()) go("login"); }, 3500); }
+  if(!sesionActiva()){ setTimeout(()=>{ if(!sesionActiva()) go("login"); }, (veniaDeLogout||veniaDeBaja)?300:3500); }
 
   sbInit();
   if(veniaDeLogout && sbOn()){ try{ await sbSalir(); }catch(e){} }
@@ -11510,7 +11519,10 @@ async function arrancarSesion(){
     }catch(e){}
   }
 
-  if(veniaDeBaja){ setTimeout(()=>modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras.")), 1900); }
+  if(veniaDeBaja){
+    // el aviso aparece cuando el login ya está dibujado y el splash se fue: sin superposición
+    setTimeout(()=>{ if(!sesionActiva()){ P.authModo="elegir"; go("login"); } modalAviso(tx("Tu cuenta fue dada de baja y tus datos, borrados. Podés crear una cuenta nueva cuando quieras.")); }, splashMs + 400);
+  }
 }
 </script>
 </body>
