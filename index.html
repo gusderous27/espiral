@@ -290,6 +290,21 @@ html[data-tema="oscuro"] #splash{background:#0E1621}
 .acc-body{display:none;padding:0 16px 16px}
 .acc[data-open="1"] .acc-body{display:block}
 .acc-sub{border-top:1px solid var(--line);padding-top:14px;margin-top:2px}
+
+/* ===== Menú desplegable de Guardar y compartir ===== */
+.sharemenu{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);animation:shareIn .18s ease}
+@keyframes shareIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.shareopt{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border:none;
+  background:transparent;color:var(--text);font-size:15px;text-align:left;cursor:pointer;
+  border-bottom:1px solid var(--line)}
+.shareopt:last-child{border-bottom:none}
+.shareopt:active{background:var(--soft)}
+.shareic{font-size:19px;width:24px;text-align:center;flex:none}
+
+/* ===== Panel de gestión de ideas ===== */
+.gidea{display:flex;align-items:center;gap:10px;padding:12px 6px;border-bottom:1px solid var(--line);cursor:pointer}
+.gidea:last-child{border-bottom:none}
+.gidea:active{background:var(--soft)}
 </style>
 </head>
 <body>
@@ -1126,7 +1141,7 @@ function volver(){
 
 function render(){
   const v = {login:vLogin, onboarding:vOnboarding, mundos:vMundos, inicioMC:vInicioMC, nueva:vNueva, form:vForm, historial:vHistorial, ver:vVer, panel:vPanel,
-    inicio:vInicio, inicioRH:vInicioRH, ideaEdit:vIdeaEdit, verIdea:vVerIdea, ideaGestion:vIdeaGestion, notificaciones:vNotificaciones,
+    inicio:vInicio, inicioRH:vInicioRH, ideaEdit:vIdeaEdit, verIdea:vVerIdea, ideaGestion:vIdeaGestion, gestionIdeas:vGestionIdeas, notificaciones:vNotificaciones,
     ajustes:vAjustes, personal:vPersonal, entrega:vEntrega, uso:vUso, ropa:vRopa, talles:vTalles, verEpp:vVerEpp,
     inv:vInv, verInv:vVerInv, acciones:vAcciones,
     iper:vIper, iperEdit:vIperEdit, verIper:vVerIper, docs:vDocs, equiv:vEquiv,
@@ -4425,6 +4440,27 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Gestionar ideas":["Manage ideas","Gerenciar ideias"],
+"evaluar y hacer seguimiento":["evaluate and follow up","avaliar e acompanhar"],
+"Solo el administrador puede gestionar las ideas.":["Only the administrator can manage ideas.","Somente o administrador pode gerenciar ideias."],
+"Todavía no hay ideas para gestionar.":["There are no ideas to manage yet.","Ainda não há ideias para gerenciar."],
+"Tocá cualquier idea para evaluarla: cambiar su estado, cargar fechas, próximos pasos y responsable.":["Tap any idea to evaluate it: change its status, set dates, next steps and owner.","Toque em qualquer ideia para avaliá-la: mudar o status, definir datas, próximos passos e responsável."],
+"idea sin gestionar todavía.":["idea not managed yet.","ideia ainda não gerenciada."],
+"ideas sin gestionar todavía.":["ideas not managed yet.","ideias ainda não gerenciadas."],
+"Todas las ideas están gestionadas. 👏":["All ideas are managed. 👏","Todas as ideias estão gerenciadas. 👏"],
+"sin gestionar":["unmanaged","não gerenciada"],
+"📊 Ver tablero con estadísticas":["📊 View board with statistics","📊 Ver painel com estatísticas"],
+"Guardar PDF":["Save PDF","Salvar PDF"],
+"Enviar por mail":["Send by email","Enviar por e-mail"],
+"Enviar por WhatsApp":["Send by WhatsApp","Enviar por WhatsApp"],
+"Enviar por SMS":["Send by SMS","Enviar por SMS"],
+"Compartir archivo":["Share file","Compartilhar arquivo"],
+"+ Nueva empresa":["+ New company","+ Nova empresa"],
+"Creá o sumate a otra empresa para gestionarla por separado.":["Create or join another company to manage it separately.","Crie ou entre em outra empresa para gerenciá-la separadamente."],
+"Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias.":["With Espiral free you can have one company. Go Pro to manage several.","Com o Espiral grátis você pode ter uma empresa. Assine o Pro para gerenciar várias."],
+"Enviando…":["Sending…","Enviando…"],
+"Invitación enviada por correo ✉️":["Invitation sent by email ✉️","Convite enviado por e-mail ✉️"],
+"Persona agregada. El correo no pudo enviarse (revisá la conexión).":["Person added. The email couldn't be sent (check your connection).","Pessoa adicionada. O e-mail não pôde ser enviado (verifique a conexão)."],
 "¡Cuenta confirmada! 🎉 Ya podés empezar a usar Espiral.":["Account confirmed! 🎉 You can start using Espiral now.","Conta confirmada! 🎉 Já pode começar a usar o Espiral."],
 "Ya existe una cuenta con ese correo. Iniciá sesión con tu contraseña, o usá \"¿Olvidaste tu contraseña?\" si no la recordás.":["An account with that email already exists. Log in with your password.","Já existe uma conta com esse e-mail. Entre com sua senha."],
 "Repetir contraseña":["Repeat password","Repetir senha"],
@@ -8109,21 +8145,38 @@ function filaAudHist(r){
 }
 
 function barraCompartir(tipo,id){
-  const nat = (typeof navigator!=="undefined" && navigator.share) ? 
-    `<button class="btn ghost sm" onclick="compartirArchivo('${tipo}','${id||""}')">${tx("📎 Compartir archivo")}</button>` : "";
+  const abierto = (P.compartirAbierto === (tipo+"|"+(id||"")));
+  const nat = (typeof navigator!=="undefined" && navigator.share);
   const ed = (id && SW_ACC[tipo]) ?
     `<button class="btn soft" style="margin-top:10px" onclick="swAcc('${tipo}','${id}','edit')">${tx("✏️ Editar este registro")}</button>` : "";
+  const opt = (ic, txt, fn) =>
+    `<button class="shareopt" onclick="cerrarCompartir();${fn}"><span class="shareic">${ic}</span>${txt}</button>`;
+  const menu = abierto ? `
+    <div class="sharemenu">
+      ${opt("📄", tx("Guardar PDF"), "window.print()")}
+      ${opt("📊", tx("Exportar a Excel"), `excelUno('${tipo}','${id||""}')`)}
+      ${opt("✉️", tx("Enviar por mail"), `mailUno('${tipo}','${id||""}')`)}
+      ${opt("💬", tx("Enviar por WhatsApp"), `waUno('${tipo}','${id||""}')`)}
+      ${opt("📱", tx("Enviar por SMS"), `smsUno('${tipo}','${id||""}')`)}
+      ${nat?opt("📎", tx("Compartir archivo"), `compartirArchivo('${tipo}','${id||""}')`):""}
+    </div>` : "";
   return `${id?selloEd(tipo,id):""}<section class="block noprint">
-    <div class="grp" style="margin:0 0 8px">${tx("Guardar y compartir")}</div>
-    <div class="share">
-      <button class="btn" onclick="window.print()">${tx("📄 Guardar PDF")}</button>
-      <button class="btn soft" onclick="excelUno('${tipo}','${id||""}')">${tx("📊 Excel")}</button>
-      <button class="btn ghost" onclick="mailUno('${tipo}','${id||""}')">${tx("✉ Enviar por mail")}</button>
-      <button class="btn ghost" onclick="waUno('${tipo}','${id||""}')">${tx("💬 WhatsApp")}</button>
-    </div>
-    ${nat?`<div style="margin-top:8px">${nat}</div>`:""}
+    <button class="btn" onclick="toggleCompartir('${tipo}','${id||""}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
+      📤 ${tx("Guardar y compartir")} <span style="font-size:12px;transition:transform .2s;${abierto?"transform:rotate(180deg)":""}">▾</span>
+    </button>
+    ${menu}
     ${ed}
   </section>`;
+}
+function toggleCompartir(tipo,id){
+  const clave = tipo+"|"+(id||"");
+  P.compartirAbierto = (P.compartirAbierto===clave) ? "" : clave;
+  render();
+}
+function cerrarCompartir(){ P.compartirAbierto = ""; }
+function smsUno(tipo,id){
+  const t = textoUno(tipo,id); if(!t) return;
+  location.href = "sms:?body="+encodeURIComponent(t);
 }
 function nombreArchivo(d){
   return (d.t+"-"+d.f).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").toLowerCase().slice(0,60);
@@ -8934,8 +8987,8 @@ function bloqueEquipoBody(){
   const miembros = Object.keys(roles);
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <p class="small muted" style="margin:0">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
-      <button class="btn sm" style="width:auto;padding:6px 12px" onclick="invitarMiembro()">${tx("+ Invitar")}</button>
+      <p class="small muted" style="margin:0;flex:1">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
+      <button onclick="invitarMiembro()" style="flex:none;background:var(--primary);color:#fff;border:none;border-radius:999px;padding:7px 16px;font-size:13.5px;font-weight:600;cursor:pointer">${tx("+ Invitar")}</button>
     </div>
     <div class="row">
       <span class="dot" style="background:var(--ok)"></span>
@@ -8978,13 +9031,33 @@ function invitarMiembro(){
   </div>`;
   document.body.appendChild(ov);
   const mi = document.getElementById("inv_mail"); if(mi) setTimeout(()=>mi.focus(),60);
-  document.getElementById("inv_ok").onclick = () => {
+  document.getElementById("inv_ok").onclick = async () => {
     const mail=((document.getElementById("inv_mail")||{}).value||"").trim().toLowerCase();
     if(!mail || !/@/.test(mail)) return toast(tx("Poné un correo válido"));
     const rol=(document.getElementById("inv_rol")||{}).value==="admin"?"admin":"miembro";
-    cerrarModal();
-    const e=S.empresa; e.roles=e.roles||{}; e.roles[mail]=rol; guardar(); render();
-    toast(tx("Persona agregada al equipo"));
+    const btn=document.getElementById("inv_ok"); if(btn){ btn.disabled=true; btn.textContent=tx("Enviando…"); }
+    // 1) agrego al equipo (local + servidor vía guardar)
+    const e=S.empresa; e.roles=e.roles||{}; e.roles[mail]=rol; await guardar();
+    // 2) mando el correo de invitación con el código de la empresa
+    let mailOk=false;
+    if(sbOn() && SB && e.codigo){
+      try{
+        const { data: sess } = await SB.auth.getSession();
+        const token = sess && sess.session && sess.session.access_token;
+        if(token){
+          const r = await fetch(SB_URL + "/functions/v1/esp-invitar", {
+            method:"POST",
+            headers:{ "Authorization":"Bearer "+token, "Content-Type":"application/json", "apikey":SB_KEY },
+            body: JSON.stringify({ email:mail, empresa:e.razon||"la empresa", codigo:e.codigo, rol, invitador:(S.sesion&&S.sesion.nombre)||(S.sesion&&S.sesion.email) })
+          });
+          const j = await r.json().catch(()=>({}));
+          mailOk = r.ok && j.ok;
+        }
+      }catch(err){}
+    }
+    cerrarModal(); render();
+    if(mailOk) toast(tx("Invitación enviada por correo ✉️"));
+    else toast(tx("Persona agregada. El correo no pudo enviarse (revisá la conexión)."));
   };
 }
 function cambiarRolMiembro(mail){
@@ -9065,7 +9138,10 @@ function vAjustes(){
       </div>
       ${x.id===S.activa?`<span class="pill" style="border-color:var(--ok);color:var(--ok)">${t("aj.activa")}</span>`:""}
     </div>`).join("")}
-    <button class="btn soft sm" style="margin-top:10px" onclick="crearEmpresaPrompt()">${t("aj.agregar")}${puedeEmpresa()?"":" 🔒"}</button>
+    <button class="btn soft sm" style="margin-top:10px" onclick="crearEmpresaPrompt()">${tx("+ Nueva empresa")}${puedeEmpresa()?"":" 🔒"}</button>
+    <p class="tiny muted" style="margin:6px 2px 0">${puedeEmpresa()
+      ? tx("Creá o sumate a otra empresa para gestionarla por separado.")
+      : tx("Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias.")}</p>
 
     <div class="acc-sub">
       <div class="grp" style="margin-top:0">${tx("Datos de")} ${esc(e.razon||tx("la empresa"))}</div>
@@ -10807,6 +10883,9 @@ function vInicioMC(){
       <button class="tile" style="--tc:var(--c6)" onclick="go('panel')">
         <span class="ic">📊</span><span class="nm">${tx("Tablero de ideas")}${lk("panel")}</span>
         <span class="de">(${tx("por estado, sector y tipo")})</span></button>
+      ${puedeAdministrar()?`<button class="tile" style="--tc:var(--c4)" onclick="go('gestionIdeas')">
+        <span class="ic">⚙️</span><span class="nm">${tx("Gestionar ideas")}</span>
+        <span class="de">(${tx("evaluar y hacer seguimiento")})</span></button>`:""}
     </div>
   </section>
 
@@ -10890,8 +10969,67 @@ function vIdeaEdit(){
   <div style="height:10px"></div>`;
 }
 /* --- gestión de la idea, para el comité / manager --- */
+function vGestionIdeas(){
+  if(!puedeAdministrar()) return `<section class="block"><div class="card empty">🔒 ${tx("Solo el administrador puede gestionar las ideas.")}</div></section>`;
+  const e = S.empresa||{};
+  const ideas = (S.idea||[]).slice();
+  if(!ideas.length){
+    return `${bandaMundo()}
+    <section class="block"><div class="section-title"><h2>${tx("Gestionar ideas")}</h2></div>
+      <div class="card empty"><span class="ic">💡</span>${tx("Todavía no hay ideas para gestionar.")}</div></section>`;
+  }
+  // agrupo por estado, en el orden del flujo
+  const porEstado = {}; MC_ESTADOS.forEach(x=>porEstado[x]=[]);
+  ideas.forEach(i=>{ const est = i.estado||"Recibida"; (porEstado[est]=porEstado[est]||[]).push(i); });
+
+  const tarjeta = (r)=>{
+    const c = mcColor(r.estado);
+    const pend = !r.gestionada;
+    return `<div class="gidea" onclick="gestionarIdea('${r.id}')">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14.5px">💡 ${esc(r.titulo||tx("Sin título"))}</div>
+        <div class="tiny muted">${fecha(r.fecha)}${r.autor?" · "+tx("propone")+" "+esc(r.autor):""}${r.sector?" · "+esc(r.sector):""}</div>
+        ${r.proximos?`<div class="tiny" style="margin-top:4px;color:var(--muted)">▸ ${esc(r.proximos.slice(0,80))}${r.proximos.length>80?"…":""}</div>`:""}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none">
+        ${pend?`<span class="pill" style="border-color:var(--c2);color:var(--c2);font-size:11px">${tx("sin gestionar")}</span>`:""}
+        <span style="color:var(--muted);font-size:18px">⚙️</span>
+      </div>
+    </div>`;
+  };
+
+  const cols = MC_ESTADOS.filter(est=>porEstado[est] && porEstado[est].length).map(est=>{
+    const c = mcColor(est);
+    return `<section class="block">
+      <div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px">
+        <span class="dot" style="background:${c}"></span>
+        <h3 style="font-size:15px;font-weight:700;margin:0">${tx(est)}</h3>
+        <span class="pill" style="border-color:${c};color:${c};margin-left:auto">${porEstado[est].length}</span>
+      </div>
+      <div class="card pad" style="display:flex;flex-direction:column;gap:2px">
+        ${porEstado[est].map(tarjeta).join("")}
+      </div>
+    </section>`;
+  }).join("");
+
+  const pendientes = ideas.filter(i=>!i.gestionada).length;
+  return `${bandaMundo()}
+  <section class="block">
+    <div class="section-title"><h2>${tx("Gestionar ideas")}</h2></div>
+    <div class="card pad">
+      <p class="small muted" style="margin:0">${tx("Tocá cualquier idea para evaluarla: cambiar su estado, cargar fechas, próximos pasos y responsable.")}</p>
+      ${pendientes?`<p class="small" style="margin:8px 0 0;color:var(--c2)"><b>${pendientes}</b> ${pendientes===1?tx("idea sin gestionar todavía."):tx("ideas sin gestionar todavía.")}</p>`:`<p class="small" style="margin:8px 0 0;color:var(--ok)">${tx("Todas las ideas están gestionadas. 👏")}</p>`}
+    </div>
+  </section>
+  ${cols}
+  <section class="block noprint">
+    <button class="btn soft" onclick="go('panel')">${tx("📊 Ver tablero con estadísticas")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
 function gestionarIdea(id){
   const r = (S.idea||[]).find(x=>x.id===id); if(!r) return;
+  P.gestDesde = (P.page==="gestionIdeas") ? "gestionIdeas" : "verIdea";
   P.gest = JSON.parse(JSON.stringify(r)); go("ideaGestion");
 }
 function guardarGestion(){
@@ -10904,8 +11042,9 @@ function guardarGestion(){
   S.idea[i].proximos = g.proximos;
   S.idea[i].respComite = g.respComite;
   S.idea[i].gestionada = new Date().toISOString();
-  guardar(); P.gest=null;
-  toast(tx("Gestión guardada")); go("verIdea", g.id);
+  guardar(); const idg=g.id; const desde=P.gestDesde; P.gest=null; P.gestDesde=null;
+  toast(tx("Gestión guardada"));
+  if(desde==="gestionIdeas") go("gestionIdeas"); else go("verIdea", idg);
 }
 function vIdeaGestion(){
   const g = P.gest;
@@ -10945,7 +11084,7 @@ function vIdeaGestion(){
 
   <section class="block noprint">
     <button class="btn" onclick="guardarGestion()">${tx("Guardar gestión")}</button>
-    <button class="btn ghost" style="margin-top:8px" onclick="P.gest=null;go('verIdea','${g.id}')">${tx("Cancelar")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="P.gest=null;(P.gestDesde==='gestionIdeas'?go('gestionIdeas'):go('verIdea','${g.id}'));P.gestDesde=null">${tx("Cancelar")}</button>
   </section>
   <div style="height:10px"></div>`;
 }
