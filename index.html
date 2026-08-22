@@ -169,7 +169,7 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .logobox{width:112px;height:78px;border:1px dashed var(--line);border-radius:11px;background:var(--soft);
   display:grid;place-items:center;overflow:hidden;flex:none}
 .logobox img{max-width:100%;max-height:100%;object-fit:contain}
-.rephead{display:flex;align-items:center;gap:14px}
+.rephead{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px}
 .replogo{max-width:96px;max-height:64px;object-fit:contain;flex:none}
 .panelhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .panelhead img{max-height:34px;max-width:90px;object-fit:contain}
@@ -815,10 +815,10 @@ extintores:{
     {k:"capac",l:"Capacidad",o:["1 kg","2,5 kg","3,5 kg","5 kg","6 kg","10 kg","12 kg","25 kg","50 kg","70 kg","6 lts","9 lts","10 lts","45 lts"]},
     {k:"instalacion",l:"Tipo de instalación",o:["De pared / soporte","En gabinete","Sobre pie (piso)","Rodante tipo carro","Sobre vehículo"]},
     {k:"tarjeta",l:"N.º de tarjeta"},
-    {k:"fabr",l:"Fecha de fabricación"},
+    {k:"fabr",l:"Fecha de fabricación",t:"mesanio"},
     {k:"venc",l:"Vencimiento de carga",t:"date"},
     {k:"ph",l:"Prueba hidráulica",t:"date"},
-    {k:"sector",l:"Sector / ubicación"}
+    {k:"sector",l:"Sector / ubicación",t:"area"}
   ],
   secs:[{t:"Verificación",items:[
     {x:"Ubicación señalizada, visible y con cartel indicador"},
@@ -840,12 +840,12 @@ autoelevador_diario:{
   nombre:"Autoelevador · Diario", ic:"🚜", color:"var(--c2)", modo:"ok",
   desc:"control de inicio de turno · Res. SRT 960/15",
   cab:[
-    {k:"marca",l:"Marca"},{k:"modelo",l:"Modelo"},{k:"anio",l:"Año"},
+    {k:"marca",l:"Marca"},{k:"modelo",l:"Modelo"},{k:"anio",l:"Año",t:"anioSolo"},
     {k:"interno",l:"Identificación interna"},
-    {k:"turno",l:"Turno",o:["Mañana","Tarde","Noche"]},
+    {k:"turno",l:"Turno",o:["Mañana","Tarde","Noche","Mañana y tarde","Turno único"]},
     {k:"hora",l:"Hora de inicio de turno",t:"time"},
     {k:"horom",l:"Horómetro"},
-    {k:"operador",l:"Operador del autoelevador"}
+    {k:"operador",l:"Operador del autoelevador",t:"empleado"}
   ],
   secs:[{t:"Control diario",items:[
     {x:"Ruedas (banda de rodaje, presión, desgaste)"},
@@ -871,7 +871,7 @@ autoelevador_trimestral:{
   nombre:"Autoelevador · Trimestral", ic:"🔧", color:"var(--c3)", modo:"ok",
   desc:"revisión general · Res. SRT 960/15",
   cab:[
-    {k:"marca",l:"Marca"},{k:"modelo",l:"Modelo"},{k:"anio",l:"Año"},
+    {k:"marca",l:"Marca"},{k:"modelo",l:"Modelo"},{k:"anio",l:"Año",t:"anioSolo"},
     {k:"patente",l:"Patente / interno"},
     {k:"mantTipo",l:"Mantenimiento realizado por",o:["Personal interno","Empresa externa"]},
     {k:"mecanico",l:"Mecánico responsable (nombre y apellido)"},
@@ -930,7 +930,7 @@ escaleras:{
   nombre:"Escaleras de mano", ic:"🪜", color:"var(--c4)", modo:"est",
   desc:"inspección de escaleras portátiles",
   cab:[
-    {k:"ubic",l:"Ubicación de la escalera"},
+    {k:"ubic",l:"Ubicación de la escalera",t:"area"},
     {k:"nro",l:"Número de escalera"},
     {k:"tipo",l:"Tipo",o:["Escalera de tijera","Escalera extensible","Escalera simple"]},
     {k:"resist",l:"Calificación de resistencia (etiqueta)",o:[
@@ -959,8 +959,8 @@ arnes:{
   cab:[
     {k:"nro",l:"Arnés de seguridad N.º"},
     {k:"marca",l:"Marca / modelo"},
-    {k:"fabr",l:"Fecha de fabricación"},
-    {k:"usuario",l:"Usuario asignado"},
+    {k:"fabr",l:"Fecha de fabricación",t:"mesanio"},
+    {k:"usuario",l:"Usuario asignado",t:"empleado"},
     {k:"codigo",l:"Código de registro",v:"PHS-02"}
   ],
   secs:[
@@ -1139,6 +1139,7 @@ const PANT_EDIT = ["form","cap","ptt","inv","entrega","uso","ropa","luxEdit","au
 let SIN_HIST = false;
 
 function go(p, arg){
+  if(!(p==="ver" && arg===P.reciénCreado)) P.reciénCreado = null;
   if(bloqueoPro(p)){ P.proDe = p; p = "pro"; arg = undefined; }
   /* la pantalla de elección de mundo va por fuera del historial */
   if(p==="inicio" && !S.mundo){ p = "mundos"; }
@@ -1310,17 +1311,112 @@ function nuevoDraft(k){
     id:uid(), tpl:k, fecha:hoy(), inspector:(S.empresa||{}).responsable||"",
     cab, resp:{}, obs:{}, fotos:[], hallazgos:[], general:"", firma:null
   };
+  P.cabOtroManual = {};
+  P.inspectorOtroManual = false;
 }
 
 function campoCab(c){
   const v = P.draft.cab[c.k]||"";
+  if(c.k==="mecanico" && P.draft.cab.mantTipo==="Personal interno") return campoCabEmpleado(c);
+  if(c.t==="empleado") return campoCabEmpleado(c);
+  if(c.t==="area") return campoCabArea(c);
+  if(c.t==="mesanio") return campoCabMesAnio(c);
+  if(c.t==="anioSolo") return campoCabAnioSolo(c);
   if(c.o) return `<label class="f"><span class="lb">${esc(c.l)}</span>
-    <select onchange="setCab('${c.k}',this.value)">
+    <select onchange="setCab('${c.k}',this.value)${c.k==="mantTipo"?";render()":""}">
       <option value="">${tx("Seleccionar…")}</option>
       ${c.o.map(o=>`<option ${v===o?"selected":""}>${esc(o)}</option>`).join("")}
     </select></label>`;
   return `<label class="f"><span class="lb">${esc(c.l)}</span>
     <input type="${c.t||"text"}" value="${esc(v)}" oninput="setCab('${c.k}',this.value)"></label>`;
+}
+/* --- selector de un empleado cargado, con opción "Otro" a mano --- */
+function campoCabEmpleado(c){
+  const v = P.draft.cab[c.k]||"";
+  const lista = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es")).map(p=>p.nombre).filter(Boolean);
+  P.cabOtroManual = P.cabOtroManual || {};
+  const otro = !!(P.cabOtroManual[c.k] || (v && !lista.includes(v)));
+  return `<label class="f"><span class="lb">${esc(c.l)}</span>
+    <select onchange="if(this.value==='__otro__'){P.cabOtroManual['${c.k}']=true;}else{P.cabOtroManual['${c.k}']=false;setCab('${c.k}',this.value);}render()">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${lista.map(n=>`<option value="${esc(n)}" ${(!otro && v===n)?"selected":""}>${esc(n)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx("Especificá el nombre")}</span>
+      <input type="text" value="${esc(v)}" oninput="setCab('${c.k}',this.value)" autofocus></label>`:""}`;
+}
+/* --- selector de área/sector ya usada por empleados de la empresa, con "Otro" --- */
+function campoCabArea(c){
+  const v = P.draft.cab[c.k]||"";
+  const usadas = (S.personal||[]).map(p=>p.area).filter(Boolean);
+  const areas = Array.from(new Set(usadas.concat(TPL.auditoria.areas))).sort((a,b)=>a.localeCompare(b,"es"));
+  P.cabOtroManual = P.cabOtroManual || {};
+  const otro = !!(P.cabOtroManual[c.k] || (v && !areas.includes(v)));
+  return `<label class="f"><span class="lb">${esc(c.l)}</span>
+    <select onchange="if(this.value==='__otro__'){P.cabOtroManual['${c.k}']=true;}else{P.cabOtroManual['${c.k}']=false;setCab('${c.k}',this.value);}render()">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${areas.map(a=>`<option value="${esc(a)}" ${(!otro && v===a)?"selected":""}>${esc(a)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx("Especificá el área o sector")}</span>
+      <input type="text" value="${esc(v)}" oninput="setCab('${c.k}',this.value)" autofocus></label>`:""}`;
+}
+/* --- mes (opcional) + año para fechas de las que solo importa el período --- */
+function campoCabMesAnio(c){
+  const v = P.draft.cab[c.k]||"";
+  const m = /^(\d{4})(-(\d{2}))?$/.exec(v);
+  const anioV = m?m[1]:"", mesV = (m&&m[3])?m[3]:"";
+  const anioNow = new Date().getFullYear();
+  const anios=[]; for(let y=anioNow+1;y>=anioNow-40;y--) anios.push(y);
+  const meses=[["01","Enero"],["02","Febrero"],["03","Marzo"],["04","Abril"],["05","Mayo"],["06","Junio"],["07","Julio"],["08","Agosto"],["09","Septiembre"],["10","Octubre"],["11","Noviembre"],["12","Diciembre"]];
+  return `<div class="f"><span class="lb">${esc(c.l)}</span>
+    <div class="grid2" style="gap:8px">
+      <select onchange="setCabAnio('${c.k}',this.value)">
+        <option value="">${tx("Año")}</option>
+        ${anios.map(y=>`<option value="${y}" ${anioV===String(y)?"selected":""}>${y}</option>`).join("")}
+      </select>
+      <select onchange="setCabMes('${c.k}',this.value)" ${anioV?"":"disabled"}>
+        <option value="">${tx("Mes (opcional)")}</option>
+        ${meses.map(([mm,ml])=>`<option value="${mm}" ${mesV===mm?"selected":""}>${tx(ml)}</option>`).join("")}
+      </select>
+    </div>
+  </div>`;
+}
+function setCabAnio(k,anio){
+  const v = P.draft.cab[k]||""; const m=/^\d{4}-(\d{2})$/.exec(v); const mes=m?m[1]:"";
+  P.draft.cab[k] = anio ? (mes?anio+"-"+mes:anio) : "";
+  render();
+}
+function setCabMes(k,mes){
+  const v = P.draft.cab[k]||""; const m=/^(\d{4})/.exec(v); const anio=m?m[1]:"";
+  if(!anio) return;
+  P.draft.cab[k] = mes ? anio+"-"+mes : anio;
+  render();
+}
+/* --- selector de año solo (para campos "Año" de equipos) --- */
+function campoCabAnioSolo(c){
+  const v = P.draft.cab[c.k]||"";
+  const anioNow = new Date().getFullYear();
+  const anios=[]; for(let y=anioNow+1;y>=anioNow-40;y--) anios.push(y);
+  return `<label class="f"><span class="lb">${esc(c.l)}</span>
+    <select onchange="setCab('${c.k}',this.value)">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${anios.map(y=>`<option value="${y}" ${v===String(y)?"selected":""}>${y}</option>`).join("")}
+    </select></label>`;
+}
+/* --- "Inspeccionado por" / "Auditado por": empleado cargado, con "Otro" a mano --- */
+function campoInspector(label){
+  const v = P.draft.inspector||"";
+  const lista = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es")).map(p=>p.nombre).filter(Boolean);
+  const otro = !!(P.inspectorOtroManual || (v && !lista.includes(v)));
+  return `<label class="f"><span class="lb">${tx(label)}</span>
+    <select onchange="if(this.value==='__otro__'){P.inspectorOtroManual=true;}else{P.inspectorOtroManual=false;P.draft.inspector=this.value;}render()">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${lista.map(n=>`<option value="${esc(n)}" ${(!otro && v===n)?"selected":""}>${esc(n)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx("Especificá el nombre")}</span>
+      <input type="text" value="${esc(v)}" oninput="P.draft.inspector=this.value" autofocus></label>`:""}`;
 }
 
 function vForm(){
@@ -1361,7 +1457,7 @@ function vForm(){
       <div class="grp" style="margin-top:0">${tx("Datos del registro")}</div>
       <div class="grid2">
         <label class="f"><span class="lb">${tx("Fecha")}</span><input type="date" value="${d.fecha}" oninput="P.draft.fecha=this.value"></label>
-        <label class="f"><span class="lb">${tx("Inspeccionado por")}</span><input type="text" value="${esc(d.inspector)}" oninput="P.draft.inspector=this.value"></label>
+        ${campoInspector("Inspeccionado por")}
         ${(t.cab||[]).map(campoCab).join("")}
       </div>
     </div>
@@ -1602,8 +1698,20 @@ function cerrar(){
   const reg = {...d, total, ok, nc, na, pct, cerrada:new Date().toISOString(),
                titulo:TPL[d.tpl].nombre, regla:t.regla||null};
   reg.emp = S.activa; const _ed = upsert("insp", reg); guardar();
+  const v = veredicto(reg);
+  if(v.c==="no") notifFueraServicio(reg, v);
   toast(_ed ? tx("Registro actualizado") : "Inspección guardada");
+  P.reciénCreado = reg.id;
   go("ver", reg.id);
+}
+function notifFueraServicio(reg, v){
+  S.notifEventos = S.notifEventos || [];
+  S.notifEventos.unshift({
+    id: uid(), tipo: "fueraServicio", emp: S.activa,
+    tituloReg: reg.titulo || "", verdictoTx: v.tx, insId: reg.id,
+    ts: new Date().toISOString(), leida: false
+  });
+  if(S.notifEventos.length>50) S.notifEventos = S.notifEventos.slice(0,50);
 }
 
 function veredicto(r){
@@ -1638,7 +1746,7 @@ function vAuditoria(){
     <div class="card pad">
       <div class="grid2">
         <label class="f"><span class="lb">${tx("Fecha")}</span><input type="date" value="${d.fecha}" oninput="P.draft.fecha=this.value"></label>
-        <label class="f"><span class="lb">${tx("Auditado por")}</span><input type="text" value="${esc(d.inspector)}" oninput="P.draft.inspector=this.value"></label>
+        ${campoInspector("Auditado por")}
       </div>
     </div>
   </section>
@@ -1885,7 +1993,7 @@ function vVer(){
       ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
       <div style="flex:1;min-width:0">
         <div class="eyebrow">${tx("Informe de inspección")}</div>
-        <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+        ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
         <div class="tiny muted">${esc(t.nombre)} · ${fecha(r.fecha)}</div>
       </div>
     </div>
@@ -1927,8 +2035,9 @@ function vVer(){
 
   ${barraCompartir('insp', r.id)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="go('historial')">${tx("Volver al historial")}</button>
-    <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrar('${r.id}')">${tx("Eliminar registro")}</button>
+    ${r.tpl!=="auditoria"?`<button class="btn ghost" onclick="go('form','${r.tpl}')">${tx("➕ Nuevo registro")}</button>`:""}
+    <button class="btn ghost" style="margin-top:8px" onclick="volver()">${tx("Volver")}</button>
+    ${P.reciénCreado===r.id?"":`<button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrar('${r.id}')">${tx("Eliminar registro")}</button>`}
   </section>
   <div style="height:10px"></div>`;
 }
@@ -2080,8 +2189,8 @@ function exigeAdmin(){
   toast(tx("Solo el administrador de la empresa puede hacer esto."));
   return false;
 }
-function nuevoTrabajador(){ if(!exigeAdmin()) return; P.pEdit = {id:uid(), nombre:"", dni:"", legajo:"", puesto:"", area:"", empresa:"", talles:{}, nuevo:true}; render(); }
-function editarTrabajador(id){ if(!exigeAdmin()) return; P.pEdit = JSON.parse(JSON.stringify(trab(id))); render(); }
+function nuevoTrabajador(){ if(!exigeAdmin()) return; P.pEdit = {id:uid(), nombre:"", dni:"", legajo:"", puesto:"", area:"", empresa:"", talles:{}, nuevo:true}; P.areaOtroManual=false; render(); }
+function editarTrabajador(id){ if(!exigeAdmin()) return; P.pEdit = JSON.parse(JSON.stringify(trab(id))); P.areaOtroManual=false; render(); }
 function setP(k,v){ P.pEdit[k]=v; }
 function setTalle(k,v){ P.pEdit.talles = P.pEdit.talles||{}; P.pEdit.talles[k]=v; }
 function guardarTrabajador(){
@@ -2099,10 +2208,11 @@ function borrarTrabajador(){
   guardar(); P.pEdit=null; render(); toast(tx("Trabajador eliminado"));
 }
 function vPersonalEdit(e){
-  const areas = TPL.auditoria.areas;
+  const areas = TPL.auditoria.areas.slice().sort((a,b)=>a.localeCompare(b,"es"));
+  const areaOtro = !!(P.areaOtroManual || (e.area && !areas.includes(e.area)));
   return `
   <section class="block">
-    <div class="section-title"><h2>${e.nuevo?"Nuevo trabajador":"Editar trabajador"}</h2></div>
+    <div class="section-title"><h2>${e.nuevo?tx("Nuevo empleado"):tx("Editar empleado")}</h2></div>
     <div class="card pad">
       <label class="f"><span class="lb">${tx("Nombre y apellido")}</span>
         <input type="text" value="${esc(e.nombre)}" oninput="setP('nombre',this.value)"></label>
@@ -2111,8 +2221,13 @@ function vPersonalEdit(e){
         <label class="f"><span class="lb">${tx("Nº de empleado")}</span><input type="text" value="${esc(e.legajo)}" oninput="setP('legajo',this.value)"></label>
       </div>
       <label class="f"><span class="lb">${tx("Área / sector")}</span>
-        <input type="text" list="dlAreas" value="${esc(e.area)}" oninput="setP('area',this.value)">
-        <datalist id="dlAreas">${areas.map(a=>`<option>${a}</option>`).join("")}</datalist></label>
+        <select onchange="if(this.value==='__otro__'){P.areaOtroManual=true;}else{P.areaOtroManual=false;setP('area',this.value);}render()">
+          <option value="">${tx("Seleccionar…")}</option>
+          ${areas.map(a=>`<option value="${esc(a)}" ${(!areaOtro && e.area===a)?"selected":""}>${esc(a)}</option>`).join("")}
+          <option value="__otro__" ${areaOtro?"selected":""}>${tx("Otro")}</option>
+        </select></label>
+      ${areaOtro?`<label class="f"><span class="lb">${tx("Especificá el área o sector")}</span>
+        <input type="text" value="${esc(e.area)}" oninput="setP('area',this.value)" autofocus></label>`:""}
       <label class="f"><span class="lb">${tx("Empresa (vacío si es personal propio)")}</span>
         <input type="text" list="dlEmpr" value="${esc(e.empresa||"")}" oninput="setP('empresa',this.value)">
         <datalist id="dlEmpr">${empresasContr().map(x=>`<option>${esc(x)}</option>`).join("")}</datalist></label>
@@ -2542,7 +2657,7 @@ function vVerEpp(){
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
       <div class="eyebrow">${esc(TITULO_EPP[r.tipo])}</div>
-      <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${esc(e.direccion||"")}${e.cuit?" · CUIT "+esc(e.cuit):""} · ${fecha(r.fecha)}</div>
     </div>
   </div></section>
@@ -2553,7 +2668,7 @@ function vVerEpp(){
   </div></section>`:""}
   ${barraCompartir('epp', r.id)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="go('historial')">${tx("Volver al historial")}</button>
+    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
     <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarEpp('${r.id}')">${tx("Eliminar registro")}</button>
   </section><div style="height:10px"></div>`;
 }
@@ -2815,7 +2930,7 @@ function vVerInv(){
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
       <div class="eyebrow">${tx("Investigación de accidentes e incidentes · P-SHL-01")}</div>
-      <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${fecha(r.fecha)}${r.ident.hora?" · "+esc(r.ident.hora):""}${r.ident.sector?" · "+esc(r.ident.sector):""}</div>
     </div>
   </div></section>
@@ -2871,7 +2986,7 @@ function vVerInv(){
 
   ${barraCompartir('inv', r.id)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="go('historial')">${tx("Volver al historial")}</button>
+    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
     <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarInv('${r.id}')">${tx("Eliminar registro")}</button>
   </section><div style="height:10px"></div>`;
 }
@@ -3375,7 +3490,7 @@ function vVerIper(){
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
       <div class="eyebrow">${tx("Registro de la evaluación de riesgos")}</div>
-      <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${esc(r.area)} · ${fecha(r.fecha)} · rev. ${esc(r.revision||"0")} · ${esc(r.responsable||"")}</div>
     </div>
   </div></section>
@@ -3720,6 +3835,18 @@ function notificaciones(){
     }));
     out.unshift(...evNoti.filter(n=>!n.leida));
     evNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+    // 4.5 · eventos de equipos/registros que quedaron fuera de servicio
+    const evFs = (S.notifEventos||[]).filter(e=>e.tipo==="fueraServicio" && (!e.emp || e.emp===S.activa));
+    const evFsNoti = evFs.map(e=>({
+      tipo:"eventoFs", icono:"⛔",
+      titulo: esc(e.tituloReg||tx("Inspección")) + " · " + esc(e.verdictoTx||tx("Fuera de servicio")),
+      sub: tx("Se detectó al cerrar una inspección. Revisá el registro."),
+      cuando: null, dias: e.leida ? 9998 : -9999,
+      leida: e.leida, eventoId: e.id,
+      ir:()=>{ marcarNotifLeida(e.id); go("ver", e.insId); }
+    }));
+    out.unshift(...evFsNoti.filter(n=>!n.leida));
+    evFsNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   }
   return out;
 }
@@ -4254,7 +4381,7 @@ function vVerCap(){
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
       <div class="eyebrow">${tx("Servicio de higiene y seguridad en el trabajo")}</div>
-      <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${esc(e.direccion||"")}</div>
     </div>
   </div></section>
@@ -4294,7 +4421,7 @@ function vVerCap(){
 
   ${barraCompartir('cap', r.id)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="go('historial')">${tx("Volver al historial")}</button>
+    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
     <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarCap('${r.id}')">${tx("Eliminar registro")}</button>
   </section><div style="height:10px"></div>`;
 }
@@ -4572,7 +4699,7 @@ function vVerPtt(){
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
       <div class="eyebrow">Permiso de trabajo${r.nro?" N.º "+esc(r.nro):""}</div>
-      <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${fecha(r.fIni)}${r.hIni?" "+esc(r.hIni):""} a ${fecha(r.fFin)}${r.hFin?" "+esc(r.hFin):""}</div>
     </div>
   </div></section>
@@ -4647,7 +4774,7 @@ function vVerPtt(){
 
   ${barraCompartir('ptt', r.id)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="go('historial')">${tx("Volver al historial")}</button>
+    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
     <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarPtt('${r.id}')">${tx("Eliminar permiso")}</button>
   </section><div style="height:10px"></div>`;
 }
@@ -5477,6 +5604,22 @@ const DIC = {
 "Mañana":["Morning","Manhã"],
 "Tarde":["Afternoon","Tarde"],
 "Noche":["Night","Noite"],
+"Mañana y tarde":["Morning and afternoon","Manhã e tarde"],
+"Turno único":["Single shift","Turno único"],
+"Mes (opcional)":["Month (optional)","Mês (opcional)"],
+"Especificá el nombre":["Specify the name","Especifique o nome"],
+"Enero":["January","Janeiro"],
+"Febrero":["February","Fevereiro"],
+"Marzo":["March","Março"],
+"Abril":["April","Abril"],
+"Mayo":["May","Maio"],
+"Junio":["June","Junho"],
+"Julio":["July","Julho"],
+"Agosto":["August","Agosto"],
+"Septiembre":["September","Setembro"],
+"Octubre":["October","Outubro"],
+"Noviembre":["November","Novembro"],
+"Diciembre":["December","Dezembro"],
 "Hora de inicio de turno":["Shift start time","Hora de início do turno"],
 "Horómetro":["Hour meter","Horímetro"],
 "Operador del autoelevador":["Forklift operator","Operador da empilhadeira"],
@@ -6256,6 +6399,10 @@ const DIC = {
 "Responsable":["Person in charge","Responsável"],
 "Responsable del análisis":["Analysis owner","Responsável pela análise"],
 "Responsable del servicio de H&S":["H&S manager","Responsável pelo serviço de SST"],
+"Especificá el área o sector":["Specify the area or sector","Especifique a área ou setor"],
+"Nuevo empleado":["New employee","Novo colaborador"],
+"Editar empleado":["Edit employee","Editar colaborador"],
+"Otro":["Other","Outro"],
 "Sector":["Area","Setor"],
 "Sección / puesto / puesto tipo":["Section / job / job type","Seção / posto / posto tipo"],
 "Seleccionar trabajador…":["Select worker…","Selecionar colaborador…"],
@@ -6334,6 +6481,7 @@ const DIC = {
 "Matriz de riesgos · IPER":["Risk matrix","Matriz de riscos"],
 "Mis empresas":["My companies","Minhas empresas"],
 "Nuevo registro":["New record","Novo registro"],
+"➕ Nuevo registro":["➕ New record","➕ Novo registro"],
 "Nómina de personal y talles":["Worker roster and sizes","Quadro de pessoal e tamanhos"],
 "Panel":["Dashboard","Painel"],
 "Peligros existentes en el ambiente de trabajo":["Hazards present in the work environment","Perigos existentes no ambiente de trabalho"],
@@ -7439,7 +7587,7 @@ function vVerLux(){
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
       <div class="eyebrow">${tx("Protocolo para medición de iluminación en el ambiente laboral")}</div>
-      <div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${esc(e.direccion||"")}${r.localidad?" · "+esc(r.localidad):""}${r.provincia?" · "+esc(r.provincia):""}${e.cuit?" · CUIT "+esc(e.cuit):""}</div>
       <div class="tiny muted">${fecha(r.fecha)}${r.horaIni?" · "+esc(r.horaIni)+" a "+esc(r.horaFin||""):""}${r.turno?" · "+esc(r.turno):""}</div>
     </div>
@@ -9555,6 +9703,7 @@ function vAjustes(){
     </div>`;
 
   // --- Preferencias ---
+  const bkAbierto = !!P.prefBackupAbierto;
   const prefsBody = `
     <div style="display:flex;align-items:center;justify-content:space-between">
       <div><b>${tx("Tema de pantalla")}</b><div class="tiny muted">${tx("Claro por defecto")}</div></div>
@@ -9568,8 +9717,11 @@ function vAjustes(){
         </select></label>
     </div>
     <div class="acc-sub">
-      <div class="grp" style="margin-top:0">${tx("Copia de seguridad")}</div>
-      ${bkBloqueBody()}
+      <div class="grp" style="margin-top:0;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px" onclick="P.prefBackupAbierto=!P.prefBackupAbierto;render()">
+        <span>${tx("Copia de seguridad")}</span>
+        <span style="font-size:13px;transition:transform .2s;transform:rotate(${bkAbierto?90:0}deg)">›</span>
+      </div>
+      ${bkAbierto?bkBloqueBody():""}
     </div>
     ${u?`<div class="acc-sub">
       <div style="text-align:center">
@@ -9591,6 +9743,7 @@ function vAjustes(){
       <svg viewBox="0 0 100 100" style="width:40px;height:40px;margin:0 auto 6px;display:block">${ISO_PATHS}</svg>
       <div style="font-weight:700;font-size:16px;letter-spacing:.5px">Espiral</div>
       <div class="tiny muted" style="margin-top:2px">${t("app.slogan")}</div>
+      <div class="tiny muted" style="margin-top:10px;opacity:.7">© ${new Date().getFullYear()} Proyecto HS</div>
     </div>
   </section>
   <div style="height:10px"></div>`;
@@ -11520,9 +11673,9 @@ function vVerIdea(){
   if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró la idea.")}</div></section>`;
   const e = S.empresa||{}, c = mcColor(r.estado);
   return `
-  <section class="block"><div class="card pad">
-    ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin-bottom:8px">`:""}
-    <span class="eyebrow">${esc(e.razon||"")} · ${tx("Mejora Continua")}</span>
+  <section class="block"><div class="card pad" style="text-align:center">
+    ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin:0 auto 8px;display:block">`:""}
+    <span class="eyebrow">${e.logo?"":esc(e.razon||"")+" · "}${tx("Mejora Continua")}</span>
     <h2 style="font-size:21px;font-weight:700;margin:2px 0 4px">${esc(r.titulo||tx("Sin título"))}</h2>
     <p class="small muted" style="margin:0">${fecha(r.fecha)}${r.autor?" · "+esc(r.autor):""}${r.sector?" · "+esc(r.sector):""}</p>
     <div style="margin-top:10px"><span class="pill" style="border-color:${c};color:${c}">${tx(r.estado||"")}</span></div>
@@ -11558,6 +11711,9 @@ function vVerIdea(){
     <button class="btn ghost" style="margin-top:8px" onclick="irInicioMC()">${tx("Finalizar")}</button>
   </div></section>`}
   ${barraCompartir("idea", r.id)}
+  <section class="block noprint">
+    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
+  </section>
   <div style="height:10px"></div>`;
 }
 
