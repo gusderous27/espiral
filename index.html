@@ -6315,6 +6315,16 @@ const DIC = {
 "Descripción del puesto de trabajo":["Workstation description","Descrição do posto de trabalho"],
 "Detalle de desvíos":["Findings detail","Detalhe dos desvios"],
 "Detalle del desvío":["Finding detail","Detalhe do desvio"],
+"Investigación":["Investigation","Investigação"],
+"IPER":["IPER","IPER"],
+"Entregas EPP":["PPE deliveries","Entregas de EPI"],
+"Uso diario EPP":["Daily PPE use","Uso diário de EPI"],
+"Ropa y talles":["Workwear and sizes","Uniformes e tamanhos"],
+"Aud. por temática":["Audits by topic","Auditorias por tema"],
+"Nómina y talles":["Staff and sizes","Pessoal e tamanhos"],
+"No hay registros para exportar":["No records to export","Não há registros para exportar"],
+"Descargar Excel (todos los tipos, una solapa por tipo)":["Download Excel (all types, one tab per type)","Baixar Excel (todos os tipos, uma aba por tipo)"],
+"Descargar Excel de":["Download Excel for","Baixar Excel de"],
 "Detalle por tarea":["Detail by task","Detalhe por tarefa"],
 "Dimensiones del recinto":["Room dimensions","Dimensões do recinto"],
 "Documentación":["Documents","Documentação"],
@@ -8785,10 +8795,12 @@ function xlsxStylesXml(){
 }
 /* Arma un .xlsx (bytes) a partir de {empresa, titulo, fecha, hoja, bloques}.
    bloques: [{tipo:"meta", filas:[[etiqueta,valor],...]} | {tipo:"tabla", titulo?, cols:[...], filas:[[...]]}] */
-function construirXlsx(o){
-  const e = o.empresa || {};
-  const bloques = o.bloques || [];
-  const logoInfo = e.logo ? dataUriABytes(e.logo) : null;
+/* Arma el contenido (filas, combinaciones, dimensión, anchos) de UNA hoja a
+   partir de sus bloques. Reutilizado tanto para libros de una sola solapa
+   como para libros con varias (una por tipo de equipo, módulo, etc). */
+function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo){
+  const e = empresa || {};
+  bloques = bloques || [];
   let numCols = 2;
   bloques.forEach(b=>{ if(b.tipo==="tabla") numCols = Math.max(numCols, (b.cols||[]).length || 1); });
   // si hay logo reservamos las columnas A:B para la imagen (evita que el texto quede tapado debajo)
@@ -8799,7 +8811,7 @@ function construirXlsx(o){
 
   let rows = "", merges = [], rowNum = 1;
 
-  const fechaTxt = tx("Fecha")+": "+fecha(o.fecha||hoy());
+  const fechaTxt = tx("Fecha")+": "+fecha(fechaVal||hoy());
   rows += `<row r="${rowNum}" ht="24" customHeight="1">`;
   if(numCols>textoColNum){
     rows += xlsxCelda(`${textoCol}${rowNum}`, e.razon||"", 1);
@@ -8817,7 +8829,7 @@ function construirXlsx(o){
     rowNum++;
   }
 
-  rows += `<row r="${rowNum}" ht="26" customHeight="1">${xlsxCelda(`A${rowNum}`, (o.titulo||"").toUpperCase(), 4)}</row>`;
+  rows += `<row r="${rowNum}" ht="26" customHeight="1">${xlsxCelda(`A${rowNum}`, (titulo||"").toUpperCase(), 4)}</row>`;
   if(numCols>1) merges.push(`A${rowNum}:${finCol}${rowNum}`);
   rowNum += 2;
 
@@ -8853,11 +8865,12 @@ function construirXlsx(o){
   const dim = `A1:${finCol}${lastRow}`;
   const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
   const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="22" customWidth="1"/>`).join("")}</cols>`;
-
-  let drawingXml = "", sheetRelXml = "", drawingRelXml = "", mediaBytes = null, mediaExt = "";
-  if(logoInfo){
-    mediaBytes = logoInfo.bytes; mediaExt = logoInfo.ext;
-    drawingXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  return { rowsXml: rows, mergeXml, dim, colsXml };
+}
+/* El logo se ancla siempre igual (arriba a la izquierda, filas 1-2); el XML
+   del dibujo es idéntico en cada solapa, solo cambia el nombre del archivo. */
+function xlsxDrawingXml(){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
 <xdr:twoCellAnchor editAs="oneCell">
 <xdr:from><xdr:col>0</xdr:col><xdr:colOff>19050</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>19050</xdr:rowOff></xdr:from>
@@ -8870,36 +8883,77 @@ function construirXlsx(o){
 <xdr:clientData/>
 </xdr:twoCellAnchor>
 </xdr:wsDr>`;
-    sheetRelXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
-</Relationships>`;
-    drawingRelXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.${mediaExt}"/>
-</Relationships>`;
+}
+/* Nombre de solapa válido para Excel: sin \/?*[]:, máx 31 caracteres,
+   y sin repetirse dentro del mismo libro (agrega " (2)", " (3)", ...). */
+function xlsxNombreHoja(nombre, usados){
+  const base = String(nombre||"Hoja1").replace(/[\\/*?:\[\]]/g,"").trim().slice(0,31) || "Hoja1";
+  let out = base, n = 2;
+  while(usados[out.toLowerCase()]){
+    const suf = " ("+n+")";
+    out = base.slice(0, Math.max(1,31-suf.length))+suf;
+    n++;
   }
+  usados[out.toLowerCase()] = true;
+  return out;
+}
+/* Arma un libro .xlsx (bytes) con una o varias solapas.
+   o = {empresa, hojas:[{nombre, titulo, fecha, bloques}, ...]} */
+function construirLibroXlsx(o){
+  const empresa = o.empresa || {};
+  const logoInfo = empresa.logo ? dataUriABytes(empresa.logo) : null;
+  let hojas = (o.hojas||[]).filter(Boolean);
+  if(!hojas.length) hojas = [{nombre:"Hoja1", titulo:"", bloques:[]}];
+  const usadosNombres = {};
 
-  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  const sheetEntries = [], workbookRelsEntries = [], contentOverrides = [];
+  const sheetFiles = [];
+  let rId = 1;
+
+  hojas.forEach((h, idx)=>{
+    const n = idx+1;
+    const cuerpo = xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo);
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<dimension ref="${dim}"/>
+<dimension ref="${cuerpo.dim}"/>
 <sheetViews><sheetView workbookViewId="0"/></sheetViews>
 <sheetFormatPr defaultRowHeight="15"/>
-${colsXml}
-<sheetData>${rows}</sheetData>
-${mergeXml}
+${cuerpo.colsXml}
+<sheetData>${cuerpo.rowsXml}</sheetData>
+${cuerpo.mergeXml}
 ${logoInfo?`<drawing r:id="rIdDrawing"/>`:""}
 </worksheet>`;
+    sheetFiles.push({nombre:`xl/worksheets/sheet${n}.xml`, datos:strToU8(sheetXml)});
+    contentOverrides.push(`<Override PartName="/xl/worksheets/sheet${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`);
+    const sheetRid = "rId"+(rId++);
+    workbookRelsEntries.push(`<Relationship Id="${sheetRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${n}.xml"/>`);
+    const nombreHoja = xlsxNombreHoja(h.nombre||h.titulo||("Hoja"+n), usadosNombres);
+    sheetEntries.push(`<sheet name="${xlsxEsc(nombreHoja)}" sheetId="${n}" r:id="${sheetRid}"/>`);
+    if(logoInfo){
+      sheetFiles.push({nombre:`xl/worksheets/_rels/sheet${n}.xml.rels`, datos:strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${n}.xml"/>
+</Relationships>`)});
+      sheetFiles.push({nombre:`xl/drawings/drawing${n}.xml`, datos:strToU8(xlsxDrawingXml())});
+      sheetFiles.push({nombre:`xl/drawings/_rels/drawing${n}.xml.rels`, datos:strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.${logoInfo.ext}"/>
+</Relationships>`)});
+      contentOverrides.push(`<Override PartName="/xl/drawings/drawing${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`);
+    }
+  });
+
+  const stylesRid = "rId"+(rId++);
+  workbookRelsEntries.push(`<Relationship Id="${stylesRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`);
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
-${logoInfo?`<Default Extension="${mediaExt}" ContentType="image/${mediaExt==="jpeg"?"jpeg":mediaExt}"/>`:""}
+${logoInfo?`<Default Extension="${logoInfo.ext}" ContentType="image/${logoInfo.ext==="jpeg"?"jpeg":logoInfo.ext}"/>`:""}
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-${logoInfo?`<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`:""}
+${contentOverrides.join("\n")}
 </Types>`;
   const relsRaiz = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -8907,12 +8961,11 @@ ${logoInfo?`<Override PartName="/xl/drawings/drawing1.xml" ContentType="applicat
 </Relationships>`;
   const workbookXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheets><sheet name="${xlsxEsc((o.hoja||"Hoja1").replace(/[\\/*?:\[\]]/g,"").slice(0,31)||"Hoja1")}" sheetId="1" r:id="rId1"/></sheets>
+<sheets>${sheetEntries.join("")}</sheets>
 </workbook>`;
   const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+${workbookRelsEntries.join("\n")}
 </Relationships>`;
 
   const files = [
@@ -8920,16 +8973,15 @@ ${logoInfo?`<Override PartName="/xl/drawings/drawing1.xml" ContentType="applicat
     {nombre:"_rels/.rels", datos:strToU8(relsRaiz)},
     {nombre:"xl/workbook.xml", datos:strToU8(workbookXml)},
     {nombre:"xl/_rels/workbook.xml.rels", datos:strToU8(workbookRels)},
-    {nombre:"xl/styles.xml", datos:strToU8(xlsxStylesXml())},
-    {nombre:"xl/worksheets/sheet1.xml", datos:strToU8(sheetXml)}
-  ];
-  if(logoInfo){
-    files.push({nombre:"xl/worksheets/_rels/sheet1.xml.rels", datos:strToU8(sheetRelXml)});
-    files.push({nombre:"xl/drawings/drawing1.xml", datos:strToU8(drawingXml)});
-    files.push({nombre:"xl/drawings/_rels/drawing1.xml.rels", datos:strToU8(drawingRelXml)});
-    files.push({nombre:"xl/media/logo."+mediaExt, datos:mediaBytes});
-  }
+    {nombre:"xl/styles.xml", datos:strToU8(xlsxStylesXml())}
+  ].concat(sheetFiles);
+  if(logoInfo) files.push({nombre:"xl/media/logo."+logoInfo.ext, datos:logoInfo.bytes});
   return zipStore(files);
+}
+/* Libro de una sola solapa: envoltorio fino sobre construirLibroXlsx para
+   no tocar a quienes ya lo llaman así (descarga de un solo registro/tipo). */
+function construirXlsx(o){
+  return construirLibroXlsx({ empresa:o.empresa, hojas:[{nombre:o.hoja, titulo:o.titulo, fecha:o.fecha, bloques:o.bloques}] });
 }
 /* Toma un valor de cabecera (r.cab[k]) y lo formatea según el tipo de campo */
 function valorCab(c, v){
@@ -8942,6 +8994,31 @@ function valorCab(c, v){
     return m[3] ? tx(meses[parseInt(m[3],10)-1])+" "+m[1] : m[1];
   }
   return v;
+}
+/* Junta TODOS los registros guardados de un mismo tipo de equipo (todas las
+   auditorías cerradas, o todos los extintores/autoelevadores/escaleras/arnés
+   relevados) en los bloques de UNA solapa — un inventario, con una columna
+   por cada campo del formulario. La usan tanto la descarga de "todas las
+   inspecciones de este tipo" como el libro con una solapa por tipo. */
+function hojaInspTpl(tpl){
+  const T = TPL[tpl];
+  const regs = (S.insp||[]).filter(x=>x.tpl===tpl).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  if(tpl==="auditoria"){
+    const cols = ["Fecha","Auditoría","Área auditada","Clasificación","Riesgo","Detalle","Acción correctiva","Responsable","Compromiso","Estado"];
+    const filas = [];
+    regs.forEach(r=>(r.hallazgos||[]).forEach(h=>{
+      filas.push([fecha(r.fecha), r.nombre||T.nombre, h.area, h.clas, h.riesgo, h.detalle, h.accion||"", h.resp||"",
+        h.fecha?fecha(h.fecha):"", h.estado]);
+    }));
+    return { nombre:T.nombre||"Auditoría", titulo:T.nombre||tx("Auditoría"), fecha:hoy(), bloques:[{tipo:"tabla", cols, filas}] };
+  }
+  const cols = ["Fecha","Inspeccionado por"].concat((T.cab||[]).map(c=>c.l)).concat(["Resultado"]);
+  const filas = regs.map(r=>{
+    const v = veredicto(r);
+    const cabVals = (T.cab||[]).map(c=>valorCab(c, r.cab[c.k]));
+    return [fecha(r.fecha), r.inspector||"—"].concat(cabVals).concat([v.t||v.tx||""]);
+  });
+  return { nombre:T.nombre||"Hoja1", titulo:T.nombre||tx("Relevamiento"), fecha:hoy(), bloques:[{tipo:"tabla", cols, filas}] };
 }
 /* Arma el paquete de datos para el Excel de un registro. Para relevamientos de
    equipos (extintores, autoelevador, escaleras, arnés) junta TODOS los registros
@@ -8958,22 +9035,37 @@ function paqueteExcel(tipo, id){
         nombreBase:nombreArchivo(d),
         bloques:[ {tipo:"meta", filas:d.meta}, {tipo:"tabla", titulo:tx("Hallazgos"), cols:d.cols, filas:d.filas} ] };
     }
-    const todos = (S.insp||[]).filter(x=>x.tpl===r.tpl).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
-    const cols = ["Fecha","Inspeccionado por"].concat((T.cab||[]).map(c=>c.l)).concat(["Resultado"]);
-    const filas = todos.map(x=>{
-      const v = veredicto(x);
-      const cabVals = (T.cab||[]).map(c=>valorCab(c, x.cab[c.k]));
-      return [fecha(x.fecha), x.inspector||"—"].concat(cabVals).concat([v.t||v.tx||""]);
-    });
-    return { empresa:e, titulo:T.nombre||tx("Relevamiento"), fecha:r.fecha,
-      hoja:(T.nombre||"Hoja1").slice(0,31), nombreBase:"espiral-"+nombreArchivo({t:T.nombre,f:hoy()}),
-      bloques:[ {tipo:"tabla", cols, filas} ] };
+    const info = hojaInspTpl(r.tpl);
+    return { empresa:e, titulo:info.titulo, fecha:r.fecha,
+      hoja:(info.nombre||"Hoja1").slice(0,31), nombreBase:"espiral-"+nombreArchivo({t:info.titulo,f:hoy()}),
+      bloques:info.bloques };
   }
   const d = regPorTipo(tipo, id); if(!d) return null;
   const bloques = [ {tipo:"meta", filas:d.meta} ];
   if(d.cols && d.cols.length) bloques.push({tipo:"tabla", titulo:tx("Detalle"), cols:d.cols, filas:d.filas});
   return { empresa:e, titulo:d.t, fecha:d.f, hoja:((TPL[d.tpl]&&TPL[d.tpl].nombre)||d.t||"Hoja1").slice(0,31),
     nombreBase:nombreArchivo(d), bloques };
+}
+/* Descarga: TODAS las inspecciones de un tipo de equipo puntual (una sola
+   solapa), o TODOS los tipos guardados juntos (una solapa por tipo). Es el
+   botón de descarga dentro de Panel → Inspecciones. */
+function excelInsp(tpl){
+  if(!muroExcel()) return;
+  const e = S.empresa || {};
+  if(tpl && tpl!=="todas"){
+    const info = hojaInspTpl(tpl);
+    if(!(info.bloques[0].filas||[]).length) return toast(tx("No hay registros para exportar"));
+    const bytes = construirXlsx({ empresa:e, titulo:info.titulo, fecha:hoy(), hoja:info.nombre, bloques:info.bloques });
+    const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    bajarBlob("espiral-"+nombreArchivo({t:info.titulo,f:hoy()})+".xlsx", blob, true);
+    return;
+  }
+  const tipos = ORDEN.filter(k=>(S.insp||[]).some(r=>r.tpl===k));
+  if(!tipos.length) return toast(tx("No hay registros para exportar"));
+  const hojas = tipos.map(k=>{ const info=hojaInspTpl(k); return {nombre:info.nombre, titulo:info.titulo, fecha:hoy(), bloques:info.bloques}; });
+  const bytes = construirLibroXlsx({ empresa:e, hojas });
+  const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  bajarBlob("espiral-inspecciones-"+(e.razon||"empresa").replace(/\W+/g,"-").toLowerCase()+"-"+hoy()+".xlsx", blob, true);
 }
 async function bajarBlob(nombre, blob, forzarDescarga){
   if(!forzarDescarga){
@@ -9254,7 +9346,10 @@ function panelInsp(){
   <section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Inspecciones por mes")}</div>
     ${barras(porMes,"var(--c4)")}
-  </div></section>`;
+  </div></section>
+  <section class="block noprint">
+    <button class="btn ghost" onclick="excelInsp('${filtro}')">${filtro==="todas"?tx("Descargar Excel (todos los tipos, una solapa por tipo)"):tx("Descargar Excel de")+" "+esc(TPL[filtro].nombre)}</button>
+  </section>`;
 }
 
 function vPanel(){
@@ -9625,18 +9720,18 @@ function bloqueUsoEpp(usos){
 function exportarExcel(){
   if(!muroExcel()) return;
   const e = S.empresa||{};
-  const bloques = [];
+  const hojas = [];
+  const hoja = (nombre, titulo, cols, filas) => hojas.push({nombre, titulo:titulo||nombre, fecha:hoy(), bloques:[{tipo:"tabla", cols, filas}]});
 
-  bloques.push({tipo:"tabla", titulo:tx("Resumen de inspecciones"),
-    cols:["Fecha","Plantilla","Equipo / N.º","Sector o ubicación","Tipo","Capacidad","Instalación","Inspector","Conformes","Desvíos","N/A","Cumplimiento %","Resultado"],
-    filas:(S.insp||[]).map(r=>{ const c=r.cab||{};
-      return [fecha(r.fecha), TPL[r.tpl].nombre, c.nro||c.interno||"", c.sector||c.ubic||"", c.tipo||"",
-        c.capac||"", c.instalacion||"", r.inspector||"", r.ok, r.nc, r.na||0, r.pct+"%", veredicto(r).tx];
-    })});
+  // una solapa por cada tipo de equipo/relevamiento cargado (extintores, autoelevador, escaleras, arnés, auditoría)
+  ORDEN.filter(k=>(S.insp||[]).some(r=>r.tpl===k)).forEach(k=>{
+    const info = hojaInspTpl(k);
+    hojas.push({nombre:info.nombre, titulo:info.titulo, fecha:hoy(), bloques:info.bloques});
+  });
 
-  bloques.push({tipo:"tabla", titulo:tx("Detalle de desvíos"),
-    cols:["Fecha","Plantilla","Equipo / N.º","Sector o ubicación","Desvío detectado","Observación","Estado"],
-    filas:[].concat.apply([], (S.insp||[]).map(desviosDe)).map(d=>[fecha(d.fecha), d.tpl, d.equipo, d.lugar, d.item, d.obs, d.estado])});
+  hoja(tx("Detalle de desvíos"), tx("Detalle de desvíos"),
+    ["Fecha","Plantilla","Equipo / N.º","Sector o ubicación","Desvío detectado","Observación","Estado"],
+    [].concat.apply([], (S.insp||[]).map(desviosDe)).map(d=>[fecha(d.fecha), d.tpl, d.equipo, d.lugar, d.item, d.obs, d.estado]));
 
   const ents = (S.epp||[]).filter(r=>r.tipo==="entrega");
   if(ents.length){
@@ -9649,8 +9744,8 @@ function exportarExcel(){
         filas.push([fecha(r.fecha), p.nombre||r.nombreTrab, p.dni||"", p.puesto||"", i.prod, i.modelo, i.marca, i.cert, i.cant, fecha(i.fecha), fmg]);
       });
     });
-    bloques.push({tipo:"tabla", titulo:tx("Entregas de EPP · Res. 299/11"),
-      cols:["Fecha","Trabajador","D.N.I.","Puesto","EPP entregado","Tipo / modelo","Marca","Certificación","Cantidad","Fecha de entrega","Firma"], filas});
+    hoja(tx("Entregas EPP"), tx("Entregas de EPP · Res. 299/11"),
+      ["Fecha","Trabajador","D.N.I.","Puesto","EPP entregado","Tipo / modelo","Marca","Certificación","Cantidad","Fecha de entrega","Firma"], filas);
   }
   const usos = (S.epp||[]).filter(r=>r.tipo==="uso");
   if(usos.length){
@@ -9659,8 +9754,8 @@ function exportarExcel(){
       const fal = Object.keys(f.marcas).filter(k=>f.marcas[k]==="no");
       filas.push([fecha(r.fecha), r.area||"", f.nombre, fal.join(", "), fal.length, f.obs||""]);
     }));
-    bloques.push({tipo:"tabla", titulo:tx("Verificación diaria de uso de EPP"),
-      cols:["Fecha","Área","Trabajador","EPP sin usar","Cantidad de faltas","Observaciones"], filas});
+    hoja(tx("Uso diario EPP"), tx("Verificación diaria de uso de EPP"),
+      ["Fecha","Área","Trabajador","EPP sin usar","Cantidad de faltas","Observaciones"], filas);
   }
   const ropas = (S.epp||[]).filter(r=>r.tipo==="ropa");
   if(ropas.length){
@@ -9669,18 +9764,18 @@ function exportarExcel(){
       PRENDAS.forEach(x=>{ const v=(r.prendas||{})[x.k]||{}; fila.push(v.talle||"", v.cant||""); });
       return fila;
     });
-    bloques.push({tipo:"tabla", titulo:tx("Entrega de ropa de trabajo y talles"),
-      cols:["Fecha","Trabajador","Área"].concat([].concat.apply([],PRENDAS.map(x=>[x.l+" talle",x.l+" cant."]))), filas});
+    hoja(tx("Ropa y talles"), tx("Entrega de ropa de trabajo y talles"),
+      ["Fecha","Trabajador","Área"].concat([].concat.apply([],PRENDAS.map(x=>[x.l+" talle",x.l+" cant."]))), filas);
   }
   if((S.inv||[]).length){
-    bloques.push({tipo:"tabla", titulo:tx("Investigación de accidentes e incidentes"),
-      cols:["Fecha","Hora","Calificación","Sector","Lugar","Trabajador","Parte lesionada","Tipo de lesión",
+    hoja(tx("Investigación"), tx("Investigación de accidentes e incidentes"),
+      ["Fecha","Hora","Calificación","Sector","Lugar","Trabajador","Parte lesionada","Tipo de lesión",
         "Gravedad","Frecuencia","Riesgo","Acciones inseguras","Condiciones inseguras","Tipo de contacto",
         "5º porqué","Clasificación de la causa raíz","Investigado por"],
-      filas:S.inv.map(r=>[fecha(r.fecha), r.ident.hora||"", r.ident.calificacion||"", r.ident.sector||"",
+      S.inv.map(r=>[fecha(r.fecha), r.ident.hora||"", r.ident.calificacion||"", r.ident.sector||"",
         r.ident.lugar||"", r.dp.nombre||"", r.dp.parte||"", r.dp.lesion||"", r.ev.gravedad||"", r.ev.frecuencia||"",
         r.riesgo||"", r.causas.acciones.join(" · "), r.causas.condiciones.join(" · "), r.forma.contacto.join(" · "),
-        r.why.p5||"", r.why.clasif||"", r.com.inv||""])});
+        r.why.p5||"", r.why.clasif||"", r.com.inv||""]));
   }
   if((S.iper||[]).length){
     const filas = [];
@@ -9690,9 +9785,9 @@ function exportarExcel(){
         filas.push([r.area,fecha(r.fecha),r.revision,t.maq,t.actividad,t.desc,t.eventos,x.tipo,x.g,x.p,
           n?n.s:"",n?n.t:"",x.ctrl,x.resp,x.fecha?fecha(x.fecha):""]); });
     }));
-    bloques.push({tipo:"tabla", titulo:tx("Matriz de riesgos · IPER"),
-      cols:["Área","Fecha","Revisión","Máquina / puesto","Actividad","Descripción de la tarea","Eventos",
-        "Peligro / riesgo","Gravedad","Probabilidad","Puntaje","Nivel de riesgo","Medidas de control","Responsable","Fecha"], filas});
+    hoja(tx("IPER"), tx("Matriz de riesgos · IPER"),
+      ["Área","Fecha","Revisión","Máquina / puesto","Actividad","Descripción de la tarea","Eventos",
+        "Peligro / riesgo","Gravedad","Probabilidad","Puntaje","Nivel de riesgo","Medidas de control","Responsable","Fecha"], filas);
   }
   if((S.docs||[]).length){
     const filas = S.docs.map(c=>{
@@ -9701,10 +9796,10 @@ function exportarExcel(){
       docsStd().forEach(x=>{ const d=(c.docs||{})[x.k]; f.push(estadoDoc(d).t, d&&d.venc?fecha(d.venc):""); });
       return f;
     });
-    bloques.push({tipo:"tabla", titulo:tx("Documentación de empresas contratistas"),
-      cols:["Empresa","Tarea","CUIT","Obra","Contacto","E-mail","Teléfono","ART","Tel. ART",
+    hoja(tx("Contratistas"), tx("Documentación de empresas contratistas"),
+      ["Empresa","Tarea","CUIT","Obra","Contacto","E-mail","Teléfono","ART","Tel. ART",
         "Responsable H&S","E-mail responsable","Ingreso","Salida"]
-        .concat([].concat.apply([],docsStd().map(x=>[x.l+" · estado", x.l+" · vence"]))), filas});
+        .concat([].concat.apply([],docsStd().map(x=>[x.l+" · estado", x.l+" · vence"]))), filas);
   }
   if((S.cap||[]).length){
     const filas = [];
@@ -9712,16 +9807,16 @@ function exportarExcel(){
       r.asistentes.forEach(a=>filas.push([fecha(r.fecha), r.duracion||"", r.instructor||"", r.matricula||"",
         r.niveles||"", r.lugar||"", tm, a.nombre, a.dni||"", a.firma?"Sí":"No"]));
     });
-    bloques.push({tipo:"tabla", titulo:tx("Registro de capacitaciones"),
-      cols:["Fecha","Duración","Instructor","Matrícula","Niveles","Lugar","Temas","Participante","Documento","Firmó"], filas});
+    hoja(tx("Capacitaciones"), tx("Registro de capacitaciones"),
+      ["Fecha","Duración","Instructor","Matrícula","Niveles","Lugar","Temas","Participante","Documento","Firmó"], filas);
   }
   if((S.ptt||[]).length){
-    bloques.push({tipo:"tabla", titulo:tx("Permisos de trabajo"),
-      cols:["N.º","Fecha","Tipo de trabajo","Lugar","Ejecutante","Prestador","Descripción",
+    hoja(tx("Permisos"), tx("Permisos de trabajo"),
+      ["N.º","Fecha","Tipo de trabajo","Lugar","Ejecutante","Prestador","Descripción",
         "Peligros","Medidas de prevención","EPP requeridos","Autorizador","Estado","Cierre"],
-      filas:S.ptt.map(r=>[r.nro||"",fecha(r.fecha),r.tipos.join(" · "),r.lugar||"",r.ejecutante||"",
+      S.ptt.map(r=>[r.nro||"",fecha(r.fecha),r.tipos.join(" · "),r.lugar||"",r.ejecutante||"",
         r.razonPrest||r.prestador||"",r.desc||"",r.peligros.join(" · "),r.prevencion.join(" · "),
-        r.protec.join(" · "),r.resp.autoriz||"",r.estado,r.resp.finFecha?fecha(r.resp.finFecha):""])});
+        r.protec.join(" · "),r.resp.autoriz||"",r.estado,r.resp.finFecha?fecha(r.resp.finFecha):""]));
   }
   if((S.lux||[]).length){
     const filas = [];
@@ -9731,9 +9826,9 @@ function exportarExcel(){
         c.media!==null?c.media.toFixed(2):"",c.min!==null?c.min.toFixed(2):"",
         c.media!==null?(c.unif?"Cumple":"No cumple"):"",c.req!==null?c.req:"",
         c.cumple===null?"":(c.cumple?"Cumple":"No cumple")]); }));
-    bloques.push({tipo:"tabla", titulo:tx("Protocolos de medición de iluminación"),
-      cols:["Fecha","Profesional","Punto","Hora","Sector","Sección / puesto","Tipo","Fuente","Iluminación",
-        "Largo","Ancho","Altura montaje","Índice k","Puntos mín.","E media","E mínima","Uniformidad","Requerido","Cumple"], filas});
+    hoja(tx("Iluminación"), tx("Protocolos de medición de iluminación"),
+      ["Fecha","Profesional","Punto","Hora","Sector","Sección / puesto","Tipo","Fuente","Iluminación",
+        "Largo","Ancho","Altura montaje","Índice k","Puntos mín.","E media","E mínima","Uniformidad","Requerido","Cumple"], filas);
   }
   if((S.aud||[]).length){
     const filas1 = [];
@@ -9744,46 +9839,45 @@ function exportarExcel(){
           T.pct===null?"":T.pct+"%"]);
       }));
     });
-    bloques.push({tipo:"tabla", titulo:tx("Auditorías mensuales"),
-      cols:["Fecha","Auditoría","Área auditada","Auditor","Temática","N.º","Condición a cumplir",
-        "Resultado","Fecha de regularización","Observaciones","Efectividad general"], filas:filas1});
+    hoja(tx("Auditorías mensuales"), tx("Auditorías mensuales"),
+      ["Fecha","Auditoría","Área auditada","Auditor","Temática","N.º","Condición a cumplir",
+        "Resultado","Fecha de regularización","Observaciones","Efectividad general"], filas1);
     const filas2 = [];
     S.aud.forEach(r=>audTotal(r).bloques.forEach(z=>{
       filas2.push([fecha(r.fecha), r.nombre||"", r.area||"", z.b.t, z.r.si, z.r.no, z.r.na,
         z.r.pct===null?"No aplica":z.r.pct+"%"]);
     }));
-    bloques.push({tipo:"tabla", titulo:tx("Auditorías · resumen por temática"),
-      cols:["Fecha","Auditoría","Área auditada","Temática","Cumple","No cumple","No aplica","Cumplimiento"], filas:filas2});
+    hoja(tx("Aud. por temática"), tx("Auditorías · resumen por temática"),
+      ["Fecha","Auditoría","Área auditada","Temática","Cumple","No cumple","No aplica","Cumplimiento"], filas2);
   }
   const ideas = (S.idea||[]);
   if(ideas.length){
-    bloques.push({tipo:"tabla", titulo:tx("Mejora Continua · ideas"),
-      cols:["Fecha","Título","Propone","Sector","Estado","Qué mejora","Impacto","Revisión","Evaluación","Próximos pasos"],
-      filas:ideas.map(r=>[fecha(r.fecha), r.titulo||"", r.autor||"", r.sector||"", r.estado||"",
+    hoja(tx("Mejora Continua"), tx("Mejora Continua · ideas"),
+      ["Fecha","Título","Propone","Sector","Estado","Qué mejora","Impacto","Revisión","Evaluación","Próximos pasos"],
+      ideas.map(r=>[fecha(r.fecha), r.titulo||"", r.autor||"", r.sector||"", r.estado||"",
         (r.problemas||[]).join("; "), r.impacto||"", r.revisionFecha?fecha(r.revisionFecha):"",
-        r.evalFecha?fecha(r.evalFecha):"", r.proximos||""])});
+        r.evalFecha?fecha(r.evalFecha):"", r.proximos||""]));
   }
   const accs = accionesTodas();
   if(accs.length){
-    bloques.push({tipo:"tabla", titulo:tx("Plan de acción"),
-      cols:["Módulo de origen","Sector o temática","Fecha de detección","Clasificación","Nivel de riesgo",
+    hoja(tx("Plan de acción"), tx("Plan de acción"),
+      ["Módulo de origen","Sector o temática","Fecha de detección","Clasificación","Nivel de riesgo",
         "Desvío detectado","Acción correctiva","Responsable","Fecha compromiso","Estado","Días de atraso","Fecha de cierre"],
-      filas:accs.map(a=>{
+      accs.map(a=>{
         const atraso = (!a.hecha && a.vence && a.vence < hoy())
           ? Math.round((new Date(hoy()) - new Date(a.vence))/86400000) : "";
         return [a.mod||a.origen, a.donde||"", a.detecta||a.fuente, a.clas||"", a.nivel||"",
           a.detalle||"", a.sinAccion ? "(sin acción definida)" : a.texto, a.resp||"",
           a.vence?fecha(a.vence):"", a.hecha?"Cerrada":"Abierta", atraso, a.cierre?fecha(a.cierre):""];
-      })});
+      }));
   }
   if((S.personal||[]).length){
-    bloques.push({tipo:"tabla", titulo:tx("Nómina de personal y talles"),
-      cols:["Nombre y apellido","D.N.I.","Legajo","Área","Puesto"].concat(PRENDAS.map(x=>x.l)),
-      filas:S.personal.map(p=>[p.nombre,p.dni||"",p.legajo||"",p.area||"",p.puesto||""].concat(PRENDAS.map(x=>(p.talles||{})[x.k]||"")))});
+    hoja(tx("Nómina y talles"), tx("Nómina de personal y talles"),
+      ["Nombre y apellido","D.N.I.","Legajo","Área","Puesto"].concat(PRENDAS.map(x=>x.l)),
+      S.personal.map(p=>[p.nombre,p.dni||"",p.legajo||"",p.area||"",p.puesto||""].concat(PRENDAS.map(x=>(p.talles||{})[x.k]||""))));
   }
 
-  const bytes = construirXlsx({ empresa:e, titulo:tx("Registro de inspecciones"), fecha:hoy(),
-    hoja:(e.razon||"Espiral").slice(0,31), bloques });
+  const bytes = construirLibroXlsx({ empresa:e, hojas });
   const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
   bajarBlob("espiral-"+(e.razon||"empresa").replace(/\W+/g,"-").toLowerCase()+"-"+hoy()+".xlsx", blob, true);
 }
