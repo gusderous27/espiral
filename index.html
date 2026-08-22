@@ -3199,7 +3199,14 @@ function marcarAccionOrigen(ref, cerrada){
     if(ref.t==="auditp"){ const r=(S.aud||[]).find(x=>x.id===ref.id); if(r){ const it=r.bloques[ref.k].items[ref.i]; it.hecho=cerrada; it.cierre=cerrada?hoy():""; } }
     else if(ref.t==="iper"){ const r=(S.iper||[]).find(x=>x.id===ref.id); if(r){ r.tareas[ref.k].riesgos[ref.i].hecho=cerrada; } }
     else if(ref.t==="inv"){ const r=(S.inv||[]).find(x=>x.id===ref.id); if(r){ r[ref.k][ref.i].c = cerrada?hoy():""; } }
-    else if(ref.t==="aud"){ const r=(S.insp||[]).find(x=>x.id===ref.id); if(r){ const h=r.hallazgos[ref.i]; h.estado=cerrada?"Cerrado":"Abierto"; } }
+    else if(ref.t==="aud"){ const r=(S.insp||[]).find(x=>x.id===ref.id); if(r){
+      const h=r.hallazgos[ref.i]; h.estado=cerrada?"Cerrado":"Abierto";
+      // recalcular los totales del registro para que el KPI de "Desvíos"
+      // del inicio y del panel reflejen los hallazgos ya gestionados
+      r.nc = r.hallazgos.filter(x=>x.estado!=="Cerrado").length;
+      r.ok = r.hallazgos.length - r.nc;
+      r.pct = r.hallazgos.length ? Math.round(r.ok/r.hallazgos.length*100) : 100;
+    } }
   }catch(e){}
 }
 function agregarBitacora(){
