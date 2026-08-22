@@ -522,7 +522,8 @@ async function sbGuardarEmpresa(emp){
   datos._meta = {
     logo: emp.logo||"", pais: emp.pais||"", cuit: emp.cuit||"", obra: emp.obra||"",
     direccion: emp.direccion||"", contacto: emp.contacto||"", responsable: emp.responsable||"",
-    contactoNombre: emp.contactoNombre||"", contactoTel: emp.contactoTel||"", contactoMail: emp.contactoMail||""
+    contactoNombre: emp.contactoNombre||"", contactoTel: emp.contactoTel||"", contactoMail: emp.contactoMail||"",
+    pro: !!emp.pro
   };
   const fila = {
     id: emp.id,
@@ -1077,7 +1078,7 @@ function empujarEmpresaActiva(){
   if(!e || !e.id) return;
   // solo empujo empresas donde soy dueño o miembro (las mías); con debounce
   clearTimeout(EMPUJE_T);
-  const snapshot = { id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos };
+  const snapshot = { id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos, pro:e.pro };
   EMPUJE_T = setTimeout(async ()=>{
     const r = await sbGuardarEmpresa(snapshot);
     if(r && r.error){ /* si falla, queda guardado local igual */ }
@@ -5311,7 +5312,23 @@ const DIC = {
 "Auditoría, IPER, permisos, protocolos, contratistas y panel están bloqueados":["Audit, IPER, permits, protocols, contractors and dashboard are locked","Auditoria, IPER, permissões, protocolos, contratadas e painel estão bloqueados"],
 "Versión de prueba: se activa en este dispositivo. El pago y la cuenta llegan con proyectohs.com.":["Trial mode: it activates on this device. Payment and accounts arrive with proyectohs.com.","Versão de teste: ativa neste dispositivo. O pagamento e a conta chegam com proyectohs.com."],
 "Varias empresas":["Multiple companies","Várias empresas"],
-"una ficha, un personal y un historial por cada cliente o planta":["separate details, staff and history for every client or site","ficha, pessoal e histórico separados para cada cliente ou planta"],
+"una ficha, un personal y un historial por cada cliente o planta (se paga por cuenta, no por empresa)":["separate details, staff and history for every client or site (paid per account, not per company)","ficha, pessoal e histórico separados para cada cliente ou planta (pago por conta, não por empresa)"],
+/* ---------- ESPIRAL PRO · por empresa / por cuenta ---------- */
+"Todos los módulos habilitados, para todo tu equipo en esta empresa":["Every module unlocked, for your whole team in this company","Todos os módulos liberados, para toda a sua equipe nesta empresa"],
+"Auditoría, IPER, permisos, protocolos, contratistas, panel e invitar equipo están bloqueados":["Audit, IPER, permits, protocols, contractors, dashboard and inviting your team are locked","Auditoria, IPER, permissões, protocolos, contratadas, painel e convidar a equipe estão bloqueados"],
+"Tu cuenta":["Your account","Sua conta"],
+"Varias empresas habilitado":["Multiple companies enabled","Várias empresas habilitado"],
+"Una sola empresa":["One company","Uma só empresa"],
+"Aparte de si esta empresa es Pro: define cuántas empresas propias podés crear o sumar con tu cuenta.":["Separate from whether this company is Pro: it sets how many of your own companies you can create or join with your account.","À parte de esta empresa ser Pro ou não: define quantas empresas próprias você pode criar ou entrar com sua conta."],
+"Volver a una sola":["Back to one","Voltar a uma só"],
+"¿Volver a la versión gratuita en esta empresa? No se borra ningún dato.":["Switch this company back to the free version? No data is deleted.","Voltar esta empresa à versão gratuita? Nenhum dado é apagado."],
+"Esta empresa volvió a la versión gratuita":["This company is back on the free version","Esta empresa voltou à versão gratuita"],
+"¿Volver a poder trabajar con una sola empresa? No se borra ningún dato: las que ya tenés quedan como están.":["Go back to working with a single company? No data is deleted: the ones you already have stay as they are.","Voltar a trabalhar com uma única empresa? Nenhum dado é apagado: as que você já tem continuam como estão."],
+"Tu cuenta volvió a la versión gratuita":["Your account is back on the free version","Sua conta voltou à versão gratuita"],
+"Ya podés crear o sumarte a otra empresa con tu cuenta.":["You can now create or join another company with your account.","Agora você já pode criar ou entrar em outra empresa com sua conta."],
+"Tenés acceso ilimitado a todos los registros y funciones en esta empresa.":["You have unlimited access to every record and feature in this company.","Você tem acesso ilimitado a todos os registros e funções nesta empresa."],
+"Versión de prueba: activa tu cuenta en este dispositivo, para crear o sumarte a otra empresa. El pago real llega con proyectohs.com.":["Trial mode: it activates your account on this device, to create or join another company. Real payment arrives with proyectohs.com.","Versão de teste: ativa sua conta neste dispositivo, para criar ou entrar em outra empresa. O pagamento real chega com proyectohs.com."],
+"Versión de prueba: activa esta empresa en este dispositivo, para todo tu equipo. El pago real llega con proyectohs.com.":["Trial mode: it activates this company on this device, for your whole team. Real payment arrives with proyectohs.com.","Versão de teste: ativa esta empresa neste dispositivo, para toda a sua equipe. O pagamento real chega com proyectohs.com."],
 "240 ítems, armado de plantillas propias y % de efectividad":["240 items, custom templates and an effectiveness score","240 itens, montagem de modelos próprios e % de efetividade"],
 "Matriz de riesgos IPER":["IPER risk matrix","Matriz de riscos IPER"],
 "19 categorías, 75 peligros y valoración por nivel":["19 categories, 75 hazards and risk-level scoring","19 categorias, 75 perigos e avaliação por nível"],
@@ -5358,6 +5375,8 @@ const DIC = {
 "Guarda un archivo con todas tus empresas y registros. Mandátelo por mail o subilo a la nube.":["Saves a file with every company and record. Email it to yourself or upload it to the cloud.","Salva um arquivo com todas as empresas e registros. Envie por e-mail ou suba para a nuvem."],
 "Todavía no hiciste ninguna copia.":["You haven't made a backup yet.","Você ainda não fez nenhuma cópia."],
 "Los datos viven en este navegador: si borrás la caché o cambiás de teléfono, se pierden.":["Data lives in this browser: clearing the cache or switching phones loses it.","Os dados ficam neste navegador: se limpar o cache ou trocar de celular, você os perde."],
+"Tus datos ya están respaldados en la nube con tu cuenta. Si cambiás de celular o de PC, iniciá sesión y los vas a encontrar tal cual los dejaste.":["Your data is already backed up in the cloud with your account. If you switch phones or computers, just log in and everything will be exactly as you left it.","Seus dados já estão salvos na nuvem com sua conta. Se trocar de celular ou de PC, basta entrar na conta e vai encontrar tudo como deixou."],
+"Es un extra, no hace falta para no perder tus datos: te sirve para guardar un archivo aparte o pasar todo a otra cuenta.":["It's an extra, not something you need to avoid losing data: it's handy for keeping a separate file or moving everything to another account.","É um extra, não é necessário para não perder seus dados: serve para guardar um arquivo à parte ou passar tudo para outra conta."],
 "Tu última copia es de hace":["Your last backup was","Sua última cópia foi há"],
 "días":["days ago","dias"],
 "Conviene hacer una nueva.":["Time for a new one.","Convém fazer uma nova."],
@@ -9441,8 +9460,10 @@ function vAjustes(){
     <label class="f"><span class="lb">${tx("Correo")}</span>
       <input type="email" value="${esc(u.email||"")}" disabled style="opacity:.65"></label>
     <p class="tiny muted" style="margin:-4px 2px 10px">${tx("El correo es tu identificación y no se puede cambiar.")}</p>
-    <button class="btn" onclick="guardarPerfil()">${tx("Guardar mis datos")}</button>
-    <button class="btn ghost sm" style="margin-top:10px" onclick="cerrarSesion()">${tx("Cerrar sesión")}</button>`;
+    <button class="btn" onclick="guardarPerfil()">${tx("Guardar")}</button>
+    <div style="text-align:center;margin-top:10px">
+      <button class="btn ghost sm" onclick="cerrarSesion()">${tx("Cerrar sesión")}</button>
+    </div>`;
 
   // --- Mis empresas (todo lo de empresa junto, sin duplicar) ---
   const esAdm = puedeAdministrar();
@@ -9536,7 +9557,6 @@ function vAjustes(){
       <svg viewBox="0 0 100 100" style="width:40px;height:40px;margin:0 auto 6px;display:block">${ISO_PATHS}</svg>
       <div style="font-weight:700;font-size:16px;letter-spacing:.5px">Espiral</div>
       <div class="tiny muted" style="margin-top:2px">${t("app.slogan")}</div>
-      <div class="tiny muted" style="margin-top:8px;opacity:.75">© ${new Date().getFullYear()} Espiral · Proyecto HS · v1.0</div>
     </div>
   </section>
   <div style="height:10px"></div>`;
@@ -9589,7 +9609,7 @@ async function guardarPerfil(){
 }
 function setEmp(k,v){ S.empresa[k]=v; guardar(); }
 function quitarLogo(){ delete S.empresa.logo; guardar(); render(); toast(tx("Logo quitado")); }
-async function guardarAjustes(){ await guardar(); toast(tx("Datos guardados")); setTimeout(()=>go("inicio"),700); }
+async function guardarAjustes(){ await guardar(); toast(tx("Datos guardados")); P.accAjustes=""; render(); }
 function resetTodo(){
   if(!gate("Se borran todos los registros de «"+(S.empresa.razon||"esta empresa")+"». Los datos de las otras empresas no se tocan. ¿Continuar?", ()=>resetTodo())) return;
   S.empresa.datos = {}; guardar(); toast(tx("Registros borrados")); go("inicio");
@@ -10856,6 +10876,7 @@ function filaAEmpresa(f){
     logo: meta.logo||"", pais: meta.pais||"AR", cuit: meta.cuit||"", obra: meta.obra||"",
     direccion: meta.direccion||"", contacto: meta.contacto||"", responsable: meta.responsable||"",
     contactoNombre: meta.contactoNombre||"", contactoTel: meta.contactoTel||"", contactoMail: meta.contactoMail||"",
+    pro: !!meta.pro,
     _serverTs: f.actualizado_en || ""
   };
   return e;
@@ -11488,8 +11509,16 @@ function vVerIdea(){
 
 /* ============================================================
    ESPIRAL PRO  ·  el muro
-   Todo el control pasa por esPro(). Cuando exista la cuenta en
-   proyectohs.com, esa función lee la cuenta y no cambia nada más.
+   Pro es de la EMPRESA: la paga quien la administra y la usan todos
+   los que trabajan ahí (dueño y miembros invitados) mientras están
+   en esa empresa. Ver esPro().
+   Multiempresa es la única función que se paga aparte, por CUENTA
+   personal: define cuántas empresas propias puede crear o sumar
+   ese usuario, sin importar si alguna empresa ajena a la que fue
+   invitado es Pro o no. Ver esProCuenta().
+   Cuando exista el cobro real en proyectohs.com, esas dos funciones
+   son las que van a leer la cuenta y la suscripción de la empresa;
+   el resto de la app no cambia.
    ============================================================ */
 const PRO_RUTAS = {
   aud:1, audNueva:1, audArmar:1, audEdit:1, verAud:1,
@@ -11503,7 +11532,7 @@ const PRO_RUTAS = {
 };
 /* qué es Pro, en el orden en que se lo mostramos al usuario */
 const PRO_VENTAJAS = [
-  {ic:"🏢", n:"Varias empresas",        d:"una ficha, un personal y un historial por cada cliente o planta"},
+  {ic:"🏢", n:"Varias empresas",        d:"una ficha, un personal y un historial por cada cliente o planta (se paga por cuenta, no por empresa)"},
   {ic:"📋", n:"Auditoría mensual", d:"240 ítems, armado de plantillas propias y % de efectividad"},
   {ic:"📊", n:"Matriz de riesgos IPER", d:"19 categorías, 75 peligros y valoración por nivel"},
   {ic:"📝", n:"Permiso de trabajo",     d:"altura, caliente, confinados y eléctrico, con bloqueo por atmósfera"},
@@ -11514,12 +11543,15 @@ const PRO_VENTAJAS = [
   {ic:"📄", n:"Informes sin marca",     d:"el PDF sale con tu logo y sin el pie de Espiral"}
 ];
 
-function esPro(){ return !!S.pro; }
+/* Pro de ESTA empresa: la comparten todos los que trabajan en ella */
+function esPro(){ return !!(S.empresa && S.empresa.pro); }
+/* Pro de la CUENTA: habilita multiempresa, es personal */
+function esProCuenta(){ return !!S.proCuenta; }
 function bloqueoPro(ruta){ return !!(PRO_RUTAS[ruta] && !esPro()); }
 /* candado para los tiles */
 function lk(ruta){ return bloqueoPro(ruta) ? ` <span class="lock">🔒</span>` : ""; }
-/* ¿puede crear otra empresa? */
-function puedeEmpresa(){ return esPro() || (S.empresas||[]).length < 1; }
+/* ¿puede crear o sumarse a otra empresa? función de la CUENTA, no de la empresa activa */
+function puedeEmpresa(){ return esProCuenta() || (S.empresas||[]).length < 1; }
 
 function irPro(motivo){ P.proDe = motivo||""; go("pro"); }
 /* 3.1 · pantalla intermedia suave antes de mandar a la venta.
@@ -11542,7 +11574,13 @@ function muroExcel(){
   return false;
 }
 function activarPro(){
-  S.pro = true; guardar(); pintarShell();
+  // "empresa" es el único motivo que activa la CUENTA (multiempresa);
+  // todo lo demás (aud, iper, ptt, lux, docs, panel, acciones, crono, agua,
+  // excel, equipo, o el botón genérico "Ver Pro") activa la EMPRESA activa.
+  const paraCuenta = P.proDe === "empresa";
+  if(paraCuenta){ S.proCuenta = true; }
+  else if(S.empresa && S.empresa.id){ S.empresa.pro = true; }
+  guardar(); pintarShell();
   // 3.2 · aviso de bienvenida + volver a la acción/pantalla previa
   const destino = (P.proDe && !bloqueoPro(P.proDe)) ? P.proDe : "inicio";
   cerrarModal();
@@ -11551,27 +11589,36 @@ function activarPro(){
   ov.innerHTML = `<div class="mcard" style="text-align:center">
     <div style="font-size:38px;line-height:1">🎉</div>
     <h3 style="font-size:19px;font-weight:700;margin:8px 0 4px">${tx("¡Ahora sos Pro!")}</h3>
-    <p class="small muted" style="margin:0 0 14px;line-height:1.45">${tx("Tenés acceso ilimitado a todos los registros y funciones.")}</p>
+    <p class="small muted" style="margin:0 0 14px;line-height:1.45">${paraCuenta
+      ? tx("Ya podés crear o sumarte a otra empresa con tu cuenta.")
+      : tx("Tenés acceso ilimitado a todos los registros y funciones en esta empresa.")}</p>
     <button class="btn" id="dlgpro">${tx("Empezar")}</button>
   </div>`;
   document.body.appendChild(ov);
   document.getElementById("dlgpro").onclick = () => {
     cerrarModal();
-    const volver = P.proDe==="excel" ? "panel" : destino;
+    const volver = P.proDe==="excel" ? "panel" : (paraCuenta || P.proDe==="equipo" || !P.proDe) ? "ajustes" : destino;
     P.proDe = "";
     go(volver);
   };
 }
 function desactivarPro(){
-  if(!gate(tx("¿Volver a la versión gratuita? No se borra ningún dato."), ()=>desactivarPro())) return;
-  S.pro = false; guardar(); pintarShell(); toast(tx("Volviste a la versión gratuita")); go("ajustes");
+  if(!puedeAdministrar()) return;
+  if(!gate(tx("¿Volver a la versión gratuita en esta empresa? No se borra ningún dato."), ()=>desactivarPro())) return;
+  if(S.empresa && S.empresa.id) S.empresa.pro = false;
+  guardar(); pintarShell(); toast(tx("Esta empresa volvió a la versión gratuita")); render();
+}
+function desactivarProCuenta(){
+  if(!gate(tx("¿Volver a poder trabajar con una sola empresa? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
+  S.proCuenta = false; guardar(); pintarShell(); toast(tx("Tu cuenta volvió a la versión gratuita")); render();
 }
 
 function vPro(){
+  const paraCuenta = P.proDe === "empresa";
   const motivo = {
     aud:"la auditoría mensual", iper:"la matriz de riesgos", ptt:"el permiso de trabajo",
     lux:"los protocolos de higiene", docs:"la documentación de contratistas",
-    panel:"el panel", acciones:"el plan de acción", empresa:"trabajar con varias empresas",
+    panel:"el panel", acciones:"el plan de acción", empresa:"varias empresas",
     excel:"exportar a Excel", equipo:"invitar a tu equipo"
   }[P.proDe] || "";
   return `
@@ -11618,23 +11665,40 @@ function vPro(){
     <div class="card pad">
       <button class="btn" onclick="activarPro()">${tx("Activar Espiral Pro")}</button>
       <p class="tiny muted" style="margin:8px 2px 0;text-align:center">
-        ${tx("Versión de prueba: se activa en este dispositivo. El pago y la cuenta llegan con proyectohs.com.")}</p>
-      <button class="btn ghost" style="margin-top:12px" onclick="go('inicio')">${tx("Ahora no")}</button>
+        ${paraCuenta
+          ? tx("Versión de prueba: activa tu cuenta en este dispositivo, para crear o sumarte a otra empresa. El pago real llega con proyectohs.com.")
+          : tx("Versión de prueba: activa esta empresa en este dispositivo, para todo tu equipo. El pago real llega con proyectohs.com.")}</p>
+      <button class="btn ghost" style="margin-top:12px" onclick="volver()">${tx("Ahora no")}</button>
     </div>
   </section>
   <div style="height:10px"></div>`;
 }
 /* bloque para la pantalla de Ajustes */
 function proBloqueBody(){
+  const admin = puedeAdministrar();
+  const proEmp = esPro();
+  const proCta = esProCuenta();
   return `
+    <div class="grp" style="margin-top:0">${esc(S.empresa.razon||tx("Esta empresa"))}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-      <div><b>${esPro()?tx("Espiral Pro"):tx("Espiral gratis")}</b>
-        <div class="tiny muted">${esPro()
-          ? tx("Todos los módulos habilitados")
-          : tx("Auditoría, IPER, permisos, protocolos, contratistas y panel están bloqueados")}</div></div>
-      ${esPro()
-        ? `<button class="btn ghost sm" onclick="desactivarPro()">${tx("Volver a gratis")}</button>`
+      <div><b>${proEmp?tx("Espiral Pro"):tx("Espiral gratis")}</b>
+        <div class="tiny muted">${proEmp
+          ? tx("Todos los módulos habilitados, para todo tu equipo en esta empresa")
+          : tx("Auditoría, IPER, permisos, protocolos, contratistas, panel e invitar equipo están bloqueados")}</div></div>
+      ${proEmp
+        ? (admin ? `<button class="btn ghost sm" onclick="desactivarPro()">${tx("Volver a gratis")}</button>` : "")
         : `<button class="btn sm" onclick="irPro('')">${tx("Ver Pro")}</button>`}
+    </div>
+
+    <div class="acc-sub">
+      <div class="grp" style="margin-top:0">${tx("Tu cuenta")}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <div><b>${proCta?tx("Varias empresas habilitado"):tx("Una sola empresa")}</b>
+          <div class="tiny muted">${tx("Aparte de si esta empresa es Pro: define cuántas empresas propias podés crear o sumar con tu cuenta.")}</div></div>
+        ${proCta
+          ? `<button class="btn ghost sm" onclick="desactivarProCuenta()">${tx("Volver a una sola")}</button>`
+          : `<button class="btn sm" onclick="irPro('empresa')">${tx("Ver Pro")}</button>`}
+      </div>
     </div>`;
 }
 function proBloque(){
@@ -11918,19 +11982,24 @@ function bkBloqueBody(){
   const reg  = bkContar(S.empresas);
   const ult  = S.ultBackup ? fecha(S.ultBackup) : null;
   const dias = S.ultBackup ? Math.floor((Date.now()-new Date(S.ultBackup))/86400000) : null;
-  const aviso = !ult && reg>0
-    ? `<p class="small" style="margin:0 0 12px;color:var(--c1)"><b>${tx("Todavía no hiciste ninguna copia.")}</b>
-        ${tx("Los datos viven en este navegador: si borrás la caché o cambiás de teléfono, se pierden.")}</p>`
-    : (dias!==null && dias>30
-      ? `<p class="small" style="margin:0 0 12px;color:var(--c2)">${tx("Tu última copia es de hace")} ${dias} ${tx("días")}. ${tx("Conviene hacer una nueva.")}</p>`
-      : `<p class="small muted" style="margin:0 0 12px">${tx("Última copia:")} <b>${ult?esc(ult):"—"}</b></p>`);
+  const enNube = sbOn() && !!sesionActiva();
+  const aviso = enNube
+    ? `<p class="small muted" style="margin:0 0 12px">✅ ${tx("Tus datos ya están respaldados en la nube con tu cuenta. Si cambiás de celular o de PC, iniciá sesión y los vas a encontrar tal cual los dejaste.")}</p>`
+    : (!ult && reg>0
+      ? `<p class="small" style="margin:0 0 12px;color:var(--c1)"><b>${tx("Todavía no hiciste ninguna copia.")}</b>
+          ${tx("Los datos viven en este navegador: si borrás la caché o cambiás de teléfono, se pierden.")}</p>`
+      : (dias!==null && dias>30
+        ? `<p class="small" style="margin:0 0 12px;color:var(--c2)">${tx("Tu última copia es de hace")} ${dias} ${tx("días")}. ${tx("Conviene hacer una nueva.")}</p>`
+        : `<p class="small muted" style="margin:0 0 12px">${tx("Última copia:")} <b>${ult?esc(ult):"—"}</b></p>`));
   return `
     ${aviso}
     <div class="tiny muted" style="margin:0 0 12px">
       ${(S.empresas||[]).length} ${(S.empresas||[]).length===1?tx("empresa"):tx("empresas")} ·
       ${reg} ${tx("registros")} · ${bkPeso()} KB</div>
     <button class="btn" onclick="bkExportar()">${tx("Descargar copia de seguridad")}</button>
-    <p class="tiny muted" style="margin:6px 2px 12px">${tx("Guarda un archivo con todas tus empresas y registros. Mandátelo por mail o subilo a la nube.")}</p>
+    <p class="tiny muted" style="margin:6px 2px 12px">${enNube
+      ? tx("Es un extra, no hace falta para no perder tus datos: te sirve para guardar un archivo aparte o pasar todo a otra cuenta.")
+      : tx("Guarda un archivo con todas tus empresas y registros. Mandátelo por mail o subilo a la nube.")}</p>
     <button class="btn soft" onclick="bkAbrir()">${tx("Restaurar desde un archivo")}</button>
     <input type="file" accept=".json,application/json" id="fBk" style="display:none" onchange="bkArchivo(this)">
     <div style="text-align:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
@@ -11969,7 +12038,7 @@ function bkBloque(){
    ============================================================ */
 (async function init(){
   const g = await DB.get("insp_hs_v1");
-  S = { tema:(g && g.tema) || "claro", idioma:(g && g.idioma) || "es", empresas:[], activa:null };
+  S = { tema:(g && g.tema) || "claro", idioma:(g && g.idioma) || "es", empresas:[], activa:null, proCuenta: !!(g && g.proCuenta) };
   if(g && g.empresas && g.empresas.length){
     S.empresas = g.empresas;
     S.activa = g.activa && g.empresas.some(e=>e.id===g.activa) ? g.activa : g.empresas[0].id;
