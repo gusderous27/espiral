@@ -8666,7 +8666,7 @@ function toggleCompartir(tipo,id){
   P.compartirAbierto = (P.compartirAbierto===clave) ? "" : clave;
   render();
 }
-function cerrarCompartir(){ P.compartirAbierto = ""; }
+function cerrarCompartir(){ P.compartirAbierto = ""; render(); }
 /* 2.1 · imprime a PDF con nombre de archivo dinámico (Espiral_Titulo_Fecha).
    El navegador usa document.title como nombre sugerido del PDF. */
 function imprimirPDF(tipo, id){
