@@ -6267,6 +6267,7 @@ const DIC = {
 "Guardar protocolo":["Save protocol","Salvar protocolo"],
 "Guardar trabajador":["Save worker","Salvar colaborador"],
 "Guardar y compartir":["Save and share","Salvar e compartilhar"],
+"Guardar / Compartir":["Save / Share","Salvar / Compartilhar"],
 "Hoja anterior":["Previous sheet","Folha anterior"],
 "Identificar peligro":["Identify hazard","Identificar perigo"],
 "Ir a Personal":["Go to Workers","Ir para Colaboradores"],
@@ -6325,6 +6326,13 @@ const DIC = {
 "Todas las inspecciones":["All inspections","Todas as inspeções"],
 "Registros":["Records","Registros"],
 "No hay registros para exportar":["No records to export","Não há registros para exportar"],
+"Se descargó el Excel: adjuntalo al mail que se va a abrir":["The Excel file was downloaded: attach it to the email that's about to open","O Excel foi baixado: anexe-o ao e-mail que vai abrir"],
+"Estadísticas":["Statistics","Estatísticas"],
+"Estadísticas de inspecciones":["Inspection statistics","Estatísticas de inspeções"],
+"Estadísticas y gráficos":["Statistics and charts","Estatísticas e gráficos"],
+"Inspecciones por mes":["Inspections by month","Inspeções por mês"],
+"Inspecciones por plantilla":["Inspections by template","Inspeções por modelo"],
+"Auditorías mensuales · evolución":["Monthly audits · trend","Auditorias mensais · evolução"],
 "Descargar Excel (todos los tipos, una solapa por tipo)":["Download Excel (all types, one tab per type)","Baixar Excel (todos os tipos, uma aba por tipo)"],
 "Descargar Excel de":["Download Excel for","Baixar Excel de"],
 "Detalle por tarea":["Detail by task","Detalhe por tarefa"],
@@ -8632,7 +8640,7 @@ function barraCompartir(tipo,id,ocultarEditar){
     </div>` : "";
   return `${id?selloEd(tipo,id):""}<section class="block noprint">
     <button class="btn" onclick="toggleCompartir('${tipo}','${id||""}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
-      📤 ${tx("Guardar y compartir")} <span style="font-size:12px;transition:transform .2s;${abierto?"transform:rotate(180deg)":""}">▾</span>
+      ${tx("Guardar / Compartir")}
     </button>
     ${menu}
     ${ed}
@@ -8867,14 +8875,12 @@ function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo){
   const dim = `A1:${finCol}${lastRow}`;
   const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
   const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="22" customWidth="1"/>`).join("")}</cols>`;
-  return { rowsXml: rows, mergeXml, dim, colsXml };
+  return { rowsXml: rows, mergeXml, dim, colsXml, lastRow };
 }
 /* El logo se ancla siempre igual (arriba a la izquierda, filas 1-2); el XML
    del dibujo es idéntico en cada solapa, solo cambia el nombre del archivo. */
-function xlsxDrawingXml(){
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
-<xdr:twoCellAnchor editAs="oneCell">
+function xlsxLogoAnchorXml(){
+  return `<xdr:twoCellAnchor editAs="oneCell">
 <xdr:from><xdr:col>0</xdr:col><xdr:colOff>19050</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>19050</xdr:rowOff></xdr:from>
 <xdr:to><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
 <xdr:pic>
@@ -8883,8 +8889,89 @@ function xlsxDrawingXml(){
 <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
 </xdr:pic>
 <xdr:clientData/>
-</xdr:twoCellAnchor>
+</xdr:twoCellAnchor>`;
+}
+/* Un gráfico (barra o torta) anclado como bloque de celdas, apilados hacia
+   abajo dentro de la misma solapa. filaDesde/filaHasta son índices de fila
+   base-0 (los de xdr:from/xdr:to), columnas 0-7 (unas 8 columnas de ancho). */
+function xlsxChartAnchorXml(filaDesde, filaHasta, relId, idNum){
+  return `<xdr:twoCellAnchor>
+<xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${filaDesde}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+<xdr:to><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${filaHasta}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+<xdr:graphicFrame macro="">
+<xdr:nvGraphicFramePr><xdr:cNvPr id="${idNum}" name="Gráfico ${idNum}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
+<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
+<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">
+<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${relId}"/>
+</a:graphicData></a:graphic>
+</xdr:graphicFrame>
+<xdr:clientData/>
+</xdr:twoCellAnchor>`;
+}
+/* Envoltorio del drawing.xml de una solapa: junta el logo (si hay) y los
+   anclajes de gráficos en un solo archivo, como hace Excel de verdad. */
+function xlsxWsDrXml(anchorsXml){
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+${anchorsXml}
 </xdr:wsDr>`;
+}
+/* Arma el chart1.xml de un gráfico de barras o de torta a partir de
+   g = {tipo:"barras"|"torta", titulo, cats:[...], colores?:[...], series:[{valores:[...], color?}]}.
+   Los datos van "a mano" (c:numLit/c:strLit) en vez de apuntar a un rango de
+   celdas: así el gráfico no depende de que exista una tabla igual en la hoja. */
+function xlsxChartXml(g){
+  const cats = g.cats||[];
+  const serie = (g.series||[])[0] || {valores:[]};
+  const catsXml = `<c:strLit><c:ptCount val="${cats.length}"/>${cats.map((c,i)=>`<c:pt idx="${i}"><c:v>${xlsxEsc(String(c))}</c:v></c:pt>`).join("")}</c:strLit>`;
+  const valsXml = (vals)=>`<c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="${vals.length}"/>${vals.map((v,i)=>`<c:pt idx="${i}"><c:v>${Number(v)||0}</c:v></c:pt>`).join("")}</c:numLit>`;
+  const tituloXml = g.titulo
+    ? `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1200" b="1"/></a:pPr><a:r><a:rPr lang="es-AR" sz="1200" b="1"/><a:t>${xlsxEsc(g.titulo)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>`
+    : `<c:autoTitleDeleted val="1"/>`;
+  const cabecera = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<c:chart>
+${tituloXml}
+<c:plotArea><c:layout/>`;
+  if(g.tipo==="torta"){
+    const colores = g.colores||[];
+    const dPts = colores.map((c,i)=>`<c:dPt><c:idx val="${i}"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="${String(c||"0E7C86").replace("#","")}"/></a:solidFill></c:spPr></c:dPt>`).join("");
+    return cabecera + `
+<c:pieChart>
+<c:varyColors val="1"/>
+<c:ser><c:idx val="0"/><c:order val="0"/>${dPts}
+<c:cat>${catsXml}</c:cat>
+<c:val>${valsXml(serie.valores||[])}</c:val>
+</c:ser>
+<c:firstSliceAng val="0"/>
+</c:pieChart>
+</c:plotArea>
+<c:legend><c:legendPos val="r"/><c:overlay val="0"/></c:legend>
+<c:plotVisOnly val="1"/>
+</c:chart>
+</c:chartSpace>`;
+  }
+  const color = String(serie.color||"0E7C86").replace("#","");
+  return cabecera + `
+<c:barChart>
+<c:barDir val="col"/>
+<c:grouping val="clustered"/>
+<c:varyColors val="0"/>
+<c:ser><c:idx val="0"/><c:order val="0"/>
+<c:spPr><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></c:spPr>
+<c:cat>${catsXml}</c:cat>
+<c:val>${valsXml(serie.valores||[])}</c:val>
+</c:ser>
+<c:axId val="111111111"/><c:axId val="222222222"/>
+</c:barChart>
+<c:catAx><c:axId val="111111111"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/>
+<c:txPr><a:bodyPr rot="-2700000" vert="horz"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="800"/></a:pPr><a:endParaRPr lang="es-AR"/></a:p></c:txPr>
+<c:crossAx val="222222222"/></c:catAx>
+<c:valAx><c:axId val="222222222"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:crossAx val="111111111"/></c:valAx>
+</c:plotArea>
+<c:plotVisOnly val="1"/>
+</c:chart>
+</c:chartSpace>`;
 }
 /* Nombre de solapa válido para Excel: sin \/?*[]:, máx 31 caracteres,
    y sin repetirse dentro del mismo libro (agrega " (2)", " (3)", ...). */
@@ -8910,11 +8997,13 @@ function construirLibroXlsx(o){
 
   const sheetEntries = [], workbookRelsEntries = [], contentOverrides = [];
   const sheetFiles = [];
-  let rId = 1;
+  let rId = 1, chartCounter = 0;
 
   hojas.forEach((h, idx)=>{
     const n = idx+1;
     const cuerpo = xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo);
+    const graficos = h.graficos || [];
+    const hayDrawing = !!logoInfo || graficos.length>0;
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <dimension ref="${cuerpo.dim}"/>
@@ -8923,7 +9012,7 @@ function construirLibroXlsx(o){
 ${cuerpo.colsXml}
 <sheetData>${cuerpo.rowsXml}</sheetData>
 ${cuerpo.mergeXml}
-${logoInfo?`<drawing r:id="rIdDrawing"/>`:""}
+${hayDrawing?`<drawing r:id="rIdDrawing"/>`:""}
 </worksheet>`;
     sheetFiles.push({nombre:`xl/worksheets/sheet${n}.xml`, datos:strToU8(sheetXml)});
     contentOverrides.push(`<Override PartName="/xl/worksheets/sheet${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`);
@@ -8931,15 +9020,33 @@ ${logoInfo?`<drawing r:id="rIdDrawing"/>`:""}
     workbookRelsEntries.push(`<Relationship Id="${sheetRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${n}.xml"/>`);
     const nombreHoja = xlsxNombreHoja(h.nombre||h.titulo||("Hoja"+n), usadosNombres);
     sheetEntries.push(`<sheet name="${xlsxEsc(nombreHoja)}" sheetId="${n}" r:id="${sheetRid}"/>`);
-    if(logoInfo){
+    if(hayDrawing){
+      let anchors = "", drawingRels = "", idNum = 2;
+      if(logoInfo){
+        anchors += xlsxLogoAnchorXml();
+        drawingRels += `<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.${logoInfo.ext}"/>`;
+        idNum = 3;
+      }
+      // los gráficos van debajo de todo lo ya escrito en la hoja (y del logo, si hay)
+      let filaDesde = Math.max(cuerpo.lastRow, logoInfo?3:0);
+      graficos.forEach((g, gi)=>{
+        const chartN = ++chartCounter;
+        const relId = "rIdChart"+(gi+1);
+        const filaHasta = filaDesde + 16;
+        anchors += xlsxChartAnchorXml(filaDesde, filaHasta, relId, idNum++);
+        drawingRels += `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartN}.xml"/>`;
+        sheetFiles.push({nombre:`xl/charts/chart${chartN}.xml`, datos:strToU8(xlsxChartXml(g))});
+        contentOverrides.push(`<Override PartName="/xl/charts/chart${chartN}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
+        filaDesde = filaHasta + 1;
+      });
       sheetFiles.push({nombre:`xl/worksheets/_rels/sheet${n}.xml.rels`, datos:strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${n}.xml"/>
 </Relationships>`)});
-      sheetFiles.push({nombre:`xl/drawings/drawing${n}.xml`, datos:strToU8(xlsxDrawingXml())});
+      sheetFiles.push({nombre:`xl/drawings/drawing${n}.xml`, datos:strToU8(xlsxWsDrXml(anchors))});
       sheetFiles.push({nombre:`xl/drawings/_rels/drawing${n}.xml.rels`, datos:strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.${logoInfo.ext}"/>
+${drawingRels}
 </Relationships>`)});
       contentOverrides.push(`<Override PartName="/xl/drawings/drawing${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`);
     }
@@ -8983,7 +9090,7 @@ ${workbookRelsEntries.join("\n")}
 /* Libro de una sola solapa: envoltorio fino sobre construirLibroXlsx para
    no tocar a quienes ya lo llaman así (descarga de un solo registro/tipo). */
 function construirXlsx(o){
-  return construirLibroXlsx({ empresa:o.empresa, hojas:[{nombre:o.hoja, titulo:o.titulo, fecha:o.fecha, bloques:o.bloques}] });
+  return construirLibroXlsx({ empresa:o.empresa, hojas:[{nombre:o.hoja, titulo:o.titulo, fecha:o.fecha, bloques:o.bloques, graficos:o.graficos}] });
 }
 /* Toma un valor de cabecera (r.cab[k]) y lo formatea según el tipo de campo */
 function valorCab(c, v){
@@ -9048,26 +9155,66 @@ function paqueteExcel(tipo, id){
   return { empresa:e, titulo:d.t, fecha:d.f, hoja:((TPL[d.tpl]&&TPL[d.tpl].nombre)||d.t||"Hoja1").slice(0,31),
     nombreBase:nombreArchivo(d), bloques };
 }
-/* Descarga: TODAS las inspecciones de un tipo de equipo puntual (una sola
-   solapa), o TODOS los tipos guardados juntos (una solapa por tipo). Es el
-   botón de descarga dentro de Panel → Inspecciones. */
-function excelInsp(tpl){
-  if(!muroExcel()) return;
+/* Los mismos gráficos que se ven en Panel → Inspecciones (donut de
+   resultado + barras de evolución), armados para el motor de .xlsx. "base"
+   es el subconjunto de S.insp ya filtrado por tipo (o todo, si es "todas"). */
+function graficosInsp(base, filtro){
+  const graficos = [];
+  const ok = base.reduce((a,r)=>a+r.ok,0), nc = base.reduce((a,r)=>a+r.nc,0), na = base.reduce((a,r)=>a+(r.na||0),0);
+  if(ok||nc||na){
+    graficos.push({tipo:"torta", titulo:tx("Resultado de los ítems verificados"),
+      cats:[tx("Conformes"),tx("Desvíos"),tx("No aplica")], colores:["2AA971","D64545","94A3B8"],
+      series:[{valores:[ok,nc,na]}]});
+  }
+  const meses = {};
+  base.forEach(r=>{ const m=(r.fecha||"").slice(0,7); if(m) meses[m]=(meses[m]||0)+1; });
+  const porMes = Object.keys(meses).sort().slice(-12).map(m=>({l:m.split("-").reverse().join("/"), v:meses[m]}));
+  if(porMes.length){
+    graficos.push({tipo:"barras", titulo:tx("Inspecciones por mes"),
+      cats:porMes.map(d=>d.l), series:[{valores:porMes.map(d=>d.v), color:"3FA34D"}]});
+  }
+  if(filtro==="todas"){
+    const porPlant = cuenta(base.map(r=>TPL[r.tpl].nombre));
+    if(porPlant.length>1){
+      graficos.push({tipo:"barras", titulo:tx("Inspecciones por plantilla"),
+        cats:porPlant.map(d=>d.l), series:[{valores:porPlant.map(d=>d.v), color:"0E7C86"}]});
+    }
+  }
+  return graficos;
+}
+/* Arma los bytes .xlsx para Panel → Inspecciones: TODAS las inspecciones de
+   un tipo de equipo puntual (una sola solapa, con sus gráficos debajo de la
+   tabla), o TODOS los tipos guardados juntos (una solapa por tipo, más una
+   solapa final de "Estadísticas" con los gráficos generales). Devuelve null
+   si no hay nada para exportar. Lo usan tanto excelInsp (descarga directa)
+   como mailInsp (adjuntar). */
+function paqueteInsp(tpl){
   const e = S.empresa || {};
   if(tpl && tpl!=="todas"){
     const info = hojaInspTpl(tpl);
-    if(!(info.bloques[0].filas||[]).length) return toast(tx("No hay registros para exportar"));
-    const bytes = construirXlsx({ empresa:e, titulo:info.titulo, fecha:hoy(), hoja:info.nombre, bloques:info.bloques });
-    const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-    bajarBlob("espiral-"+nombreArchivo({t:info.titulo,f:hoy()})+".xlsx", blob, true);
-    return;
+    if(!(info.bloques[0].filas||[]).length) return null;
+    const base = (S.insp||[]).filter(r=>r.tpl===tpl);
+    const bytes = construirXlsx({ empresa:e, titulo:info.titulo, fecha:hoy(), hoja:info.nombre, bloques:info.bloques, graficos:graficosInsp(base, tpl) });
+    return { nombre:"espiral-"+nombreArchivo({t:info.titulo,f:hoy()})+".xlsx", bytes };
   }
   const tipos = ORDEN.filter(k=>(S.insp||[]).some(r=>r.tpl===k));
-  if(!tipos.length) return toast(tx("No hay registros para exportar"));
+  if(!tipos.length) return null;
   const hojas = tipos.map(k=>{ const info=hojaInspTpl(k); return {nombre:info.nombre, titulo:info.titulo, fecha:hoy(), bloques:info.bloques}; });
+  const graficos = graficosInsp(S.insp||[], "todas");
+  if(graficos.length){
+    hojas.push({ nombre:tx("Estadísticas"), titulo:tx("Estadísticas de inspecciones"), fecha:hoy(),
+      bloques:[{tipo:"meta", filas:[[tx("Registros"), (S.insp||[]).length]]}], graficos });
+  }
   const bytes = construirLibroXlsx({ empresa:e, hojas });
-  const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-  bajarBlob("espiral-inspecciones-"+(e.razon||"empresa").replace(/\W+/g,"-").toLowerCase()+"-"+hoy()+".xlsx", blob, true);
+  return { nombre:"espiral-inspecciones-"+(e.razon||"empresa").replace(/\W+/g,"-").toLowerCase()+"-"+hoy()+".xlsx", bytes };
+}
+/* Botón de descarga dentro de Panel → Inspecciones. */
+function excelInsp(tpl){
+  if(!muroExcel()) return;
+  const p = paqueteInsp(tpl);
+  if(!p) return toast(tx("No hay registros para exportar"));
+  const blob = new Blob([p.bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  bajarBlob(p.nombre, blob, true);
 }
 async function bajarBlob(nombre, blob, forzarDescarga){
   if(!forzarDescarga){
@@ -9115,10 +9262,39 @@ function textoUno(tipo,id){
   x += "\n\nGenerado con Proyecto HS";
   return x;
 }
-function mailUno(tipo,id){
+/* mailto: no permite adjuntar archivos (restricción del navegador, no
+   nuestra) así que: si hay share nativo con archivos (celular), se comparte
+   el .xlsx real y el usuario elige "Mail" ahí. Si no, bajamos el .xlsx y
+   abrimos el mail con el texto, avisando que hay que adjuntarlo a mano. */
+async function mailUno(tipo,id){
   const d = regPorTipo(tipo,id); if(!d) return;
   const asunto = (d.empresa.razon?d.empresa.razon+" · ":"") + d.t;
-  location.href = "mailto:?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(textoUno(tipo,id));
+  const cuerpo = textoUno(tipo,id);
+  if(esPro() && await adjuntarYMail(paqueteExcel(tipo,id), asunto, cuerpo)) return;
+  location.href = "mailto:?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(cuerpo);
+}
+/* Intenta compartir el .xlsx (paquete de construirXlsx) con el mail como
+   cuerpo/asunto. Devuelve true si ya se resolvió (compartido o descargado +
+   mail abierto), false si no había paquete y hay que caer al mailto simple. */
+async function adjuntarYMail(paquete, asunto, cuerpo){
+  if(!paquete) return false;
+  return adjuntarYMailBytes({ nombre:(paquete.nombreBase||"espiral")+".xlsx", bytes:construirXlsx(paquete) }, asunto, cuerpo);
+}
+/* info = {nombre, bytes} ya construido (lo usa mailInsp con paqueteInsp). */
+async function adjuntarYMailBytes(info, asunto, cuerpo){
+  if(!info) return false;
+  const blob = new Blob([info.bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  try{
+    const archivo = new File([blob], info.nombre, {type:blob.type});
+    if(navigator.canShare && navigator.canShare({files:[archivo]})){
+      await navigator.share({files:[archivo], title:asunto, text:cuerpo});
+      return true;
+    }
+  }catch(err){ if(err && err.name==="AbortError") return true; }
+  await bajarBlob(info.nombre, blob, true);
+  toast(tx("Se descargó el Excel: adjuntalo al mail que se va a abrir"));
+  setTimeout(()=>{ location.href = "mailto:?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(cuerpo); }, 1600);
+  return true;
 }
 function waUno(tipo,id){
   const t = textoUno(tipo,id); if(!t) return;
@@ -9371,11 +9547,12 @@ function textoInsp(filtro){
   x += "\n\nGenerado con Proyecto HS";
   return x;
 }
-function mailInsp(filtro){
+async function mailInsp(filtro){
   const t = textoInsp(filtro); if(!t) return;
   const e = S.empresa||{};
   const nombreSec = filtro==="todas" ? tx("Todas las inspecciones") : ((TPL[filtro]||{}).nombre||filtro);
   const asunto = (e.razon?e.razon+" · ":"") + nombreSec;
+  if(esPro() && await adjuntarYMailBytes(paqueteInsp(filtro), asunto, t)) return;
   location.href = "mailto:?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(t);
 }
 function waInsp(filtro){
@@ -9408,7 +9585,7 @@ function menuCompartirInsp(filtro){
     </div>` : "";
   return `<section class="block noprint">
     <button class="btn" onclick="toggleCompartir('panelInsp','${filtro}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
-      📤 ${tx("Guardar y compartir")} <span style="font-size:12px;transition:transform .2s;${abierto?"transform:rotate(180deg)":""}">▾</span>
+      ${tx("Guardar / Compartir")}
     </button>
     ${menu}
   </section>`;
@@ -9938,6 +10115,22 @@ function exportarExcel(){
     hoja(tx("Nómina y talles"), tx("Nómina de personal y talles"),
       ["Nombre y apellido","D.N.I.","Legajo","Área","Puesto"].concat(PRENDAS.map(x=>x.l)),
       S.personal.map(p=>[p.nombre,p.dni||"",p.legajo||"",p.area||"",p.puesto||""].concat(PRENDAS.map(x=>(p.talles||{})[x.k]||""))));
+  }
+
+  // solapa final de Estadísticas: los mismos gráficos que se ven en el Panel
+  // (resultado de inspecciones, evolución mensual) para llevarlos fuera de la app
+  const graficosGlobales = graficosInsp(S.insp||[], "todas");
+  if((S.aud||[]).length){
+    const serieAud = audSerie("");
+    if(serieAud.length){
+      graficosGlobales.push({tipo:"barras", titulo:tx("Auditorías mensuales · evolución"),
+        cats:serieAud.map(s=>s.et), series:[{valores:serieAud.map(s=>s.pct), color:"0E7C86"}]});
+    }
+  }
+  if(graficosGlobales.length){
+    hojas.push({ nombre:tx("Estadísticas"), titulo:tx("Estadísticas y gráficos"), fecha:hoy(),
+      bloques:[{tipo:"meta", filas:[[tx("Inspecciones"), (S.insp||[]).length],[tx("Auditorías"), (S.aud||[]).length]]}],
+      graficos:graficosGlobales });
   }
 
   const bytes = construirLibroXlsx({ empresa:e, hojas });
