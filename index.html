@@ -6322,6 +6322,8 @@ const DIC = {
 "Ropa y talles":["Workwear and sizes","Uniformes e tamanhos"],
 "Aud. por temática":["Audits by topic","Auditorias por tema"],
 "Nómina y talles":["Staff and sizes","Pessoal e tamanhos"],
+"Todas las inspecciones":["All inspections","Todas as inspeções"],
+"Registros":["Records","Registros"],
 "No hay registros para exportar":["No records to export","Não há registros para exportar"],
 "Descargar Excel (todos los tipos, una solapa por tipo)":["Download Excel (all types, one tab per type)","Baixar Excel (todos os tipos, uma aba por tipo)"],
 "Descargar Excel de":["Download Excel for","Baixar Excel de"],
@@ -9347,8 +9349,68 @@ function panelInsp(){
     <div class="grp" style="margin-top:0">${tx("Inspecciones por mes")}</div>
     ${barras(porMes,"var(--c4)")}
   </div></section>
-  <section class="block noprint">
-    <button class="btn ghost" onclick="excelInsp('${filtro}')">${filtro==="todas"?tx("Descargar Excel (todos los tipos, una solapa por tipo)"):tx("Descargar Excel de")+" "+esc(TPL[filtro].nombre)}</button>
+  ${menuCompartirInsp(filtro)}`;
+}
+/* --- "Guardar y compartir" para Panel → Inspecciones: el Excel que arma
+   depende del filtro activo (todas las secciones → una solapa por tipo;
+   una sección puntual → solo esa). Reutiliza la estética de barraCompartir
+   pero sin depender de un registro puntual (acá no hay un solo "id"). --- */
+function textoInsp(filtro){
+  const base = (filtro==="todas") ? (S.insp||[]) : (S.insp||[]).filter(r=>r.tpl===filtro);
+  if(!base.length) return "";
+  const ok=base.reduce((a,r)=>a+r.ok,0), nc=base.reduce((a,r)=>a+r.nc,0);
+  const pct=(ok+nc)?Math.round(ok/(ok+nc)*100):0;
+  const e = S.empresa||{};
+  const nombreSec = filtro==="todas" ? tx("Todas las inspecciones") : ((TPL[filtro]||{}).nombre||filtro);
+  let x = (e.razon?e.razon+"\n":"") + nombreSec + "\n" + "-".repeat(28) + "\n";
+  x += tx("Registros")+": "+base.length+"\n";
+  x += tx("Cumplimiento")+": "+pct+"%\n";
+  const link = (typeof location!=="undefined" && location.origin && location.origin.indexOf("http")===0)
+    ? location.origin + location.pathname : "https://proyectohs.com";
+  x += "\n" + tx("Ver en Espiral") + ": " + link;
+  x += "\n\nGenerado con Proyecto HS";
+  return x;
+}
+function mailInsp(filtro){
+  const t = textoInsp(filtro); if(!t) return;
+  const e = S.empresa||{};
+  const nombreSec = filtro==="todas" ? tx("Todas las inspecciones") : ((TPL[filtro]||{}).nombre||filtro);
+  const asunto = (e.razon?e.razon+" · ":"") + nombreSec;
+  location.href = "mailto:?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(t);
+}
+function waInsp(filtro){
+  const t = textoInsp(filtro); if(!t) return;
+  window.open("https://wa.me/?text="+encodeURIComponent(t), "_blank");
+}
+function smsInsp(filtro){
+  const t = textoInsp(filtro); if(!t) return;
+  location.href = "sms:?body="+encodeURIComponent(t);
+}
+function imprimirInsp(filtro){
+  const original = document.title;
+  const nombreSec = filtro==="todas" ? "Inspecciones" : ((TPL[filtro]||{}).nombre||filtro);
+  const limpio = s => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,50);
+  document.title = "Espiral_" + limpio(nombreSec) + "_" + hoy();
+  const restaurar = () => { document.title = original; window.removeEventListener("afterprint", restaurar); };
+  window.addEventListener("afterprint", restaurar);
+  setTimeout(()=>{ window.print(); setTimeout(restaurar, 1500); }, 60);
+}
+function menuCompartirInsp(filtro){
+  const abierto = (P.compartirAbierto === ("panelInsp|"+filtro));
+  const opt = (ic, txt, fn) => `<button class="shareopt" onclick="cerrarCompartir();${fn}"><span class="shareic">${ic}</span>${txt}</button>`;
+  const menu = abierto ? `
+    <div class="sharemenu">
+      ${opt("📄", tx("Guardar PDF"), `imprimirInsp('${filtro}')`)}
+      ${opt("📊", tx("Exportar a Excel"), `excelInsp('${filtro}')`)}
+      ${opt("✉️", tx("Enviar por mail"), `mailInsp('${filtro}')`)}
+      ${opt("💬", tx("Enviar por WhatsApp"), `waInsp('${filtro}')`)}
+      ${opt("📱", tx("Enviar por SMS"), `smsInsp('${filtro}')`)}
+    </div>` : "";
+  return `<section class="block noprint">
+    <button class="btn" onclick="toggleCompartir('panelInsp','${filtro}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
+      📤 ${tx("Guardar y compartir")} <span style="font-size:12px;transition:transform .2s;${abierto?"transform:rotate(180deg)":""}">▾</span>
+    </button>
+    ${menu}
   </section>`;
 }
 
@@ -9391,10 +9453,11 @@ function vPanel(){
 
   ${cuerpo()}
 
+  ${sec!=="insp" ? `
   <section class="block noprint">
     <button class="btn" onclick="exportarExcel()">${tx("Descargar planilla Excel de la empresa")}</button>
     <p class="tiny muted" style="text-align:center;margin-top:10px">${tx("La planilla acumula todo lo cargado en esta empresa, con una hoja por módulo.")}</p>
-  </section>
+  </section>` : ""}
   <div style="height:10px"></div>`;
 }
 
