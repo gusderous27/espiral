@@ -3817,9 +3817,12 @@ function notificaciones(){
       });
     });
   });
-  // 2) acciones del plan con fecha próxima o vencida y sin cerrar
+  // 2) acciones del plan con fecha próxima o vencida, sin cerrar y que
+  // todavía nadie empezó a gestionar (apenas pasa a "En proceso" o se
+  // cierra, deja de pedir atención y se descuenta de la campanita)
   accionesTodas().forEach(a=>{
     if(a.hecha || !a.vence) return;
+    if(accSeg(a.ref).estado !== "Abierto") return;
     const dias = dh(a.vence);
     if(dias===null || dias>NOTI_DIAS) return;
     out.push({
