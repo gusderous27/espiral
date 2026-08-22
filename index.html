@@ -1072,18 +1072,39 @@ async function guardar(){
   return ok;
 }
 let EMPUJE_T = null;
-function empujarEmpresaActiva(){
-  if(!sbOn() || !sesionActiva()) return;
+/* Sube la empresa activa al servidor. Por defecto con debounce (para no
+   saturar mientras se tipea). inmediato:true la manda YA y devuelve la
+   promesa: lo usan las acciones explícitas de guardado ("Guardar cambios"),
+   que no pueden depender de que el usuario se quede 900ms más en la
+   pantalla para que el envío realmente salga. */
+function empujarEmpresaActiva(inmediato){
+  if(!sbOn() || !sesionActiva()) return Promise.resolve();
   const e = S.empresa;
-  if(!e || !e.id) return;
-  // solo empujo empresas donde soy dueño o miembro (las mías); con debounce
+  if(!e || !e.id) return Promise.resolve();
   clearTimeout(EMPUJE_T);
   const snapshot = { id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos, pro:e.pro };
-  EMPUJE_T = setTimeout(async ()=>{
+  const subir = async ()=>{
     const r = await sbGuardarEmpresa(snapshot);
-    if(r && r.error){ /* si falla, queda guardado local igual */ }
-  }, 900);
+    if(!r || !r.error){
+      // confirmado en el servidor: ya no hace falta protegerla de un sync entrante
+      const local = (S.empresas||[]).find(x=>x.id===snapshot.id);
+      if(local) local._sucio = false;
+    }
+  };
+  if(inmediato) return subir();
+  EMPUJE_T = setTimeout(subir, 900);
+  return Promise.resolve();
 }
+/* Si la pestaña se oculta (se cierra, se pasa a otra app) con un envío
+   pendiente, lo mandamos ya: un setTimeout de 900ms no sobrevive si la
+   página se cierra antes de que dispare. Esto es lo que hacía que datos
+   recién tipeados (obra, dirección, etc.) no llegaran a guardarse. */
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState==="hidden" && EMPUJE_T){
+    clearTimeout(EMPUJE_T); EMPUJE_T=null;
+    empujarEmpresaActiva(true);
+  }
+});
 
 function toggleTema(){
   S.tema = S.tema==="claro" ? "oscuro" : "claro";
@@ -4719,6 +4740,8 @@ const DIC = {
 "Enviar por SMS":["Send by SMS","Enviar por SMS"],
 "Compartir archivo":["Share file","Compartilhar arquivo"],
 "+ Nueva empresa":["+ New company","+ Nova empresa"],
+"Otras empresas":["Other companies","Outras empresas"],
+"Con tu cuenta podés crear o sumarte a las que necesités.":["With your account you can create or join as many as you need.","Com sua conta você pode criar ou entrar em quantas precisar."],
 "Creá o sumate a otra empresa para gestionarla por separado.":["Create or join another company to manage it separately.","Crie ou entre em outra empresa para gerenciá-la separadamente."],
 "Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias.":["With Espiral free you can have one company. Go Pro to manage several.","Com o Espiral grátis você pode ter uma empresa. Assine o Pro para gerenciar várias."],
 "Enviando…":["Sending…","Enviando…"],
@@ -9467,6 +9490,7 @@ function vAjustes(){
 
   // --- Mis empresas (todo lo de empresa junto, sin duplicar) ---
   const esAdm = puedeAdministrar();
+  const cuentaProActiva = esProCuenta();
   const empresasBody = `
     <p class="small muted" style="margin:0 0 10px">${t("aj.trabajando")} <b>${esc(e.razon||"—")}</b>. ${t("aj.trabajandoTxt")}</p>
     ${(S.empresas||[]).map(x=>`<div class="row" onclick="cambiarEmpresa('${x.id}')">
@@ -9482,10 +9506,6 @@ function vAjustes(){
       </div>
       ${x.id===S.activa?`<span class="pill" style="border-color:var(--ok);color:var(--ok)">${t("aj.activa")}</span>`:""}
     </div>`).join("")}
-    <button class="btn soft sm" style="margin-top:10px" onclick="crearEmpresaPrompt()">${tx("+ Nueva empresa")}${puedeEmpresa()?"":" 🔒"}</button>
-    <p class="tiny muted" style="margin:6px 2px 0">${puedeEmpresa()
-      ? tx("Creá o sumate a otra empresa para gestionarla por separado.")
-      : tx("Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias.")}</p>
 
     <div class="acc-sub">
       <div class="grp" style="margin-top:0">${tx("Datos de")} ${esc(e.razon||tx("la empresa"))}</div>
@@ -9521,6 +9541,17 @@ function vAjustes(){
       ${esAdm?`<div style="text-align:center;margin-top:14px">
         <button onclick="borrarEmpresa()" style="background:none;border:none;color:var(--no);font-size:13px;cursor:pointer;text-decoration:underline">${t("aj.eliminarEmp")}</button>
       </div>`:""}
+    </div>
+
+    <div class="acc-sub">
+      <div class="grp" style="margin-top:0">${tx("Otras empresas")}</div>
+      <button class="btn soft sm" onclick="crearEmpresaPrompt()">${tx("+ Nueva empresa")}${puedeEmpresa()?"":" 🔒"}</button>
+      <p class="tiny muted" style="margin:6px 2px 0">${cuentaProActiva
+        ? tx("Con tu cuenta podés crear o sumarte a las que necesités.")
+        : (puedeEmpresa()
+          ? tx("Creá o sumate a otra empresa para gestionarla por separado.")
+          : tx("Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias."))}</p>
+      ${cuentaProActiva?`<button class="btn ghost sm" style="margin-top:4px" onclick="desactivarProCuenta()">${tx("Volver a una sola")}</button>`:""}
     </div>`;
 
   // --- Preferencias ---
@@ -9536,6 +9567,10 @@ function vAjustes(){
           ${IDIOMAS.map(x=>`<option value="${x.k}" ${(S.idioma||"es")===x.k?"selected":""}>${x.f} ${esc(x.n)}</option>`).join("")}
         </select></label>
     </div>
+    <div class="acc-sub">
+      <div class="grp" style="margin-top:0">${tx("Copia de seguridad")}</div>
+      ${bkBloqueBody()}
+    </div>
     ${u?`<div class="acc-sub">
       <div style="text-align:center">
         <button onclick="bajaCuenta()" style="background:none;border:none;color:var(--muted);font-size:12.5px;cursor:pointer;text-decoration:underline">${tx("Dar de baja mi cuenta")}</button>
@@ -9547,9 +9582,8 @@ function vAjustes(){
   ${acc("cuenta","👤",tx("Mi cuenta"),cuentaBody)}
   ${rol==="admin"?acc("equipo","👥",tx("Equipo"),bloqueEquipoBody()):""}
   ${acc("empresas","🏢",t("aj.empresas"),empresasBody)}
-  ${acc("prefs","⚙️",tx("Preferencias"),prefsBody)}
   ${acc("pro","⭐",tx("Tu versión"),proBloqueBody())}
-  ${acc("backup","💾",tx("Copia de seguridad"),bkBloqueBody())}
+  ${acc("prefs","⚙️",tx("Preferencias"),prefsBody)}
 
   <section class="block">
     <div class="card pad" style="text-align:center">
@@ -9607,9 +9641,14 @@ async function guardarPerfil(){
   toast(tx("Datos guardados"));
   render();
 }
-function setEmp(k,v){ S.empresa[k]=v; guardar(); }
+function setEmp(k,v){ S.empresa[k]=v; S.empresa._sucio=true; guardar(); }
 function quitarLogo(){ delete S.empresa.logo; guardar(); render(); toast(tx("Logo quitado")); }
-async function guardarAjustes(){ await guardar(); toast(tx("Datos guardados")); P.accAjustes=""; render(); }
+async function guardarAjustes(){
+  await guardar();
+  await empujarEmpresaActiva(true);   // guardado explícito: confirmar en el servidor ya, sin esperar el debounce
+  toast(tx("Datos guardados"));
+  P.accAjustes=""; render();
+}
 function resetTodo(){
   if(!gate("Se borran todos los registros de «"+(S.empresa.razon||"esta empresa")+"». Los datos de las otras empresas no se tocan. ¿Continuar?", ()=>resetTodo())) return;
   S.empresa.datos = {}; guardar(); toast(tx("Registros borrados")); go("inicio");
@@ -10893,8 +10932,16 @@ async function sincronizarDesdeServidor(){
   const porId = {};
   locales.forEach(e=> porId[e.id]=e);
 
-  // 1) las del servidor entran / pisan a las locales del mismo id
-  remotas.forEach(f=>{ porId[f.id] = filaAEmpresa(f); });
+  // 1) las del servidor entran / pisan a las locales del mismo id,
+  //    EXCEPTO si la local tiene cambios propios sin confirmar todavía en
+  //    el servidor (_sucio): ahí gana la local, para no perder algo recién
+  //    tipeado cuyo envío (con debounce) no llegó a salir antes de cerrar
+  //    la pestaña. Esas quedan marcadas para volver a subirse más abajo.
+  remotas.forEach(f=>{
+    const local = porId[f.id];
+    if(local && local._sucio) return;
+    porId[f.id] = filaAEmpresa(f);
+  });
 
   // 2) las locales que NO están en el servidor y son mías → las subo
   const idsRemotos = new Set(remotas.map(f=>f.id));
@@ -10926,6 +10973,13 @@ async function sincronizarDesdeServidor(){
   // NO creo empresa acá: si no hay, entrarConUsuario mostrará el onboarding
   if(S.empresas.length && !S.empresas.some(e=>e.id===S.activa)){ S.activa = S.empresas[0].id; }
   definirActiva();
+  // 3) empresas locales que quedaron _sucio (protegidas arriba): las
+  //    resubo ahora para reconciliar con el servidor sin esperar a que
+  //    el usuario vuelva a tocar algo.
+  (S.empresas||[]).filter(e=>e._sucio).forEach(e=>{
+    sbGuardarEmpresa({ id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos, pro:e.pro })
+      .then(r=>{ if(!r || !r.error) e._sucio = false; });
+  });
 }
 
 /* Aviso simple de una sola línea con botón Entendido */
@@ -11677,7 +11731,6 @@ function vPro(){
 function proBloqueBody(){
   const admin = puedeAdministrar();
   const proEmp = esPro();
-  const proCta = esProCuenta();
   return `
     <div class="grp" style="margin-top:0">${esc(S.empresa.razon||tx("Esta empresa"))}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -11688,17 +11741,6 @@ function proBloqueBody(){
       ${proEmp
         ? (admin ? `<button class="btn ghost sm" onclick="desactivarPro()">${tx("Volver a gratis")}</button>` : "")
         : `<button class="btn sm" onclick="irPro('')">${tx("Ver Pro")}</button>`}
-    </div>
-
-    <div class="acc-sub">
-      <div class="grp" style="margin-top:0">${tx("Tu cuenta")}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <div><b>${proCta?tx("Varias empresas habilitado"):tx("Una sola empresa")}</b>
-          <div class="tiny muted">${tx("Aparte de si esta empresa es Pro: define cuántas empresas propias podés crear o sumar con tu cuenta.")}</div></div>
-        ${proCta
-          ? `<button class="btn ghost sm" onclick="desactivarProCuenta()">${tx("Volver a una sola")}</button>`
-          : `<button class="btn sm" onclick="irPro('empresa')">${tx("Ver Pro")}</button>`}
-      </div>
     </div>`;
 }
 function proBloque(){
