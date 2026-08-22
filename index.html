@@ -291,9 +291,16 @@ html[data-tema="oscuro"] #splash{background:#0E1621}
 .acc[data-open="1"] .acc-body{display:block}
 .acc-sub{border-top:1px solid var(--line);padding-top:14px;margin-top:2px}
 
-/* ===== Menú desplegable de Guardar y compartir ===== */
-.sharemenu{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card);animation:shareIn .18s ease}
-@keyframes shareIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+/* ===== Menú de Guardar y compartir: modal centrado con fondo difuminado ===== */
+.sharebackdrop{position:fixed;inset:0;background:rgba(8,14,22,.72);z-index:100000;display:grid;
+  place-items:center;padding:16px;overflow:auto;animation:shareBgIn .15s ease}
+@keyframes shareBgIn{from{opacity:0}to{opacity:1}}
+.sharemenu{width:100%;max-width:340px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  background:var(--card);box-shadow:var(--shadow);animation:shareIn .16s cubic-bezier(.2,.85,.35,1.15)}
+@keyframes shareIn{from{opacity:0;transform:scale(.94) translateY(8px)}to{opacity:1;transform:none}}
+.sharehead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;
+  font-weight:700;font-size:15px;border-bottom:1px solid var(--line)}
+.shareclose{background:none;border:none;font-size:19px;line-height:1;color:var(--muted);cursor:pointer;padding:2px 4px}
 .shareopt{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border:none;
   background:transparent;color:var(--text);font-size:15px;text-align:left;cursor:pointer;
   border-bottom:1px solid var(--line)}
@@ -8624,20 +8631,28 @@ function filaAudHist(r){
   </div>`);
 }
 
+/* Modal centrado (fondo difuminado) con las opciones de Guardar/Compartir.
+   Lo usan barraCompartir (un registro puntual) y menuCompartirInsp (Panel →
+   Inspecciones, agregado). Click afuera de la tarjeta o la ✕ lo cierran. */
+function shareModalHtml(opciones){
+  return `<div class="sharebackdrop" onclick="if(event.target===this) cerrarCompartir()">
+    <div class="sharemenu" role="dialog" aria-modal="true">
+      <div class="sharehead">${tx("Guardar / Compartir")}<button class="shareclose" onclick="cerrarCompartir()">✕</button></div>
+      ${opciones.map(o=>`<button class="shareopt" onclick="cerrarCompartir();${o.fn}"><span class="shareic">${o.ic}</span>${o.txt}</button>`).join("")}
+    </div>
+  </div>`;
+}
 function barraCompartir(tipo,id,ocultarEditar){
   const abierto = (P.compartirAbierto === (tipo+"|"+(id||"")));
   const ed = (id && SW_ACC[tipo] && !ocultarEditar) ?
     `<button class="btn soft" style="margin-top:10px" onclick="swAcc('${tipo}','${id}','edit')">${tx("✏️ Editar este registro")}</button>` : "";
-  const opt = (ic, txt, fn) =>
-    `<button class="shareopt" onclick="cerrarCompartir();${fn}"><span class="shareic">${ic}</span>${txt}</button>`;
-  const menu = abierto ? `
-    <div class="sharemenu">
-      ${opt("📄", tx("Guardar PDF"), `imprimirPDF('${tipo}','${id||""}')`)}
-      ${opt("📊", tx("Exportar a Excel"), `excelUno('${tipo}','${id||""}')`)}
-      ${opt("✉️", tx("Enviar por mail"), `mailUno('${tipo}','${id||""}')`)}
-      ${opt("💬", tx("Enviar por WhatsApp"), `waUno('${tipo}','${id||""}')`)}
-      ${opt("📱", tx("Enviar por SMS"), `smsUno('${tipo}','${id||""}')`)}
-    </div>` : "";
+  const menu = abierto ? shareModalHtml([
+    {ic:"📄", txt:tx("Guardar PDF"), fn:`imprimirPDF('${tipo}','${id||""}')`},
+    {ic:"📊", txt:tx("Exportar a Excel"), fn:`excelUno('${tipo}','${id||""}')`},
+    {ic:"✉️", txt:tx("Enviar por mail"), fn:`mailUno('${tipo}','${id||""}')`},
+    {ic:"💬", txt:tx("Enviar por WhatsApp"), fn:`waUno('${tipo}','${id||""}')`},
+    {ic:"📱", txt:tx("Enviar por SMS"), fn:`smsUno('${tipo}','${id||""}')`}
+  ]) : "";
   return `${id?selloEd(tipo,id):""}<section class="block noprint">
     <button class="btn" onclick="toggleCompartir('${tipo}','${id||""}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
       ${tx("Guardar / Compartir")}
@@ -8808,13 +8823,16 @@ function xlsxStylesXml(){
 /* Arma el contenido (filas, combinaciones, dimensión, anchos) de UNA hoja a
    partir de sus bloques. Reutilizado tanto para libros de una sola solapa
    como para libros con varias (una por tipo de equipo, módulo, etc). */
-function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo){
+function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo, colsGraficos){
   const e = empresa || {};
   bloques = bloques || [];
   let numCols = 2;
   bloques.forEach(b=>{ if(b.tipo==="tabla") numCols = Math.max(numCols, (b.cols||[]).length || 1); });
   // si hay logo reservamos las columnas A:B para la imagen (evita que el texto quede tapado debajo)
   if(logoInfo) numCols = Math.max(numCols, 3);
+  // hoja de Estadísticas: reserva suficientes columnas, parejas y angostas,
+  // para que la grilla de 2 gráficos por fila quede del mismo ancho
+  if(colsGraficos) numCols = Math.max(numCols, colsGraficos);
   const finCol = xlsxColLetra(numCols);
   const textoColNum = logoInfo ? Math.min(3, numCols) : 1;
   const textoCol = xlsxColLetra(textoColNum);
@@ -8874,7 +8892,8 @@ function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo){
   const lastRow = Math.max(1, rowNum-1);
   const dim = `A1:${finCol}${lastRow}`;
   const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
-  const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="22" customWidth="1"/>`).join("")}</cols>`;
+  const anchoCol = colsGraficos ? 10.5 : 22;
+  const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="${anchoCol}" customWidth="1"/>`).join("")}</cols>`;
   return { rowsXml: rows, mergeXml, dim, colsXml, lastRow };
 }
 /* El logo se ancla siempre igual (arriba a la izquierda, filas 1-2); el XML
@@ -8891,13 +8910,13 @@ function xlsxLogoAnchorXml(){
 <xdr:clientData/>
 </xdr:twoCellAnchor>`;
 }
-/* Un gráfico (barra o torta) anclado como bloque de celdas, apilados hacia
-   abajo dentro de la misma solapa. filaDesde/filaHasta son índices de fila
-   base-0 (los de xdr:from/xdr:to), columnas 0-7 (unas 8 columnas de ancho). */
-function xlsxChartAnchorXml(filaDesde, filaHasta, relId, idNum){
+/* Un gráfico (barra o torta) anclado como bloque de celdas. colDesde/colHasta
+   y filaDesde/filaHasta son índices base-0 (los de xdr:from/xdr:to): así se
+   arma una grilla de gráficos en vez de apilarlos uno debajo del otro. */
+function xlsxChartAnchorXml(colDesde, filaDesde, colHasta, filaHasta, relId, idNum){
   return `<xdr:twoCellAnchor>
-<xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${filaDesde}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
-<xdr:to><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${filaHasta}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+<xdr:from><xdr:col>${colDesde}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${filaDesde}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+<xdr:to><xdr:col>${colHasta}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${filaHasta}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
 <xdr:graphicFrame macro="">
 <xdr:nvGraphicFramePr><xdr:cNvPr id="${idNum}" name="Gráfico ${idNum}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>
 <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
@@ -9001,8 +9020,10 @@ function construirLibroXlsx(o){
 
   hojas.forEach((h, idx)=>{
     const n = idx+1;
-    const cuerpo = xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo);
     const graficos = h.graficos || [];
+    // grilla de 2 gráficos por fila: 6 columnas cada uno + 1 de separación
+    const ANCHO_GRAF = 6, GAP_GRAF = 1, ALTO_GRAF = 16;
+    const cuerpo = xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo, graficos.length ? (ANCHO_GRAF*2+GAP_GRAF) : 0);
     const hayDrawing = !!logoInfo || graficos.length>0;
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -9027,17 +9048,22 @@ ${hayDrawing?`<drawing r:id="rIdDrawing"/>`:""}
         drawingRels += `<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.${logoInfo.ext}"/>`;
         idNum = 3;
       }
-      // los gráficos van debajo de todo lo ya escrito en la hoja (y del logo, si hay)
-      let filaDesde = Math.max(cuerpo.lastRow, logoInfo?3:0);
+      // los gráficos van debajo de todo lo ya escrito en la hoja (y del logo, si hay),
+      // en una grilla de 2 por fila para que no queden ni tapando ni apilados sin fin
+      const filaBase = Math.max(cuerpo.lastRow, logoInfo?3:0);
       graficos.forEach((g, gi)=>{
         const chartN = ++chartCounter;
         const relId = "rIdChart"+(gi+1);
-        const filaHasta = filaDesde + 16;
-        anchors += xlsxChartAnchorXml(filaDesde, filaHasta, relId, idNum++);
+        const columna = gi % 2;
+        const filaGrilla = Math.floor(gi/2);
+        const colDesde = columna * (ANCHO_GRAF+GAP_GRAF);
+        const colHasta = colDesde + ANCHO_GRAF;
+        const filaDesde = filaBase + filaGrilla*(ALTO_GRAF+1);
+        const filaHasta = filaDesde + ALTO_GRAF;
+        anchors += xlsxChartAnchorXml(colDesde, filaDesde, colHasta, filaHasta, relId, idNum++);
         drawingRels += `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartN}.xml"/>`;
         sheetFiles.push({nombre:`xl/charts/chart${chartN}.xml`, datos:strToU8(xlsxChartXml(g))});
         contentOverrides.push(`<Override PartName="/xl/charts/chart${chartN}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
-        filaDesde = filaHasta + 1;
       });
       sheetFiles.push({nombre:`xl/worksheets/_rels/sheet${n}.xml.rels`, datos:strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -9194,7 +9220,15 @@ function paqueteInsp(tpl){
     const info = hojaInspTpl(tpl);
     if(!(info.bloques[0].filas||[]).length) return null;
     const base = (S.insp||[]).filter(r=>r.tpl===tpl);
-    const bytes = construirXlsx({ empresa:e, titulo:info.titulo, fecha:hoy(), hoja:info.nombre, bloques:info.bloques, graficos:graficosInsp(base, tpl) });
+    // solapa 1: los datos, tal cual. Solapa 2 (si hay algo para graficar):
+    // las estadísticas, aparte — nunca arriba ni abajo de la tabla.
+    const hojas = [{nombre:info.nombre, titulo:info.titulo, fecha:hoy(), bloques:info.bloques}];
+    const graficos = graficosInsp(base, tpl);
+    if(graficos.length){
+      hojas.push({ nombre:tx("Estadísticas"), titulo:tx("Estadísticas")+" · "+info.titulo, fecha:hoy(),
+        bloques:[{tipo:"meta", filas:[[tx("Registros"), base.length]]}], graficos });
+    }
+    const bytes = construirLibroXlsx({ empresa:e, hojas });
     return { nombre:"espiral-"+nombreArchivo({t:info.titulo,f:hoy()})+".xlsx", bytes };
   }
   const tipos = ORDEN.filter(k=>(S.insp||[]).some(r=>r.tpl===k));
@@ -9574,15 +9608,13 @@ function imprimirInsp(filtro){
 }
 function menuCompartirInsp(filtro){
   const abierto = (P.compartirAbierto === ("panelInsp|"+filtro));
-  const opt = (ic, txt, fn) => `<button class="shareopt" onclick="cerrarCompartir();${fn}"><span class="shareic">${ic}</span>${txt}</button>`;
-  const menu = abierto ? `
-    <div class="sharemenu">
-      ${opt("📄", tx("Guardar PDF"), `imprimirInsp('${filtro}')`)}
-      ${opt("📊", tx("Exportar a Excel"), `excelInsp('${filtro}')`)}
-      ${opt("✉️", tx("Enviar por mail"), `mailInsp('${filtro}')`)}
-      ${opt("💬", tx("Enviar por WhatsApp"), `waInsp('${filtro}')`)}
-      ${opt("📱", tx("Enviar por SMS"), `smsInsp('${filtro}')`)}
-    </div>` : "";
+  const menu = abierto ? shareModalHtml([
+    {ic:"📄", txt:tx("Guardar PDF"), fn:`imprimirInsp('${filtro}')`},
+    {ic:"📊", txt:tx("Exportar a Excel"), fn:`excelInsp('${filtro}')`},
+    {ic:"✉️", txt:tx("Enviar por mail"), fn:`mailInsp('${filtro}')`},
+    {ic:"💬", txt:tx("Enviar por WhatsApp"), fn:`waInsp('${filtro}')`},
+    {ic:"📱", txt:tx("Enviar por SMS"), fn:`smsInsp('${filtro}')`}
+  ]) : "";
   return `<section class="block noprint">
     <button class="btn" onclick="toggleCompartir('panelInsp','${filtro}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
       ${tx("Guardar / Compartir")}
