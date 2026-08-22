@@ -3163,9 +3163,16 @@ function vAccionGestion(){
   </section>
 
   <section class="block noprint">
-    <button class="btn ghost" onclick="P.accGest=null;go('acciones')">${tx("Volver al plan de acción")}</button>
+    <button class="btn" onclick="guardarAccGestion()">${tx("Guardar")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="P.accGest=null;go('acciones')">${tx("Volver al plan de acción")}</button>
   </section>
   <div style="height:10px"></div>`;
+}
+function guardarAccGestion(){
+  // el estado y la bitácora ya se guardan solos al tocarlos; este botón
+  // existe para que quede la confirmación explícita de que se guardó
+  guardar();
+  toast(tx("Guardado"));
 }
 function gestionarAccion(clave){
   const a = accionesTodas().find(x=>accClave(x.ref)===clave);
@@ -12437,7 +12444,7 @@ const PRO_RUTAS = {
 };
 /* qué es Pro, en el orden en que se lo mostramos al usuario */
 const PRO_VENTAJAS = [
-  {ic:"🏢", n:"Varias empresas",        d:"una ficha, un personal y un historial por cada cliente o planta (se paga por cuenta, no por empresa)"},
+  {ic:"🏢", n:"Varias empresas",        d:"una ficha, un personal y un historial por cada cliente o planta"},
   {ic:"📋", n:"Auditoría mensual", d:"240 ítems, armado de plantillas propias y % de efectividad"},
   {ic:"📊", n:"Matriz de riesgos IPER", d:"19 categorías, 75 peligros y valoración por nivel"},
   {ic:"📝", n:"Permiso de trabajo",     d:"altura, caliente, confinados y eléctrico, con bloqueo por atmósfera"},
@@ -12448,10 +12455,12 @@ const PRO_VENTAJAS = [
   {ic:"📄", n:"Informes sin marca",     d:"el PDF sale con tu logo y sin el pie de Espiral"}
 ];
 
-/* Pro de ESTA empresa: la comparten todos los que trabajan en ella */
-function esPro(){ return !!(S.empresa && S.empresa.pro); }
 /* Pro de la CUENTA: habilita multiempresa, es personal */
 function esProCuenta(){ return !!S.proCuenta; }
+/* Pro: alcanza con que la empresa activa sea Pro o con que la CUENTA
+   sea Pro (una vez que la cuenta se hizo Pro, queda habilitada en
+   TODAS las empresas que esa cuenta cargue, no solo en la que la activó) */
+function esPro(){ return !!(S.empresa && S.empresa.pro) || esProCuenta(); }
 function bloqueoPro(ruta){ return !!(PRO_RUTAS[ruta] && !esPro()); }
 /* candado para los tiles */
 function lk(ruta){ return bloqueoPro(ruta) ? ` <span class="lock">🔒</span>` : ""; }
@@ -12479,12 +12488,13 @@ function muroExcel(){
   return false;
 }
 function activarPro(){
-  // "empresa" es el único motivo que activa la CUENTA (multiempresa);
-  // todo lo demás (aud, iper, ptt, lux, docs, panel, acciones, crono, agua,
-  // excel, equipo, o el botón genérico "Ver Pro") activa la EMPRESA activa.
+  // Pro es único por CUENTA: se activa desde cualquier motivo (aud, iper,
+  // ptt, lux, docs, panel, acciones, crono, agua, excel, equipo, multiempresa
+  // o el botón genérico "Ver Pro") y queda habilitado para todas las
+  // empresas que esa cuenta cargue, no solo la que estaba activa al pagar.
   const paraCuenta = P.proDe === "empresa";
-  if(paraCuenta){ S.proCuenta = true; }
-  else if(S.empresa && S.empresa.id){ S.empresa.pro = true; }
+  S.proCuenta = true;
+  if(S.empresa && S.empresa.id) S.empresa.pro = true;
   guardar(); pintarShell();
   // 3.2 · aviso de bienvenida + volver a la acción/pantalla previa
   const destino = (P.proDe && !bloqueoPro(P.proDe)) ? P.proDe : "inicio";
@@ -12494,9 +12504,7 @@ function activarPro(){
   ov.innerHTML = `<div class="mcard" style="text-align:center">
     <div style="font-size:38px;line-height:1">🎉</div>
     <h3 style="font-size:19px;font-weight:700;margin:8px 0 4px">${tx("¡Ahora sos Pro!")}</h3>
-    <p class="small muted" style="margin:0 0 14px;line-height:1.45">${paraCuenta
-      ? tx("Ya podés crear o sumarte a otra empresa con tu cuenta.")
-      : tx("Tenés acceso ilimitado a todos los registros y funciones en esta empresa.")}</p>
+    <p class="small muted" style="margin:0 0 14px;line-height:1.45">${tx("Tenés acceso ilimitado a todos los registros y funciones, en esta y en cualquier otra empresa que cargues con tu cuenta.")}</p>
     <button class="btn" id="dlgpro">${tx("Empezar")}</button>
   </div>`;
   document.body.appendChild(ov);
@@ -12508,10 +12516,13 @@ function activarPro(){
   };
 }
 function desactivarPro(){
+  // Pro es único por cuenta: se apaga acá y queda apagado en todas las
+  // empresas de esta cuenta (igual que se prende en todas al activarlo).
   if(!puedeAdministrar()) return;
-  if(!gate(tx("¿Volver a la versión gratuita en esta empresa? No se borra ningún dato."), ()=>desactivarPro())) return;
+  if(!gate(tx("¿Volver a la versión gratuita? No se borra ningún dato."), ()=>desactivarPro())) return;
   if(S.empresa && S.empresa.id) S.empresa.pro = false;
-  guardar(); pintarShell(); toast(tx("Esta empresa volvió a la versión gratuita")); render();
+  S.proCuenta = false;
+  guardar(); pintarShell(); toast(tx("Volviste a la versión gratuita")); render();
 }
 function desactivarProCuenta(){
   if(!gate(tx("¿Volver a poder trabajar con una sola empresa? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
