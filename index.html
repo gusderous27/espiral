@@ -2712,18 +2712,33 @@ const CLASIF_RAIZ = ["Falta de estándar","Estándar inadecuado","Estándar no c
 const GRAVEDAD = ["1 · Catastrófico","2 · Mayor","3 · Serio","4 · Leve"];
 const FRECUENCIA = ["1 · Muy frecuente","2 · Frecuente","3 · Poco frecuente","4 · Muy poco frecuente"];
 const PASOS_INV = ["Identificación","Daños","Descripción","Causas","Causa raíz","Acciones y cierre"];
+const DERIVACION_INV = ["Centro médico","Sin derivación"];
+const PARTES_CUERPO_INV = ["Cabeza","Ojo","Oído","Cara","Cuello","Hombro","Brazo","Antebrazo","Codo","Muñeca",
+ "Mano","Dedo de la mano","Tórax","Espalda","Abdomen","Cadera","Pierna","Rodilla","Tobillo","Pie","Dedo del pie",
+ "Múltiples partes"];
+const TIPO_LESION_INV = ["Golpe / contusión","Corte / laceración","Fractura","Esguince / torcedura","Quemadura",
+ "Atrapamiento","Amputación","Cuerpo extraño en el ojo","Lesión por sobreesfuerzo","Intoxicación / exposición",
+ "Múltiples lesiones"];
 
 function nuevaInv(){
   P.draft = {id:uid(), tipo:"inv", paso:1, fecha:hoy(),
     ident:{derivacion:"", sector:"", lugar:"", calificacion:"", fechaAcc:hoy(), hora:"", fechaInf:hoy()},
-    dp:{}, dpr:{}, dpo:{}, testigos:"",
+    dp:{parte:"", lado:""}, dpr:{aplica:""}, dpo:{}, testigos:"",
     ev:{gravedad:"", frecuencia:""},
     desc:{}, causas:{acciones:[], condiciones:[], otraAccion:"", otraCondicion:""},
-    forma:{contacto:[], con:[]},
+    forma:{contacto:[], con:[], otroContacto:"", otroCon:""},
     why:{p1:"",p2:"",p3:"",p4:"",p5:"",clasif:""},
     inm:[{a:"",r:"",p:"",c:""}], per:[{a:"",r:"",p:"",c:""}],
     verif:{resultados:"",por:"",fecha:"",repite:"No",plan:""},
     com:{inv:"",dniInv:"",supervisor:"",dniSup:""}, firma:null, firma2:null};
+}
+/* direcciones/lugares reutilizables: la de la empresa primero, más las que
+   se hayan tipeado a mano en investigaciones anteriores */
+function lugaresInv(){
+  const e = S.empresa||{}, s = [];
+  if(e.direccion) s.push(e.direccion);
+  (S.inv||[]).forEach(r=>{ const l=r.ident&&r.ident.lugar; if(l && s.indexOf(l)<0) s.push(l); });
+  return s;
 }
 function setI(path,v){
   const a=path.split("."); let o=P.draft;
@@ -2753,6 +2768,21 @@ function toggleArr(p,v){
   if(i>=0) arr.splice(i,1); else arr.push(v);
   setI(p,arr); const y=window.scrollY; render(); window.scrollTo(0,y);
 }
+/* versión compacta de multi(): las opciones elegidas se ven como chips y
+   se suman con un desplegable, en vez de un tablero grande de botones */
+function multiSel(p,l,o){
+  const arr = getI(p)||[];
+  const disponibles = o.filter(x=>arr.indexOf(x)<0);
+  return `<div class="grp">${l}</div>
+    ${arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px">
+      ${arr.map(x=>`<span class="pill" style="display:inline-flex;align-items:center;gap:6px">${esc(tx(x))}
+        <b style="cursor:pointer" onclick="toggleArr('${p}','${x.replace(/'/g,"\\'")}')">×</b></span>`).join("")}
+    </div>`:""}
+    ${disponibles.length?`<select onchange="if(this.value){toggleArr('${p}',this.value)}this.value=''">
+      <option value="">${tx("+ Agregar…")}</option>
+      ${disponibles.map(x=>`<option value="${esc(x)}">${esc(tx(x))}</option>`).join("")}
+    </select>`:""}`;
+}
 function nivelRiesgo(d){
   const g=parseInt(d.ev.gravedad,10), f=parseInt(d.ev.frecuencia,10);
   if(!g||!f) return null;
@@ -2775,6 +2805,11 @@ function fila(pth,i,d){
 function addFilaInv(p){ getI(p).push({a:"",r:"",p:"",c:""}); render(); }
 function delFilaInv(p,i){ const arr=getI(p); if(arr.length>1) arr.splice(i,1); render(); }
 function pasoInv(n){ P.draft.paso = n; window.scrollTo(0,0); render(); }
+function setDprAplica(v){
+  setI("dpr.aplica", v);
+  if(v!=="Aplica"){ setI("dpr.propiedad",""); setI("dpr.naturaleza",""); setI("dpr.costo",""); setI("dpr.equipo",""); setI("dpr.personal",""); }
+  render();
+}
 
 function vInv(){
   if(!P.draft || P.draft.tipo!=="inv") nuevaInv();
@@ -2784,11 +2819,9 @@ function vInv(){
 
   if(n===1) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Identificación")}</div>
-    ${sI("ident.derivacion",tx("1 · Derivación"),["ART","Centro médico","Sin derivación"])}
-    <div class="grid2">
-      ${fI("ident.sector","2 · Sector")}
-      ${fI("ident.lugar","3 · Lugar del accidente / incidente")}
-    </div>
+    ${campoOtro("1 · Derivación",DERIVACION_INV,getI("ident.derivacion"),"invDerivOtro","v=>setI('ident.derivacion',v)","Especificá a dónde se derivó")}
+    ${campoOtro("2 · Sector",areasIper(),getI("ident.sector"),"invSectorOtro","v=>setI('ident.sector',v)","Especificá el sector")}
+    ${campoOtro("3 · Lugar del accidente / incidente",lugaresInv(),getI("ident.lugar"),"invLugarOtro","v=>setI('ident.lugar',v)","Escribí la dirección o el lugar")}
     ${sI("ident.calificacion",tx("4 · Calificación"),["Incidente sin lesión","Accidente leve sin baja","Accidente con baja","Accidente grave","Fatal","Daño a la propiedad"])}
     <div class="grid2">
       ${fI("ident.fechaAcc","5 · Fecha del hecho","date")}
@@ -2801,41 +2834,57 @@ function vInv(){
     ${r?`<div class="verdict ${r.c}" style="margin-top:6px"><div class="big">Riesgo ${r.t}</div></div>`:""}
   </div>`;
 
+  const dprAplica = getI("dpr.aplica") || (getI("dpr.propiedad")?"Aplica":"No aplica");
   if(n===2) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("8 · Daño personal")}</div>
     <label class="f"><span class="lb">${tx("a · Apellido y nombres")}</span>
       <input type="text" list="dlNom" value="${esc(getI("dp.nombre"))}" oninput="setI('dp.nombre',this.value)">
       <datalist id="dlNom">${nom.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist></label>
     <div class="grid2">${fI("dp.legajo","Legajo N.º")}${fI("dp.ocupacion","b · Ocupación o cargo")}</div>
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Costo estimado: una cifra aproximada, si se puede calcular. No es obligatorio.")}</p>
     ${fI("dp.costo","c · Costo estimado del daño")}
-    <div class="grid2">${fI("dp.parte","d · Parte lesionada")}${fI("dp.lesion","Tipo de lesión")}</div>
+    ${campoOtro("d · Parte lesionada",PARTES_CUERPO_INV,getI("dp.parte"),"invParteOtro","v=>setI('dp.parte',v)","Especificá la parte del cuerpo")}
+    ${sI("dp.lado","Lado (si corresponde)",["Izquierda","Derecha","Ambas"])}
+    ${campoOtro("Tipo de lesión",TIPO_LESION_INV,getI("dp.lesion"),"invLesionOtro","v=>setI('dp.lesion',v)","Especificá el tipo de lesión")}
     ${fI("dp.equipo","e · Equipo, material o herramienta que provocó la lesión")}
-    ${fI("dp.supervisor","f · Supervisor directo")}
+    ${campoPersonaIper("f · Supervisor directo",getI("dp.supervisor"),"invSupervisorOtro","v=>setI('dp.supervisor',v)")}
 
     <div class="grp">${tx("9 · Daño a la propiedad / proceso")}</div>
+    <div class="opts" style="margin-left:0">
+      ${["No aplica","Aplica"].map(v=>`<button class="opt" data-on="${dprAplica===v?1:0}" data-k="${dprAplica===v?(v==="Aplica"?"ok":"no"):""}"
+        onclick="setDprAplica('${v}')">${tx(v)}</button>`).join("")}
+    </div>
+    ${dprAplica==="Aplica"?`
     ${fI("dpr.propiedad","a · Propiedad dañada")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Qué se rompió, dañó o dejó de funcionar.")}</p>
     ${fI("dpr.naturaleza","b · Naturaleza del daño")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Cómo quedó: roto, deformado, quemado, contaminado, etc.")}</p>
     ${fI("dpr.costo","c · Costo estimado del daño")}
     ${fI("dpr.equipo","d · Equipo, material o herramienta involucrada")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("La máquina, herramienta o material que provocó el daño o lo sufrió.")}</p>
     ${fI("dpr.personal","e · Personal involucrado")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Quién estaba presente o a cargo cuando ocurrió.")}</p>`:""}
 
     <div class="grp">${tx("10 · Daño potencial")}</div>
+    <p class="tiny muted" style="margin:-2px 0 8px">${tx("Pensá en lo que podría haber pasado si las circunstancias hubieran sido apenas distintas, aunque esta vez no haya sido grave.")}</p>
     ${fI("dpo.informa","A · Persona que informa")}
     ${fI("dpo.naturaleza","B · Naturaleza del daño posible")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Qué podría haber pasado: una lesión, un incendio, un derrame, etc.")}</p>
     ${fI("dpo.equipo","C · Equipo, material o sustancia relacionada")}
     ${fI("dpo.control","D · Persona con más control sobre el punto C")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Quién está en mejores condiciones de actuar sobre esa causa.")}</p>
 
     ${tI("testigos","11 · Testigos directos o indirectos","Nombre, sector y qué presenció cada uno")}
   </div>`;
 
   if(n===3) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Análisis 5W + 1H")}</div>
-    ${tI("desc.que","QUÉ · naturaleza del hecho y parte del cuerpo","",80)}
-    ${tI("desc.cuando","CUÁNDO · momento de la jornada (inicio de turno, comida, fin de turno)","",80)}
-    ${tI("desc.donde","DÓNDE · lugar, puesto o máquina donde se hacía el trabajo","",80)}
-    ${tI("desc.quien","QUIÉN · quién estaba haciendo la tarea","",80)}
-    ${tI("desc.cual","CUÁL · qué tipo de operación estaba en curso","",80)}
-    ${tI("desc.como","CÓMO · cómo se produjo la lesión o el daño","",80)}
+    ${tI("desc.que","¿QUÉ? · naturaleza del hecho y parte del cuerpo","",80)}
+    ${tI("desc.cuando","¿CUÁNDO? · momento de la jornada (inicio de turno, comida, fin de turno)","",80)}
+    ${tI("desc.donde","¿DÓNDE? · lugar, puesto o máquina donde se hacía el trabajo","",80)}
+    ${tI("desc.quien","¿QUIÉN? · quién estaba haciendo la tarea","",80)}
+    ${tI("desc.cual","¿CUÁL? · qué tipo de operación estaba en curso","",80)}
+    ${tI("desc.como","¿CÓMO? · cómo se produjo la lesión o el daño","",80)}
     <div class="grp">${tx("14 · Narración de lo ocurrido")}</div>
     ${tI("desc.narracion","Relato completo","Secuencia de los hechos, en orden, con el mayor detalle posible",190)}
     <div class="grp">${tx("Fotos del lugar")}</div>
@@ -2845,18 +2894,20 @@ function vInv(){
 
   if(n===4) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("15 · Causas inmediatas")}</div>
-    <p class="tiny muted" style="margin:-2px 0 8px">${tx("Tocá todas las que apliquen.")}</p>
-    ${multi("causas.acciones",tx("15.a · Acciones inseguras"),ACC_INSEG)}
+    <p class="tiny muted" style="margin:-2px 0 8px">${tx("Elegí todas las que correspondan del desplegable.")}</p>
+    ${multiSel("causas.acciones",tx("15.a · Acciones inseguras"),ACC_INSEG)}
     ${fI("causas.otraAccion","Otra acción insegura")}
-    ${multi("causas.condiciones",tx("15.b · Condiciones inseguras"),COND_INSEG)}
+    ${multiSel("causas.condiciones",tx("15.b · Condiciones inseguras"),COND_INSEG)}
     ${fI("causas.otraCondicion","Otra condición insegura")}
-    ${multi("forma.contacto",tx("17.a · Tipo de contacto"),TIPO_CONTACTO)}
-    ${multi("forma.con",tx("17.b · Contacto con"),CONTACTO_CON)}
+    ${multiSel("forma.contacto",tx("17.a · Tipo de contacto"),TIPO_CONTACTO)}
+    ${fI("forma.otroContacto","Otro tipo de contacto")}
+    ${multiSel("forma.con",tx("17.b · Contacto con"),CONTACTO_CON)}
+    ${fI("forma.otroCon","Otro")}
   </div>`;
 
   if(n===5) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Análisis de causa raíz · 5 Porqué")}</div>
-    <p class="tiny muted" style="margin:-2px 0 10px">${tx("Cada porqué responde al anterior. Si el quinto todavía apunta a una persona y no a un sistema, seguí bajando.")}</p>
+    <p class="tiny muted" style="margin:-2px 0 10px">${tx("Cada porqué responde al anterior. Si en el quinto todavía aparece una persona como responsable y no una causa de fondo (un proceso, un estándar, una falta de recursos), seguí preguntando por qué hasta llegar a la causa raíz real.")}</p>
     ${[1,2,3,4,5].map(i=>tI("why.p"+i,i+"º ¿Por qué?","",i===5?110:85)).join("")}
     ${sI("why.clasif",tx("Clasificación de la causa raíz"),CLASIF_RAIZ)}
   </div>`;
@@ -2933,9 +2984,22 @@ function vVerInv(){
   if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró el registro.")}</div></section>`;
   const e = S.empresa||{};
   const li = (l,v) => v ? `<div class="small"><span class="muted">${l}:</span> <b>${esc(v)}</b></div>` : "";
-  const acc = (arr,t) => arr.filter(x=>(x.a||"").trim()).length ? `<div class="grp">${t}</div>${
-    arr.filter(x=>(x.a||"").trim()).map((x,i)=>`<div class="item"><div class="tx"><span class="n">${i+1}</span><span>${esc(x.a)}</span></div>
-    <div class="tiny muted" style="margin-left:31px">Responsable: ${esc(x.r||"—")} · Compromiso: ${fecha(x.p)} · Realizado: ${x.c?fecha(x.c):"pendiente"}</div></div>`).join("")}` : "";
+  const acc = (arr,t,k) => {
+    const filas = arr.map((x,i)=>({x,i})).filter(o=>(o.x.a||"").trim());
+    if(!filas.length) return "";
+    return `<div class="grp">${t}</div>${filas.map((o,idx)=>{
+      const x = o.x, clave = accClave({t:"inv",id:r.id,k:k,i:o.i});
+      const estado = (S.accSeguimiento && S.accSeguimiento[clave] && S.accSeguimiento[clave].estado) || "Abierto";
+      return `<div class="item">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div class="tx"><span class="n">${idx+1}</span><span>${esc(x.a)}</span></div>
+          <span class="pill" style="border-color:${accColor(estado)};color:${accColor(estado)};flex:none">${tx(estado)}</span>
+        </div>
+        <div class="tiny muted" style="margin-left:31px">Responsable: ${esc(x.r||"—")} · Compromiso: ${fecha(x.p)} · Realizado: ${x.c?fecha(x.c):"pendiente"}</div>
+        ${puedeAdministrar()?`<button class="btn ghost sm" style="margin:6px 0 0 31px;width:auto" onclick="gestionarAccion('${clave}')">${tx("Gestionar")}</button>`:""}
+      </div>`;
+    }).join("")}`;
+  };
   return `
   <section class="block"><div class="card pad rephead">
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
@@ -2953,7 +3017,7 @@ function vVerInv(){
     ${li("Gravedad potencial",r.ev.gravedad)}${li("Frecuencia",r.ev.frecuencia)}${li("Nivel de riesgo",r.riesgo)}
     ${r.dp.nombre?`<div class="grp">${tx("Daño personal")}</div>
       ${li("Trabajador",r.dp.nombre)}${li("Legajo",r.dp.legajo)}${li("Ocupación",r.dp.ocupacion)}
-      ${li("Parte lesionada",r.dp.parte)}${li("Tipo de lesión",r.dp.lesion)}
+      ${li("Parte lesionada",[r.dp.parte,r.dp.lado].filter(Boolean).join(" · "))}${li("Tipo de lesión",r.dp.lesion)}
       ${li("Equipo involucrado",r.dp.equipo)}${li("Supervisor directo",r.dp.supervisor)}`:""}
     ${r.dpr.propiedad?`<div class="grp">${tx("Daño a la propiedad")}</div>${li("Propiedad",r.dpr.propiedad)}${li("Naturaleza",r.dpr.naturaleza)}${li("Costo estimado",r.dpr.costo)}`:""}
     ${r.testigos?`<div class="grp">${tx("Testigos")}</div><p class="small" style="margin:0">${esc(r.testigos)}</p>`:""}
@@ -2974,7 +3038,9 @@ function vVerInv(){
     ${r.causas.condiciones.length?`<div class="small" style="margin-top:6px"><span class="muted">${tx("Condiciones inseguras:")}</span> ${esc(r.causas.condiciones.join(" · "))}</div>`:""}
     ${r.causas.otraCondicion?`<div class="small">${esc(r.causas.otraCondicion)}</div>`:""}
     ${r.forma.contacto.length?`<div class="small" style="margin-top:6px"><span class="muted">${tx("Tipo de contacto:")}</span> ${esc(r.forma.contacto.join(" · "))}</div>`:""}
+    ${r.forma.otroContacto?`<div class="small">${esc(r.forma.otroContacto)}</div>`:""}
     ${r.forma.con.length?`<div class="small"><span class="muted">${tx("Contacto con:")}</span> ${esc(r.forma.con.join(" · "))}</div>`:""}
+    ${r.forma.otroCon?`<div class="small">${esc(r.forma.otroCon)}</div>`:""}
     <div class="grp">${tx("Causa raíz · 5 Porqué")}</div>
     ${[1,2,3,4,5].filter(i=>r.why["p"+i]).map(i=>`<div class="item">
       <div class="tx"><span class="n">${i}º</span><span>${esc(r.why["p"+i])}</span></div></div>`).join("")}
@@ -2982,8 +3048,9 @@ function vVerInv(){
   </div></section>
 
   <section class="block"><div class="card pad">
-    ${acc(r.inm,"Contramedidas inmediatas")}
-    ${acc(r.per,"Contramedidas permanentes")}
+    ${(r.inm.concat(r.per).some(x=>(x.a||"").trim()))?`<p class="tiny muted" style="margin:0 0 10px">${tx("Estas acciones ya forman parte del Plan de acción general: desde ahí también podés gestionarlas, y vas a recibir una notificación cuando se acerque la fecha comprometida.")}</p>`:""}
+    ${acc(r.inm,"Contramedidas inmediatas","inm")}
+    ${acc(r.per,"Contramedidas permanentes","per")}
     ${r.verif.resultados?`<div class="grp">${tx("Verificación")}</div><p class="small" style="margin:0">${esc(r.verif.resultados)}</p>
       <div class="tiny muted">Verificado por ${esc(r.verif.por||"—")} · ${fecha(r.verif.fecha)} · Repetición en 3 meses: ${esc(r.verif.repite||"—")}</div>`:""}
     ${r.verif.plan?`<p class="small" style="margin-top:8px"><span class="muted">${tx("Plan complementario:")}</span> ${esc(r.verif.plan)}</p>`:""}
@@ -3432,6 +3499,19 @@ function campoPersonaIper(label, valor, otroKey, setterFn){
       <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
     </select></label>
     ${otro?`<label class="f"><span class="lb">${tx("Especificá el nombre")}</span>
+      <input type="text" value="${esc(valor)}" oninput="(${setterFn})(this.value)" autofocus></label>`:""}`;
+}
+/* desplegable genérico reutilizable en cualquier formulario: una lista de
+   opciones + "Otro" con campo de texto libre (no atado a IPER) */
+function campoOtro(label, lista, valor, otroKey, setterFn, otroLabel){
+  const otro = !!(P[otroKey] || (valor && !lista.includes(valor)));
+  return `<label class="f"><span class="lb">${tx(label)}</span>
+    <select onchange="if(this.value==='__otro__'){P['${otroKey}']=true;}else{P['${otroKey}']=false;(${setterFn})(this.value);}render()">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${lista.map(n=>`<option value="${esc(n)}" ${(!otro && valor===n)?"selected":""}>${esc(tx(n))}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx(otroLabel||"Especificá")}</span>
       <input type="text" value="${esc(valor)}" oninput="(${setterFn})(this.value)" autofocus></label>`:""}`;
 }
 /* modal de referencia: tablas de gravedad, probabilidad y nivel de riesgo */
@@ -4003,7 +4083,7 @@ function notificaciones(){
         tipo:"doc", icono:"🏗",
         titulo: (c.empresa||tx("Contratista"))+" · "+x.l,
         cuando: d.venc, dias,
-        clave: "doc|"+c.id+"|"+x.k+"|"+d.venc,
+        clave: "doc|"+c.id+"|"+x.k,
         ir:()=>editarContratista(c.id)
       });
     });
@@ -4025,7 +4105,7 @@ function notificaciones(){
       titulo: (a.texto||tx("Acción")).slice(0,70),
       sub: a.mod || "",
       cuando: a.vence, dias,
-      clave: "accion|"+accClave(a.ref)+"|"+a.vence,
+      clave: "accion|"+accClave(a.ref),
       ir:()=>go("acciones")
     });
   });
@@ -4069,17 +4149,21 @@ function notificaciones(){
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   }
-  // 4.6 · notificaciones que el usuario ya descartó con la crucecita
-  const desc = S.notifDescartadas || [];
-  return desc.length ? out.filter(n=>!desc.includes(n.clave)) : out;
+  // 4.6 · notificaciones que el usuario ya cerró con la crucecita hoy: es
+  // un "ya la vi, listo", no un "no me lo muestres nunca más" — si mañana
+  // sigue pendiente (el documento sigue vencido, la idea sigue sin leer),
+  // vuelve a aparecer solo
+  const desc = S.notifDescartadas || {};
+  return out.filter(n=>desc[n.clave]!==hoy());
 }
-/* 4.6 · descarta una notificación puntual (no borra el dato de origen,
-   solo deja de mostrarla en la campanita) */
+/* 4.6 · cierra una notificación puntual por hoy (no borra el dato de
+   origen ni la bloquea para siempre, solo la saca de la lista por hoy) */
 function descartarNoti(clave){
   if(!clave) return;
-  S.notifDescartadas = S.notifDescartadas || [];
-  if(!S.notifDescartadas.includes(clave)) S.notifDescartadas.push(clave);
-  if(S.notifDescartadas.length>300) S.notifDescartadas = S.notifDescartadas.slice(-300);
+  S.notifDescartadas = S.notifDescartadas || {};
+  // limpiar descartes de otros días: ya no sirven, evita que esto crezca sin límite
+  Object.keys(S.notifDescartadas).forEach(k=>{ if(S.notifDescartadas[k]!==hoy()) delete S.notifDescartadas[k]; });
+  S.notifDescartadas[clave] = hoy();
   guardar();
 }
 function notiCount(){ return notificaciones().length; }
@@ -4106,7 +4190,7 @@ function abrirNoti(){
         <div class="small" style="font-weight:600;line-height:1.25">${esc(n.titulo)}</div>
         <div class="tiny" style="color:${rojo?"var(--no)":"var(--muted)"};margin-top:1px">${esc(etq)}</div>
       </div>
-      <span class="notirow-x" title="${tx("Descartar")}" onclick="event.stopPropagation();descartarNotiPop(${idx})">✕</span>
+      <span class="notirow-x" title="${tx("Ya la vi")}" onclick="event.stopPropagation();descartarNotiPop(${idx})">✕</span>
     </div>`;
   };
   cont.innerHTML = `
@@ -9666,7 +9750,8 @@ function panelSecciones(){
     {k:"cap",     l:"Capacitación",   ic:"🎓", hay:n("cap")>0},
     {k:"ptt",     l:"Permisos",       ic:"📝", hay:n("ptt")>0},
     {k:"lux",     l:"Iluminación",    ic:"💡", hay:n("lux")>0},
-    {k:"docs",    l:"Contratistas",   ic:"🏗", hay:n("docs")>0}
+    {k:"docs",    l:"Contratistas",   ic:"🏗", hay:n("docs")>0},
+    {k:"parte",   l:"Partes disciplinarios", ic:"⚠️", hay:n("parte")>0}
   ].filter(x=>x.hay);
 }
 function panelSec(k){ P.panelSec=k; render(); window.scrollTo(0,0); }
@@ -9886,7 +9971,7 @@ function vPanel(){
     resumen: panelResumen, insp: panelInsp,
     aud: bloqueAud, epp: bloqueEpp, iper: bloqueIper, inv: bloqueInv,
     cap: bloqueCap, ptt: bloquePtt, lux: bloqueLux, docs: bloqueDocs,
-    ideas: bloqueIdeas
+    parte: bloqueParte, ideas: bloqueIdeas
   }[sec] || (S.mundo==="mc" ? bloqueIdeas : panelResumen);
 
   return `
@@ -9906,11 +9991,15 @@ function vPanel(){
 
   ${cuerpo()}
 
-  ${sec!=="insp" ? `
+  ${sec==="insp" ? "" : sec==="resumen" ? `
   <section class="block noprint">
     <button class="btn" onclick="exportarExcel()">${tx("Descargar planilla Excel de la empresa")}</button>
     <p class="tiny muted" style="text-align:center;margin-top:10px">${tx("La planilla acumula todo lo cargado en esta empresa, con una hoja por módulo.")}</p>
-  </section>` : ""}
+  </section>` : `
+  <section class="block noprint">
+    <button class="btn" onclick="descargarSeccionPanel('${sec}')">${tx("Descargar planilla Excel de esta sección")}</button>
+    <p class="tiny muted" style="text-align:center;margin-top:10px">${tx("Descarga solo los datos de")} ${esc(tx((secs.find(x=>x.k===sec)||{}).l||""))}.</p>
+  </section>`}
   <div style="height:10px"></div>`;
 }
 
@@ -10233,6 +10322,178 @@ function bloqueUsoEpp(usos){
   </div></section>`;
 }
 
+/* devuelve solo las hojas correspondientes a una sección del Panel
+   (usado por el botón de descarga de cada solapa, para no traer
+   el resto de los módulos de la empresa) */
+function hojasSeccionPanel(sec){
+  const hojas = [];
+  const hoja = (nombre, titulo, cols, filas) => hojas.push({nombre, titulo:titulo||nombre, fecha:hoy(), bloques:[{tipo:"tabla", cols, filas}]});
+
+  if(sec==="epp"){
+    const ents = (S.epp||[]).filter(r=>r.tipo==="entrega");
+    if(ents.length){
+      const filas = [];
+      ents.forEach(r=>{ const p=trab(r.trabajadorId);
+        const fmg = r.firma ? "IMG:"+r.firma : "";
+        r.items.filter(i=>i.prod.trim()).forEach(i=>{
+          filas.push([fecha(r.fecha), p.nombre||r.nombreTrab, p.dni||"", p.puesto||"", i.prod, i.modelo, i.marca, i.cert, i.cant, fecha(i.fecha), fmg]);
+        });
+      });
+      hoja(tx("Entregas EPP"), tx("Entregas de EPP · Res. 299/11"),
+        ["Fecha","Trabajador","D.N.I.","Puesto","EPP entregado","Tipo / modelo","Marca","Certificación","Cantidad","Fecha de entrega","Firma"], filas);
+    }
+    const usos = (S.epp||[]).filter(r=>r.tipo==="uso");
+    if(usos.length){
+      const filas = [];
+      usos.forEach(r=>r.filas.forEach(f=>{
+        const fal = Object.keys(f.marcas).filter(k=>f.marcas[k]==="no");
+        filas.push([fecha(r.fecha), r.area||"", f.nombre, fal.join(", "), fal.length, f.obs||""]);
+      }));
+      hoja(tx("Uso diario EPP"), tx("Verificación diaria de uso de EPP"),
+        ["Fecha","Área","Trabajador","EPP sin usar","Cantidad de faltas","Observaciones"], filas);
+    }
+    const ropas = (S.epp||[]).filter(r=>r.tipo==="ropa");
+    if(ropas.length){
+      const filas = ropas.map(r=>{ const p=trab(r.trabajadorId);
+        const fila = [fecha(r.fecha), p.nombre||r.nombreTrab, p.area||""];
+        PRENDAS.forEach(x=>{ const v=(r.prendas||{})[x.k]||{}; fila.push(v.talle||"", v.cant||""); });
+        return fila;
+      });
+      hoja(tx("Ropa y talles"), tx("Entrega de ropa de trabajo y talles"),
+        ["Fecha","Trabajador","Área"].concat([].concat.apply([],PRENDAS.map(x=>[x.l+" talle",x.l+" cant."]))), filas);
+    }
+  }
+  else if(sec==="inv"){
+    if((S.inv||[]).length){
+      hoja(tx("Investigación"), tx("Investigación de accidentes e incidentes"),
+        ["Fecha","Hora","Calificación","Sector","Lugar","Trabajador","Parte lesionada","Tipo de lesión",
+          "Gravedad","Frecuencia","Riesgo","Acciones inseguras","Condiciones inseguras","Tipo de contacto",
+          "5º porqué","Clasificación de la causa raíz","Investigado por"],
+        S.inv.map(r=>[fecha(r.fecha), r.ident.hora||"", r.ident.calificacion||"", r.ident.sector||"",
+          r.ident.lugar||"", r.dp.nombre||"", r.dp.parte||"", r.dp.lesion||"", r.ev.gravedad||"", r.ev.frecuencia||"",
+          r.riesgo||"", r.causas.acciones.join(" · "), r.causas.condiciones.join(" · "), r.forma.contacto.join(" · "),
+          r.why.p5||"", r.why.clasif||"", r.com.inv||""]));
+    }
+  }
+  else if(sec==="iper"){
+    if((S.iper||[]).length){
+      const filas = [];
+      S.iper.forEach(r=>r.tareas.forEach(t=>{
+        if(!t.riesgos.length){ filas.push([r.area,fecha(r.fecha),r.revision,t.maq,t.actividad,t.desc,t.eventos,"","","","","","","",""]); return; }
+        t.riesgos.forEach(x=>{ const n=nivelIper(x.g,x.p);
+          filas.push([r.area,fecha(r.fecha),r.revision,t.maq,t.actividad,t.desc,t.eventos,x.tipo,x.g,x.p,
+            n?n.s:"",n?n.t:"",x.ctrl,x.resp,x.fecha?fecha(x.fecha):""]); });
+      }));
+      hoja(tx("IPER"), tx("Matriz de riesgos · IPER"),
+        ["Área","Fecha","Revisión","Máquina / puesto","Actividad","Descripción de la tarea","Eventos",
+          "Peligro / riesgo","Gravedad","Probabilidad","Puntaje","Nivel de riesgo","Medidas de control","Responsable","Fecha"], filas);
+    }
+  }
+  else if(sec==="docs"){
+    if((S.docs||[]).length){
+      const filas = S.docs.map(c=>{
+        const f = [c.empresa,c.tarea,c.cuit,c.obra,c.contacto,c.email,c.tel,c.art,c.telArt,c.resp,c.emailResp,
+          c.ingreso?fecha(c.ingreso):"", c.salida?fecha(c.salida):""];
+        docsStd().forEach(x=>{ const d=(c.docs||{})[x.k]; f.push(estadoDoc(d).t, d&&d.venc?fecha(d.venc):""); });
+        return f;
+      });
+      hoja(tx("Contratistas"), tx("Documentación de empresas contratistas"),
+        ["Empresa","Tarea","CUIT","Obra","Contacto","E-mail","Teléfono","ART","Tel. ART",
+          "Responsable H&S","E-mail responsable","Ingreso","Salida"]
+          .concat([].concat.apply([],docsStd().map(x=>[x.l+" · estado", x.l+" · vence"]))), filas);
+    }
+  }
+  else if(sec==="cap"){
+    if((S.cap||[]).length){
+      const filas = [];
+      S.cap.forEach(r=>{ const tm=r.temas.concat(r.otros||[]).join(" · ");
+        r.asistentes.forEach(a=>filas.push([fecha(r.fecha), r.duracion||"", r.instructor||"", r.matricula||"",
+          r.niveles||"", r.lugar||"", tm, a.nombre, a.dni||"", a.firma?"Sí":"No"]));
+      });
+      hoja(tx("Capacitaciones"), tx("Registro de capacitaciones"),
+        ["Fecha","Duración","Instructor","Matrícula","Niveles","Lugar","Temas","Participante","Documento","Firmó"], filas);
+    }
+  }
+  else if(sec==="ptt"){
+    if((S.ptt||[]).length){
+      hoja(tx("Permisos"), tx("Permisos de trabajo"),
+        ["N.º","Fecha","Tipo de trabajo","Lugar","Ejecutante","Prestador","Descripción",
+          "Peligros","Medidas de prevención","EPP requeridos","Autorizador","Estado","Cierre"],
+        S.ptt.map(r=>[r.nro||"",fecha(r.fecha),r.tipos.join(" · "),r.lugar||"",r.ejecutante||"",
+          r.razonPrest||r.prestador||"",r.desc||"",r.peligros.join(" · "),r.prevencion.join(" · "),
+          r.protec.join(" · "),r.resp.autoriz||"",r.estado,r.resp.finFecha?fecha(r.resp.finFecha):""]));
+    }
+  }
+  else if(sec==="lux"){
+    if((S.lux||[]).length){
+      const filas = [];
+      S.lux.forEach(r=>r.puntos.forEach((p,i)=>{ const c=calcPunto(p);
+        filas.push([fecha(r.fecha),r.profesional||"",i+1,p.hora,p.sector,p.seccion,p.tipoIlum,p.fuente,p.clase,
+          p.largo,p.ancho,p.altura,c.k!==null?c.k.toFixed(2):"",c.n||"",
+          c.media!==null?c.media.toFixed(2):"",c.min!==null?c.min.toFixed(2):"",
+          c.media!==null?(c.unif?"Cumple":"No cumple"):"",c.req!==null?c.req:"",
+          c.cumple===null?"":(c.cumple?"Cumple":"No cumple")]); }));
+      hoja(tx("Iluminación"), tx("Protocolos de medición de iluminación"),
+        ["Fecha","Profesional","Punto","Hora","Sector","Sección / puesto","Tipo","Fuente","Iluminación",
+          "Largo","Ancho","Altura montaje","Índice k","Puntos mín.","E media","E mínima","Uniformidad","Requerido","Cumple"], filas);
+    }
+  }
+  else if(sec==="aud"){
+    if((S.aud||[]).length){
+      const filas1 = [];
+      S.aud.forEach(r=>{ const T=audTotal(r);
+        (r.bloques||[]).forEach(b=>b.items.forEach((it,i)=>{
+          filas1.push([fecha(r.fecha), r.nombre||"", r.area||"", r.auditor||"", b.t, i+1, it.x,
+            it.r?AUD_LBL[it.r]:"", it.fecha?fecha(it.fecha):"", it.obs||"",
+            T.pct===null?"":T.pct+"%"]);
+        }));
+      });
+      hoja(tx("Auditorías mensuales"), tx("Auditorías mensuales"),
+        ["Fecha","Auditoría","Área auditada","Auditor","Temática","N.º","Condición a cumplir",
+          "Resultado","Fecha de regularización","Observaciones","Efectividad general"], filas1);
+      const filas2 = [];
+      S.aud.forEach(r=>audTotal(r).bloques.forEach(z=>{
+        filas2.push([fecha(r.fecha), r.nombre||"", r.area||"", z.b.t, z.r.si, z.r.no, z.r.na,
+          z.r.pct===null?"No aplica":z.r.pct+"%"]);
+      }));
+      hoja(tx("Aud. por temática"), tx("Auditorías · resumen por temática"),
+        ["Fecha","Auditoría","Área auditada","Temática","Cumple","No cumple","No aplica","Cumplimiento"], filas2);
+    }
+  }
+  else if(sec==="ideas"){
+    const ideas = (S.idea||[]);
+    if(ideas.length){
+      hoja(tx("Mejora Continua"), tx("Mejora Continua · ideas"),
+        ["Fecha","Título","Propone","Sector","Estado","Qué mejora","Impacto","Revisión","Evaluación","Próximos pasos"],
+        ideas.map(r=>[fecha(r.fecha), r.titulo||"", r.autor||"", r.sector||"", r.estado||"",
+          (r.problemas||[]).join("; "), r.impacto||"", r.revisionFecha?fecha(r.revisionFecha):"",
+          r.evalFecha?fecha(r.evalFecha):"", r.proximos||""]));
+    }
+  }
+  else if(sec==="parte"){
+    if((S.parte||[]).length){
+      hoja(tx("Partes disciplinarios"), tx("Partes de acción disciplinaria"),
+        ["Fecha","Hora","Trabajador","D.N.I.","Puesto","Sector u obra","Supervisor","Vínculo","Empresa contratista",
+          "Medida","Reincidente","Motivos","Detalle","Medidas tomadas","Responsable H&S"],
+        S.parte.map(r=>[fecha(r.fecha), r.hora||"", r.trabajador||"", r.dni||"", r.puesto||"", r.sector||"",
+          r.supervisor||"", r.vinculo||"", r.empresaTrab||"", r.medida||"", r.reincidencia||"",
+          (r.motivos||[]).join(" · "), r.detalle||"", r.medidasTomadas||"", r.responsable||""]));
+    }
+  }
+  return hojas;
+}
+
+function descargarSeccionPanel(sec){
+  if(!muroExcel()) return;
+  const e = S.empresa||{};
+  const hojas = hojasSeccionPanel(sec);
+  if(!hojas.length){ toast(tx("No hay datos para descargar en esta sección")); return; }
+  const bytes = construirLibroXlsx({ empresa:e, hojas });
+  const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const nombreSec = ((panelSecciones().find(x=>x.k===sec)||{}).l || sec).toString();
+  bajarBlob("espiral-"+(e.razon||"empresa").replace(/\W+/g,"-").toLowerCase()+"-"+nombreSec.replace(/\W+/g,"-").toLowerCase()+"-"+hoy()+".xlsx", blob, true);
+}
+
 function exportarExcel(){
   if(!muroExcel()) return;
   const e = S.empresa||{};
@@ -10373,6 +10634,14 @@ function exportarExcel(){
       ideas.map(r=>[fecha(r.fecha), r.titulo||"", r.autor||"", r.sector||"", r.estado||"",
         (r.problemas||[]).join("; "), r.impacto||"", r.revisionFecha?fecha(r.revisionFecha):"",
         r.evalFecha?fecha(r.evalFecha):"", r.proximos||""]));
+  }
+  if((S.parte||[]).length){
+    hoja(tx("Partes disciplinarios"), tx("Partes de acción disciplinaria"),
+      ["Fecha","Hora","Trabajador","D.N.I.","Puesto","Sector u obra","Supervisor","Vínculo","Empresa contratista",
+        "Medida","Reincidente","Motivos","Detalle","Medidas tomadas","Responsable H&S"],
+      S.parte.map(r=>[fecha(r.fecha), r.hora||"", r.trabajador||"", r.dni||"", r.puesto||"", r.sector||"",
+        r.supervisor||"", r.vinculo||"", r.empresaTrab||"", r.medida||"", r.reincidencia||"",
+        (r.motivos||[]).join(" · "), r.detalle||"", r.medidasTomadas||"", r.responsable||""]));
   }
   const accs = accionesTodas();
   if(accs.length){
@@ -11226,6 +11495,23 @@ function vParte(){
   </section>
   <div style="height:10px"></div>`;
 }
+function bloqueParte(){
+  const lista = S.parte||[];
+  if(!lista.length) return "";
+  const porMedida = cuenta(lista.map(r=>r.medida||"Sin clasificar"));
+  const porSector = cuenta(lista.map(r=>r.sector||"Sin sector"));
+  const recientes = lista.slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")).slice(0,8);
+  return `
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">⚠️ ${lista.length} parte${lista.length===1?"":"s"} de acción disciplinaria</div>
+    ${donut(porMedida.map((d,i)=>({l:d.l,v:d.v,c:["#D64545","#F5A524","#17A2C6","#7B4EA8"][i%4]})))}
+    ${porSector.length>1?`<div class="grp">${tx("Por sector")}</div>${barras(porSector,"var(--c2)")}`:""}
+  </div></section>
+  <section class="block">
+    <div class="section-title"><h2>${tx("Últimos partes")}</h2></div>
+    <div class="card pad">${recientes.map(filaParteHist).join("")}</div>
+  </section>`;
+}
 function filaParteHist(r){
   const col = r.medida==="Suspensión" ? "var(--no)" : r.medida==="Amonestación" ? "var(--warn)" : "var(--c2)";
   return swFila("parte", r.id, `<div class="row" onclick="go('verParte','${r.id}')">
@@ -11330,8 +11616,8 @@ function vVerParte(){
     <div style="margin-left:0;margin-top:2px;font-weight:600;font-size:14.5px">${esc(v)}</div></div>` : "";
   return `
   <section class="block"><div class="card pad">
-    ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin-bottom:8px">`:""}
-    <span class="eyebrow">${esc(e.razon||"")}${e.obra?" · "+esc(e.obra):""}</span>
+    ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin-bottom:8px">`
+      :`<span class="eyebrow">${esc(e.razon||"")}${e.obra?" · "+esc(e.obra):""}</span>`}
     <h2 style="font-size:20px;font-weight:700;margin:2px 0 4px">${tx("Parte de acción disciplinaria")}</h2>
     <p class="small muted" style="margin:0">${fecha(r.fecha)}${r.hora?" · "+esc(r.hora):""}</p>
     <div style="margin-top:10px">
