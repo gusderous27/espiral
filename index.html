@@ -1213,6 +1213,7 @@ function render(){
   $("#app").innerHTML = v();
   if(!enAuth) pintarEmpresa();
   if(["form","entrega","uso","ropa","inv","cap","luxEdit","audEdit","cronoEdit","parteEdit","aguaEdit","ideaEdit"].indexOf(P.page)>=0){ montarFirma("sig","firma"); montarFirma("sig2","firma2"); }
+  if(P.page==="verInv") montarFirmaVerInv();
 }
 
 /* ============================================================
@@ -1684,6 +1685,48 @@ function capturarFirmas(){
     if(!canvasTieneTrazo(c)) return;              // canvas en blanco → no piso
     try{ P.draft[key] = c.toDataURL("image/png"); }catch(e){}
   });
+}
+/* --------- firma en pantalla de "ver investigación" ---------
+   Cuando alguien pidió una firma desde el asistente, la persona destinataria
+   la firma acá, directo sobre el registro ya guardado, en su propio equipo. */
+function montarFirmaVerInv(){
+  const r = (S.inv||[]).find(x=>x.id===P.verId); if(!r) return;
+  if(r.com && r.com.pedidoFirmaInv && !r.firma) montarFirmaCanvas("sigFirmaInv","vfInv");
+  if(r.com && r.com.pedidoFirmaSup && !r.firma2) montarFirmaCanvas("sigFirmaSup","vfSup");
+}
+function montarFirmaCanvas(id, tmpKey){
+  const c = document.getElementById(id); if(!c || c.dataset.montado) return;
+  c.dataset.montado = "1";
+  const dpr = window.devicePixelRatio||1;
+  c.width = c.offsetWidth*dpr; c.height = c.offsetHeight*dpr;
+  const cx = c.getContext("2d"); cx.scale(dpr,dpr);
+  cx.lineWidth=2.2; cx.lineCap="round";
+  cx.strokeStyle = S.tema==="oscuro" ? "#E8EEF5" : "#16202E";
+  const pos = ev => { const rc=c.getBoundingClientRect(); const p=ev.touches?ev.touches[0]:ev; return [p.clientX-rc.left, p.clientY-rc.top]; };
+  let draw=false;
+  const start = ev => { ev.preventDefault(); draw=true; cx.beginPath(); cx.moveTo(...pos(ev)); };
+  const move  = ev => { if(!draw) return; ev.preventDefault(); cx.lineTo(...pos(ev)); cx.stroke(); };
+  const end   = () => { if(!draw) return; draw=false; P.firmaTmp = P.firmaTmp||{}; P.firmaTmp[tmpKey] = c.toDataURL("image/png"); };
+  c.addEventListener("mousedown",start); c.addEventListener("mousemove",move);
+  window.addEventListener("mouseup",end);
+  c.addEventListener("touchstart",start,{passive:false}); c.addEventListener("touchmove",move,{passive:false});
+  c.addEventListener("touchend",end);
+}
+function limpiarFirmaVerInv(id, tmpKey){
+  const c = document.getElementById(id); if(!c) return;
+  c.getContext("2d").clearRect(0,0,c.width,c.height);
+  P.firmaTmp = P.firmaTmp||{}; P.firmaTmp[tmpKey] = null;
+}
+function guardarFirmaVerInv(cual){
+  const r = (S.inv||[]).find(x=>x.id===P.verId); if(!r) return;
+  const id = cual==="Inv" ? "sigFirmaInv" : "sigFirmaSup";
+  const c = document.getElementById(id);
+  if(!c || !canvasTieneTrazo(c)){ toast(tx("Dibujá tu firma antes de guardar")); return; }
+  const data = c.toDataURL("image/png");
+  if(cual==="Inv") r.firma = data; else r.firma2 = data;
+  r.com = r.com||{};
+  if(r.com["pedidoFirma"+cual]) r.com["pedidoFirma"+cual].firmado = true;
+  guardar(); toast(tx("Firma guardada")); render();
 }
 function canvasTieneTrazo(c){
   try{
@@ -2732,7 +2775,7 @@ function nuevaInv(){
     why:{p1:"",p2:"",p3:"",p4:"",p5:"",clasif:""},
     inm:[{a:"",r:"",p:"",c:""}], per:[{a:"",r:"",p:"",c:""}],
     verif:{resultados:"",por:"",fecha:"",repite:"No",plan:""},
-    com:{inv:"",dniInv:"",supervisor:"",dniSup:""}, firma:null, firma2:null};
+    com:{inv:"",dniInv:"",supervisor:"",dniSup:""}, firma:null, firma2:null, fotos:[]};
 }
 /* direcciones/lugares reutilizables: la de la empresa primero, más las que
    se hayan tipeado a mano en investigaciones anteriores */
@@ -2772,18 +2815,35 @@ function toggleArr(p,v){
 }
 /* versión compacta de multi(): las opciones elegidas se ven como chips y
    se suman con un desplegable, en vez de un tablero grande de botones */
-function multiSel(p,l,o){
+function multiSel(p,l,o,otroKey){
   const arr = getI(p)||[];
   const disponibles = o.filter(x=>arr.indexOf(x)<0);
+  const idSafe = otroKey || ("otroMS_"+p.replace(/\./g,"_"));
+  const otroAbierto = !!P[idSafe];
   return `<div class="grp">${l}</div>
     ${arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px">
       ${arr.map(x=>`<span class="pill" style="display:inline-flex;align-items:center;gap:6px">${esc(tx(x))}
         <b style="cursor:pointer" onclick="toggleArr('${p}','${x.replace(/'/g,"\\'")}')">×</b></span>`).join("")}
     </div>`:""}
-    ${disponibles.length?`<select onchange="if(this.value){toggleArr('${p}',this.value)}this.value=''">
+    ${disponibles.length||otroKey?`<select onchange="if(this.value==='__otro__'){P['${idSafe}']=true;render();}else if(this.value){toggleArr('${p}',this.value);this.value='';}">
       <option value="">${tx("+ Agregar…")}</option>
       ${disponibles.map(x=>`<option value="${esc(x)}">${esc(tx(x))}</option>`).join("")}
-    </select>`:""}`;
+      ${otroKey?`<option value="__otro__">${tx("Otro")}</option>`:""}
+    </select>`:""}
+    ${otroAbierto?`<div style="display:flex;gap:6px;margin-top:6px">
+      <input type="text" id="txt_${idSafe}" style="flex:1" placeholder="${tx("Escribí la opción")}">
+      <button class="btn soft sm" onclick="agregarOtroMultiSel('${p}','${idSafe}')">${tx("Agregar")}</button>
+    </div>`:""}`;
+}
+function agregarOtroMultiSel(p, idSafe){
+  const inp = document.getElementById("txt_"+idSafe);
+  const v = inp && inp.value.trim();
+  if(!v) return;
+  const arr = getI(p)||[];
+  if(arr.indexOf(v)<0) arr.push(v);
+  setI(p,arr);
+  P[idSafe] = false;
+  render();
 }
 function nivelRiesgo(d){
   const g=parseInt(d.ev.gravedad,10), f=parseInt(d.ev.frecuencia,10);
@@ -2800,9 +2860,55 @@ function fila(pth,i,d){
       <b class="small">Acción ${i+1}</b>
       <button class="btn ghost sm" style="padding:4px 10px" onclick="delFilaInv('${pth}',${i})">${tx("Quitar")}</button></div>
     ${tI(pth+"."+i+".a","¿Qué se debe hacer para evitar que se repita?","",90)}
-    <div class="grid2">${fI(pth+"."+i+".r","¿Quién lo hará?")}${fI(pth+"."+i+".p","¿Cuándo se hará?","date")}</div>
-    ${fI(pth+"."+i+".c","Fecha de realización efectiva","date")}
+    ${multiSelPersonasStr(pth+"."+i+".r")}
+    ${fI(pth+"."+i+".p","¿Cuándo se hará?","date")}
   </div>`;
+}
+/* selector múltiple de nombres de la nómina (+ Otro) para el campo "¿Quién lo hará?".
+   Se guarda como texto (nombres unidos con " · ") para no romper compatibilidad con
+   registros viejos ni con las vistas/exportaciones que ya leen .r como string. */
+function multiSelPersonasStr(path){
+  const raw = getI(path) || "";
+  const arr = raw.split(" · ").map(s=>s.trim()).filter(Boolean);
+  const nombres = (S.personal||[]).map(p=>p.nombre).filter(Boolean).sort((a,b)=>a.localeCompare(b,"es"));
+  const disponibles = nombres.filter(x=>arr.indexOf(x)<0);
+  const idSafe = path.replace(/\./g,"_");
+  const key = "otroResp_"+idSafe, idTxt = "otroRespTxt_"+idSafe;
+  return `<label class="f"><span class="lb">${tx("¿Quién lo hará?")}</span></label>
+    ${arr.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px">
+      ${arr.map(x=>`<span class="pill" style="display:inline-flex;align-items:center;gap:6px">${esc(x)}
+        <b style="cursor:pointer" onclick="quitarRespFila('${path}','${x.replace(/'/g,"\\'")}')">×</b></span>`).join("")}
+    </div>`:""}
+    <select onchange="if(this.value==='__otro__'){P['${key}']=true;render();}else if(this.value){agregarRespFila('${path}',this.value);}">
+      <option value="">${tx("+ Agregar…")}</option>
+      ${disponibles.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("")}
+      <option value="__otro__" ${P[key]?"selected":""}>${tx("Otro")}</option>
+    </select>
+    ${P[key]?`<div style="display:flex;gap:6px;margin-top:6px">
+      <input type="text" id="${idTxt}" style="flex:1" placeholder="${tx("Nombre")}">
+      <button class="btn soft sm" onclick="agregarRespOtro('${path}')">${tx("Agregar")}</button>
+    </div>`:""}`;
+}
+function agregarRespFila(path, nombre){
+  const raw = getI(path) || "";
+  const arr = raw.split(" · ").map(s=>s.trim()).filter(Boolean);
+  if(arr.indexOf(nombre)<0) arr.push(nombre);
+  setI(path, arr.join(" · "));
+  render();
+}
+function quitarRespFila(path, nombre){
+  const raw = getI(path) || "";
+  const arr = raw.split(" · ").map(s=>s.trim()).filter(Boolean).filter(x=>x!==nombre);
+  setI(path, arr.join(" · "));
+  render();
+}
+function agregarRespOtro(path){
+  const idSafe = path.replace(/\./g,"_");
+  const inp = document.getElementById("otroRespTxt_"+idSafe);
+  const v = inp && inp.value.trim();
+  if(!v) return;
+  agregarRespFila(path, v);
+  P["otroResp_"+idSafe] = false;
 }
 function addFilaInv(p){ getI(p).push({a:"",r:"",p:"",c:""}); render(); }
 function delFilaInv(p,i){ const arr=getI(p); if(arr.length>1) arr.splice(i,1); render(); }
@@ -2814,43 +2920,54 @@ function pasoInv(n){ P.draft.paso = n; window.scrollTo(0,0); render(); }
 function diagramaCuerpoHtml(){
   const pick = P.dpBodyPick;
   const zonas = [
-    {parte:"Cabeza", lado:"", cx:100, cy:25},
-    {parte:"Cuello", lado:"", cx:100, cy:55},
-    {parte:"Hombro", lado:"Izquierda", cx:65, cy:72}, {parte:"Hombro", lado:"Derecha", cx:135, cy:72},
-    {parte:"Brazo", lado:"Izquierda", cx:50, cy:112}, {parte:"Brazo", lado:"Derecha", cx:150, cy:112},
-    {parte:"Antebrazo", lado:"Izquierda", cx:42, cy:160}, {parte:"Antebrazo", lado:"Derecha", cx:158, cy:160},
+    {parte:"Cabeza", lado:"", cx:100, cy:27},
+    {parte:"Cuello", lado:"", cx:100, cy:50},
+    {parte:"Hombro", lado:"Izquierda", cx:69, cy:66}, {parte:"Hombro", lado:"Derecha", cx:131, cy:66},
+    {parte:"Brazo", lado:"Izquierda", cx:54, cy:110}, {parte:"Brazo", lado:"Derecha", cx:146, cy:110},
+    {parte:"Antebrazo", lado:"Izquierda", cx:44, cy:160}, {parte:"Antebrazo", lado:"Derecha", cx:156, cy:160},
     {parte:"Mano", lado:"Izquierda", cx:38, cy:204}, {parte:"Mano", lado:"Derecha", cx:162, cy:204},
     {parte:"Tórax", lado:"", cx:100, cy:90},
     {parte:"Abdomen", lado:"", cx:100, cy:128},
-    {parte:"Cadera", lado:"", cx:100, cy:158},
-    {parte:"Pierna", lado:"Izquierda", cx:78, cy:225}, {parte:"Pierna", lado:"Derecha", cx:122, cy:225},
-    {parte:"Rodilla", lado:"Izquierda", cx:78, cy:270}, {parte:"Rodilla", lado:"Derecha", cx:122, cy:270},
+    {parte:"Cadera", lado:"", cx:100, cy:165},
+    {parte:"Pierna", lado:"Izquierda", cx:81, cy:225}, {parte:"Pierna", lado:"Derecha", cx:119, cy:225},
+    {parte:"Rodilla", lado:"Izquierda", cx:80, cy:270}, {parte:"Rodilla", lado:"Derecha", cx:120, cy:270},
     {parte:"Tobillo", lado:"Izquierda", cx:78, cy:315}, {parte:"Tobillo", lado:"Derecha", cx:122, cy:315},
-    {parte:"Pie", lado:"Izquierda", cx:78, cy:340}, {parte:"Pie", lado:"Derecha", cx:122, cy:340}
+    {parte:"Pie", lado:"Izquierda", cx:78, cy:345}, {parte:"Pie", lado:"Derecha", cx:122, cy:345}
   ];
   const activo = z => pick && pick.parte===z.parte && pick.lado===z.lado;
   return `
   <div style="text-align:center;margin:6px 0 4px">
     <svg viewBox="0 0 200 360" style="width:100%;max-width:220px;height:auto;touch-action:manipulation">
-      <g fill="none" stroke="var(--line)" stroke-width="2">
-        <circle cx="100" cy="25" r="18"/>
-        <line x1="100" y1="43" x2="100" y2="60"/>
-        <path d="M70,60 h60 v65 h-60 z"/>
-        <line x1="70" y1="90" x2="130" y2="90"/>
-        <line x1="70" y1="125" x2="130" y2="125"/>
-        <line x1="70" y1="70" x2="45" y2="150"/>
-        <line x1="45" y1="150" x2="38" y2="204"/>
-        <line x1="130" y1="70" x2="155" y2="150"/>
-        <line x1="155" y1="150" x2="162" y2="204"/>
-        <line x1="80" y1="125" x2="78" y2="340"/>
-        <line x1="120" y1="125" x2="122" y2="340"/>
+      <g stroke-linecap="round" stroke-linejoin="round">
+        <g fill="none" stroke="var(--soft)" stroke-width="17">
+          <path d="M70,70 L48,150 L40,204"/>
+          <path d="M130,70 L152,150 L160,204"/>
+          <path d="M84,180 L80,270 L78,345"/>
+          <path d="M116,180 L120,270 L122,345"/>
+        </g>
+        <g fill="none" stroke="var(--line)" stroke-width="2">
+          <path d="M70,70 L48,150 L40,204"/>
+          <path d="M130,70 L152,150 L160,204"/>
+          <path d="M84,180 L80,270 L78,345"/>
+          <path d="M116,180 L120,270 L122,345"/>
+        </g>
+        <g fill="var(--soft)" stroke="var(--line)" stroke-width="2">
+          <ellipse cx="100" cy="27" rx="17" ry="20"/>
+          <rect x="91" y="44" width="18" height="13" rx="5"/>
+          <path d="M70,58 Q100,49 130,58 L127,102 Q125,135 117,160 L83,160 Q75,135 73,102 Z"/>
+          <path d="M79,157 Q100,168 121,157 L123,182 L77,182 Z"/>
+          <circle cx="38" cy="204" r="9"/>
+          <circle cx="162" cy="204" r="9"/>
+          <ellipse cx="78" cy="349" rx="11" ry="7"/>
+          <ellipse cx="122" cy="349" rx="11" ry="7"/>
+        </g>
       </g>
-      ${zonas.map(z=>`<circle cx="${z.cx}" cy="${z.cy}" r="11" fill="${activo(z)?"var(--primary)":"rgba(23,162,198,.18)"}"
-        stroke="${activo(z)?"var(--primary)":"#17A2C6"}" stroke-width="1.5" style="cursor:pointer"
+      ${zonas.map(z=>`<circle cx="${z.cx}" cy="${z.cy}" r="10" fill="${activo(z)?"var(--primary)":"rgba(14,124,134,.28)"}"
+        stroke="${activo(z)?"var(--primary)":"var(--primary)"}" stroke-width="1.5" style="cursor:pointer"
         onclick="elegirParteBody('${z.parte}','${z.lado}')"><title>${esc(tx(z.parte))}${z.lado?" · "+esc(tx(z.lado)):""}</title></circle>`).join("")}
     </svg>
   </div>
-  <p class="tiny muted" style="text-align:center;margin:0 0 8px">${tx("Tocá una zona del cuerpo (tal como se ve en la pantalla) o usá el desplegable de abajo.")}</p>
+  <p class="tiny muted" style="text-align:center;margin:0 0 8px">${tx("Tocá una zona del cuerpo para marcar dónde fue la lesión.")}</p>
   ${pick?`<div style="text-align:center;margin:0 0 12px">
     <button class="btn sm" onclick="confirmarParteBody()">${tx("Confirmar")}: ${esc(tx(pick.parte))}${pick.lado?" · "+esc(tx(pick.lado)):""}</button>
   </div>`:""}`;
@@ -2861,6 +2978,7 @@ function confirmarParteBody(){
   setI("dp.parte", P.dpBodyPick.parte);
   if(P.dpBodyPick.lado) setI("dp.lado", P.dpBodyPick.lado);
   P.dpBodyPick = null;
+  P.dpParteManual = false;
   render();
 }
 function elegirDp(id){
@@ -2885,32 +3003,65 @@ function setPermAplica(v){
   if(v!=="Aplica"){ P.draft.per = [{a:"",r:"",p:"",c:""}]; }
   render();
 }
-/* pide una firma por mail: como la app no tiene un servicio de envío de
-   mails propio, abre el cliente de correo de quien lo pide con el mensaje
-   ya armado, y deja un recordatorio interno en las notificaciones */
-function pedirFirmaMail(cual){
-  modalCampos(tx("Pedir firma por mail"), [{l:tx("Nombre de quien firma")},{l:tx("E-mail")}], v=>{
-    const nombre = v[0], email = v[1];
-    if(!email){ toast(tx("Falta el e-mail")); return; }
-    const e = S.empresa||{};
-    P.draft.com = P.draft.com||{};
-    P.draft.com["pedidoFirma"+cual] = {para:nombre, email:email, fecha:hoy()};
-    const asunto = tx("Firma pendiente")+" · "+tx("Investigación de accidentes e incidentes");
-    const cuerpo = (nombre?tx("Hola")+" "+nombre+",\n\n":"")
-      + tx("Te pedimos que revises y firmes el informe de investigación cargado en Espiral.")
-      + (e.razon?" ("+e.razon+")":"") + "\n\n" + tx("Gracias.");
-    S.notifEventos = S.notifEventos||[];
-    S.notifEventos.unshift({id:uid(), tipo:"firmaPendiente", emp:S.activa, invId:P.draft.id,
-      para:nombre, email:email, ts:new Date().toISOString(), leida:false});
-    guardar(); render();
-    location.href = "mailto:"+encodeURIComponent(email)+"?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(cuerpo);
-  });
+/* desplegable consolidado de nómina (+ Otro) con auto-completado de DNI,
+   para "Investigación realizada por" / "Supervisor" en la comisión investigadora */
+function campoComision(label, campoNombre, campoDni){
+  const nomina = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
+  const valor = getI(campoNombre);
+  const otroKey = "otroCom_"+campoNombre.replace(/\./g,"_");
+  const otro = !!(P[otroKey] || (valor && !nomina.some(p=>p.nombre===valor)));
+  return `<label class="f"><span class="lb">${tx(label)}</span>
+    <select onchange="if(this.value==='__otro__'){P['${otroKey}']=true;render();}else if(this.value){P['${otroKey}']=false;const p=trab(this.value);setI('${campoNombre}',p.nombre||'');if(p.dni)setI('${campoDni}',p.dni);render();}">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${nomina.map(p=>`<option value="${p.id}" ${(!otro && valor===p.nombre)?"selected":""}>${esc(p.nombre)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?fI(campoNombre,"Nombre"):""}
+    ${fI(campoDni,"DNI / documento")}`;
 }
-function elegirComision(cual,id){
-  const p = trab(id);
-  if(cual==="inv"){ setI("com.inv", p.nombre||""); if(p.dni) setI("com.dniInv", p.dni); }
-  else { setI("com.supervisor", p.nombre||""); if(p.dni) setI("com.dniSup", p.dni); }
+/* pedido de firma: en primer lugar es un pedido DENTRO de la app (le llega
+   una notificación a quien tenga que firmar y firma desde su propio
+   dispositivo al abrir este mismo registro guardado). El e-mail es opcional
+   y solo sirve como aviso adicional, no es el medio de la firma en sí. */
+function pedirFirma(cual){
+  const nombrePrefill = cual==="Inv" ? (getI("com.inv")||"") : (getI("com.supervisor")||"");
+  modalCampos(tx("Pedir firma"), [
+    {l:tx("Nombre de quien va a firmar"), v:nombrePrefill},
+    {l:tx("E-mail (opcional, solo para avisar)")}
+  ], v=>{
+    const nombre = v[0], email = v[1];
+    P.draft.com = P.draft.com||{};
+    P.draft.com["pedidoFirma"+cual] = {para:nombre, email:email||"", fecha:hoy(), cual:cual};
+    S.notifEventos = S.notifEventos||[];
+    S.notifEventos.unshift({id:uid(), tipo:"firmaPendiente", emp:S.activa, invId:P.draft.id, cual:cual,
+      para:nombre, email:email||"", ts:new Date().toISOString(), leida:false});
+    guardar(); render();
+    toast(tx("Se envió el pedido. Cuando guardes el registro, va a poder firmarlo desde la app."));
+  }, tx("Enviar pedido"));
+}
+function cancelarPedidoFirma(cual){
+  if(!P.draft || !P.draft.com) return;
+  P.draft.com["pedidoFirma"+cual] = null;
   render();
+}
+/* aviso opcional por mail, aparte del pedido en la app (que ya quedó hecho) */
+function avisarFirmaMail(cual){
+  const p = P.draft && P.draft.com && P.draft.com["pedidoFirma"+cual];
+  if(!p || !p.email) return;
+  const asunto = tx("Firma pendiente")+" · "+tx("Investigación de accidentes e incidentes");
+  const cuerpo = (p.para?tx("Hola")+" "+p.para+",\n\n":"")
+    + tx("Te pedimos que ingreses a la app para revisar y firmar un informe de investigación.")
+    + "\n\n" + tx("Gracias.");
+  location.href = "mailto:"+encodeURIComponent(p.email)+"?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(cuerpo);
+}
+function estadoPedidoFirma(p, cual){
+  return `<div class="tiny muted" style="margin-top:6px;line-height:1.4">
+    ✍️ ${tx("Pedido de firma enviado a")} <b>${esc(p.para||tx("(sin nombre)"))}</b>. ${tx("Va a poder firmar cuando abra este registro guardado desde la app.")}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+    <button class="btn ghost sm" onclick="cancelarPedidoFirma('${cual}')">${tx("Cancelar pedido")}</button>
+    ${p.email?`<button class="btn ghost sm" onclick="avisarFirmaMail('${cual}')">${tx("Avisar también por mail")}</button>`:""}
+  </div>`;
 }
 
 function vInv(){
@@ -2958,8 +3109,16 @@ function vInv(){
     ${fI("dp.costo","c · Costo estimado del daño")}
     <div class="grp">${tx("d · Parte lesionada")}</div>
     ${diagramaCuerpoHtml()}
-    ${campoOtro("Parte lesionada (desplegable)",PARTES_CUERPO_INV,getI("dp.parte"),"invParteOtro","v=>setI('dp.parte',v)","Especificá la parte del cuerpo")}
-    ${sI("dp.lado","Lado (si corresponde)",["Izquierda","Derecha","Ambas"])}
+    ${getI("dp.parte") && !P.dpParteManual ? `
+      <div class="item" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span class="small">${tx("Parte lesionada")}: <b>${esc(tx(getI("dp.parte")))}</b>${getI("dp.lado")?" · "+esc(tx(getI("dp.lado"))):""}</span>
+        <button class="btn ghost sm" style="flex:none" onclick="P.dpParteManual=true;render()">${tx("Elegir manualmente")}</button>
+      </div>
+    ` : `
+      ${campoOtro("Parte lesionada (desplegable)",PARTES_CUERPO_INV,getI("dp.parte"),"invParteOtro","v=>setI('dp.parte',v)","Especificá la parte del cuerpo")}
+      ${sI("dp.lado","Lado (si corresponde)",["Izquierda","Derecha","Ambas"])}
+      ${getI("dp.parte")?`<button class="btn ghost sm" style="margin:-8px 0 8px" onclick="P.dpParteManual=false;render()">${tx("Usar diagrama")}</button>`:""}
+    `}
     ${campoOtro("Tipo de lesión",TIPO_LESION_INV,getI("dp.lesion"),"invLesionOtro","v=>setI('dp.lesion',v)","Especificá el tipo de lesión")}
     ${fI("dp.equipo","e · Equipo, material o herramienta que provocó la lesión")}
     ${campoPersonaIper("f · Supervisor directo",getI("dp.supervisor"),"invSupervisorOtro","v=>setI('dp.supervisor',v)")}
@@ -3024,14 +3183,10 @@ function vInv(){
   if(n===4) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("15 · Causas inmediatas")}</div>
     <p class="tiny muted" style="margin:-2px 0 8px">${tx("Elegí todas las que correspondan del desplegable.")}</p>
-    ${multiSel("causas.acciones",tx("15.a · Acciones inseguras"),ACC_INSEG)}
-    ${fI("causas.otraAccion","Otra acción insegura")}
-    ${multiSel("causas.condiciones",tx("15.b · Condiciones inseguras"),COND_INSEG)}
-    ${fI("causas.otraCondicion","Otra condición insegura")}
-    ${multiSel("forma.contacto",tx("17.a · Tipo de contacto"),TIPO_CONTACTO)}
-    ${fI("forma.otroContacto","Otro tipo de contacto")}
-    ${multiSel("forma.con",tx("17.b · Contacto con"),CONTACTO_CON)}
-    ${fI("forma.otroCon","Otro")}
+    ${multiSel("causas.acciones",tx("15.a · Acciones inseguras"),ACC_INSEG,"invAccInsegOtro")}
+    ${multiSel("causas.condiciones",tx("15.b · Condiciones inseguras"),COND_INSEG,"invCondInsegOtro")}
+    ${multiSel("forma.contacto",tx("17.a · Tipo de contacto"),TIPO_CONTACTO,"invContactoOtro")}
+    ${multiSel("forma.con",tx("17.b · Contacto con"),CONTACTO_CON,"invContactoConOtro")}
   </div>`;
 
   if(n===5) cuerpo = `<div class="card pad">
@@ -3056,34 +3211,17 @@ function vInv(){
     ${d.per.map((x,i)=>fila("per",i,d)).join("")}
     <button class="btn soft sm" onclick="addFilaInv('per')">${tx("+ Agregar acción")}</button>`:""}
 
-    <div class="grp">${tx("Verificación de la eficacia")}</div>
-    ${tI("verif.resultados","Resultados alcanzados","")}
-    <div class="grid2">${fI("verif.por","Verificación realizada por")}${fI("verif.fecha","Fecha","date")}</div>
-    ${sI("verif.repite",tx("¿Hubo eventos por la misma causa raíz en los últimos 3 meses?"),["No","Sí"])}
-    ${getI("verif.repite")==="Sí"?tI("verif.plan","Plan de acción complementario",""):""}
-
-    <div class="grp">${tx("19 · Comisión investigadora")}</div>
-    ${nomina.length?`<label class="f"><span class="lb">${tx("Traer de la nómina")}</span>
-      <select onchange="if(this.value)elegirComision('inv',this.value)">
-        <option value="">${tx("Seleccionar…")}</option>
-        ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
-      </select></label>`:""}
-    <div class="grid2">${fI("com.inv","Investigación realizada por")}${fI("com.dniInv","DNI / documento")}</div>
+    <div class="grp">${tx("18 · Comisión investigadora")}</div>
+    ${campoComision(tx("Investigación realizada por"),"com.inv","com.dniInv")}
     <canvas class="sig" id="sig"></canvas>
     <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig','firma')">${tx("Borrar firma")}</button>
-    <button class="btn soft sm" style="margin-top:8px" onclick="pedirFirmaMail('Inv')">${tx("✉️ Pedir firma por mail")}</button>
-    ${d.com.pedidoFirmaInv?`<p class="tiny muted" style="margin:4px 0 0">${tx("Pedido enviado a")} ${esc(d.com.pedidoFirmaInv.email)} ${tx("el")} ${fecha(d.com.pedidoFirmaInv.fecha)}</p>`:""}
-    ${nomina.length?`<label class="f" style="margin-top:14px"><span class="lb">${tx("Traer de la nómina")}</span>
-      <select onchange="if(this.value)elegirComision('sup',this.value)">
-        <option value="">${tx("Seleccionar…")}</option>
-        ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
-      </select></label>`:""}
-    <div class="grid2" style="margin-top:14px">${fI("com.supervisor","Supervisor")}${fI("com.dniSup","DNI / documento")}</div>
-    <canvas class="sig" id="sig2"></canvas>
+    ${d.com.pedidoFirmaInv?estadoPedidoFirma(d.com.pedidoFirmaInv,"Inv"):
+      `<button class="btn soft sm" style="margin-top:8px" onclick="pedirFirma('Inv')">🖊️ ${tx("Pedir firma")}</button>`}
+    ${campoComision(tx("Supervisor"),"com.supervisor","com.dniSup")}
+    <canvas class="sig" id="sig2" style="margin-top:8px"></canvas>
     <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig2','firma2')">${tx("Borrar firma")}</button>
-    <button class="btn soft sm" style="margin-top:8px" onclick="pedirFirmaMail('Sup')">${tx("✉️ Pedir firma por mail")}</button>
-    ${d.com.pedidoFirmaSup?`<p class="tiny muted" style="margin:4px 0 0">${tx("Pedido enviado a")} ${esc(d.com.pedidoFirmaSup.email)} ${tx("el")} ${fecha(d.com.pedidoFirmaSup.fecha)}</p>`:""}
-    <p class="tiny muted" style="margin:10px 0 0">${tx("Esto abre tu propio correo con el mensaje ya armado; todavía no enviamos el mail nosotros de forma automática.")}</p>
+    ${d.com.pedidoFirmaSup?estadoPedidoFirma(d.com.pedidoFirmaSup,"Sup"):
+      `<button class="btn soft sm" style="margin-top:8px" onclick="pedirFirma('Sup')">🖊️ ${tx("Pedir firma")}</button>`}
   </div>`;
 
   return `
@@ -3099,7 +3237,7 @@ function vInv(){
   <section class="block">${cuerpo}</section>
 
   <section class="block noprint">
-    ${n<6?`<button class="btn" onclick="pasoInv(${n+1})">${t("btn.siguiente")} · ${esc(tx(PASOS_INV[n]))}</button>`:
+    ${n<6?`<button class="btn" onclick="pasoInv(${n+1})">${t("btn.siguiente")}</button>`:
           `<button class="btn" onclick="guardarInv()">${txGuardar("inv","Guardar")}</button>`}
     ${n>1?`<button class="btn ghost" style="margin-top:8px" onclick="pasoInv(${n-1})">${tx("Anterior")}</button>`:""}
     <button class="btn ghost" style="margin-top:8px" onclick="P.draft=null;go('inicio')">${tx("Descartar")}</button>
@@ -3138,6 +3276,8 @@ function vVerInv(){
   const r = (S.inv||[]).find(x=>x.id===P.verId);
   if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró el registro.")}</div></section>`;
   const e = S.empresa||{};
+  const pInv = r.com && r.com.pedidoFirmaInv, pSup = r.com && r.com.pedidoFirmaSup;
+  const faltaInv = pInv && !r.firma, faltaSup = pSup && !r.firma2;
   const li = (l,v) => v ? `<div class="small"><span class="muted">${l}:</span> <b>${esc(v)}</b></div>` : "";
   const acc = (arr,t,k) => {
     const filas = arr.map((x,i)=>({x,i})).filter(o=>(o.x.a||"").trim());
@@ -3216,6 +3356,27 @@ function vVerInv(){
         <span class="tiny muted">${esc(r.com.supervisor||"Supervisor")}${r.com.dniSup?" · DNI "+esc(r.com.dniSup):""}</span></div>`:""}
     </div>
   </div></section>
+
+  ${faltaInv||faltaSup?`<section class="block">
+    ${faltaInv?`<div class="card pad" style="border:1.5px solid var(--primary)">
+      <div class="grp" style="margin-top:0">✍️ ${tx("Falta tu firma")}${pInv.para?" · "+esc(pInv.para):""}</div>
+      <p class="tiny muted" style="margin:0 0 8px">${tx("Te pidieron que firmes como investigador en este registro. Firmá abajo y guardá.")}</p>
+      <canvas class="sig" id="sigFirmaInv"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ghost sm" onclick="limpiarFirmaVerInv('sigFirmaInv','vfInv')">${tx("Borrar")}</button>
+        <button class="btn sm" onclick="guardarFirmaVerInv('Inv')">${tx("Guardar firma")}</button>
+      </div>
+    </div>`:""}
+    ${faltaSup?`<div class="card pad" style="border:1.5px solid var(--primary);margin-top:${faltaInv?"10px":"0"}">
+      <div class="grp" style="margin-top:0">✍️ ${tx("Falta tu firma")}${pSup.para?" · "+esc(pSup.para):""}</div>
+      <p class="tiny muted" style="margin:0 0 8px">${tx("Te pidieron que firmes como supervisor en este registro. Firmá abajo y guardá.")}</p>
+      <canvas class="sig" id="sigFirmaSup"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ghost sm" onclick="limpiarFirmaVerInv('sigFirmaSup','vfSup')">${tx("Borrar")}</button>
+        <button class="btn sm" onclick="guardarFirmaVerInv('Sup')">${tx("Guardar firma")}</button>
+      </div>
+    </div>`:""}
+  </section>`:""}
 
   ${barraCompartir('inv', r.id)}
   <section class="block noprint">
@@ -4316,13 +4477,19 @@ function notificaciones(){
     }));
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
-    // 4.7 · pedidos de firma enviados por mail: solo un recordatorio interno,
-    // el mail en sí lo manda el cliente de correo de quien lo pide
-    const evFirma = (S.notifEventos||[]).filter(e=>e.tipo==="firmaPendiente" && (!e.emp || e.emp===S.activa));
+    // 4.7 · pedidos de firma pendientes: se firma DENTRO de la app, así que la
+    // notificación desaparece sola en cuanto la firma quedó cargada en el registro
+    const evFirma = (S.notifEventos||[]).filter(e=>{
+      if(e.tipo!=="firmaPendiente" || (e.emp && e.emp!==S.activa)) return false;
+      const rec = (S.inv||[]).find(x=>x.id===e.invId);
+      if(!rec) return true; // el registro todavía no se terminó de guardar
+      const key = e.cual==="Sup" ? "firma2" : "firma";
+      return !rec[key];
+    });
     const evFirmaNoti = evFirma.map(e=>({
       tipo:"eventoFirma", icono:"✍️",
-      titulo: tx("Firma pendiente")+(e.para?" · "+e.para:""),
-      sub: e.email ? tx("Se envió el pedido a")+" "+e.email : tx("Ingresá aquí para revisar."),
+      titulo: tx("Falta firmar")+(e.para?" · "+e.para:""),
+      sub: tx("Ingresá aquí para firmar."),
       cuando: null, dias: e.leida ? 9998 : -9999,
       leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
       ir:()=>{ marcarNotifLeida(e.id); go("verInv", e.invId); }
@@ -11233,7 +11400,7 @@ function gate(msg, fn){
   return false;
 }
 /* Modal de campos de texto: reemplaza a prompt() */
-function modalCampos(titulo, campos, onOk){
+function modalCampos(titulo, campos, onOk, okLabel){
   cerrarModal();
   const ov = document.createElement("div");
   ov.className = "modal";
@@ -11241,7 +11408,7 @@ function modalCampos(titulo, campos, onOk){
     <div class="grp" style="margin:0 0 10px">${esc(titulo)}</div>
     ${campos.map((c,i)=>`<label class="f"><span class="lb">${esc(c.l)}</span>
       <input type="text" id="dlgc${i}" value="${esc(c.v||"")}" placeholder="${esc(c.ph||"")}"></label>`).join("")}
-    <button class="btn" id="dlgok" style="margin-top:6px">${tx("Agregar")}</button>
+    <button class="btn" id="dlgok" style="margin-top:6px">${esc(okLabel||tx("Agregar"))}</button>
     <button class="btn ghost" style="margin-top:8px" onclick="cerrarModal()">${tx("Cancelar")}</button>
   </div>`;
   document.body.appendChild(ov);
@@ -13644,7 +13811,8 @@ function bkBloque(){
    ============================================================ */
 (async function init(){
   const g = await DB.get("insp_hs_v1");
-  S = { tema:(g && g.tema) || "claro", idioma:(g && g.idioma) || "es", empresas:[], activa:null, proCuenta: !!(g && g.proCuenta) };
+  S = { tema:(g && g.tema) || "claro", idioma:(g && g.idioma) || "es", empresas:[], activa:null, proCuenta: !!(g && g.proCuenta),
+    accSeguimiento: (g && g.accSeguimiento) || {}, notifEventos: (g && g.notifEventos) || [], notifDescartadas: (g && g.notifDescartadas) || {} };
   if(g && g.empresas && g.empresas.length){
     S.empresas = g.empresas;
     S.activa = g.activa && g.empresas.some(e=>e.id===g.activa) ? g.activa : g.empresas[0].id;
