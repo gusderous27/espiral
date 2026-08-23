@@ -1022,7 +1022,8 @@ const TILES = [
   {g:"auto", nombre:"Autoelevadores", ic:"🚜", color:"var(--c2)", desc:"control diario o revisión trimestral",
    ops:["autoelevador_diario","autoelevador_trimestral"]},
   {k:"escaleras"},{k:"arnes"},
-  {ruta:"ptt", nombre:"Permiso de trabajo", ic:"📝", color:"var(--c1)", desc:"(altura, caliente, confinados, eléctrico)"}
+  {ruta:"ptt", nombre:"Permiso de trabajo", ic:"📝", color:"var(--c1)", desc:"(altura, caliente, confinados, eléctrico)"},
+  {ruta:"uso", nombre:"Uso diario de EPP", ic:"✅", color:"var(--c4)", desc:"verificación por área"}
 ];
 const TILES_AUD = [
   {k:"auditoria"},
@@ -1171,6 +1172,7 @@ function go(p, arg){
   if(p==="entrega" && !editando){ nuevaEntrega(); }
   if(p==="uso" && !editando){ nuevoUso(); }
   if(p==="ropa" && !editando){ nuevaRopa(); }
+  if(p==="historial"){ P.histFiltro = (arg==="mes") ? "mes" : null; }
   if(p==="personal"){ P.pEdit = null; }
   if(p==="docs"){ P.cEdit = null; }
   document.querySelectorAll(".nb").forEach(b=>b.dataset.on = (b.dataset.p===p?"1":"0"));
@@ -1246,9 +1248,9 @@ function vInicio(){
         : `<div style="text-align:center;padding:6px 0"><span class="eyebrow">${t("home.registroDe")}</span>
            <h2 style="font-size:22px;font-weight:700;margin:2px 0 0">${esc(e.razon||t("home.config"))}</h2></div>`}
       <div class="kpis">
-        <div class="kpi"><b>${S.insp.length+eppR.length+audR.length}</b><span class="tiny muted">${t("home.registros")}</span></div>
-        <div class="kpi"><b>${mes+audMes}</b><span class="tiny muted">${t("home.mes")}</span></div>
-        <div class="kpi" style="border-color:${nc?"var(--no)":"var(--line)"}"><b style="color:${nc?"var(--no)":"inherit"}">${nc}</b><span class="tiny muted">${t("home.desvios")}</span></div>
+        <button class="kpi" onclick="go('historial')"><b>${S.insp.length+eppR.length+audR.length}</b><span class="tiny muted">${t("home.registros")}</span></button>
+        <button class="kpi" onclick="go('historial','mes')"><b>${mes+audMes}</b><span class="tiny muted">${t("home.mes")}</span></button>
+        <button class="kpi" style="border-color:${nc?"var(--no)":"var(--line)"}" onclick="go('acciones')"><b style="color:${nc?"var(--no)":"inherit"}">${nc}</b><span class="tiny muted">${t("home.desvios")}</span></button>
       </div>
     </div>
   </section>
@@ -1994,22 +1996,31 @@ function vHistorial(){
   if(S.mundo==="mc") return vHistorialMC();
   if(!S.insp.length && !(S.epp||[]).length && !(S.inv||[]).length && !(S.cap||[]).length && !(S.ptt||[]).length && !(S.lux||[]).length && !(S.aud||[]).length && !(S.crono||[]).length && !(S.parte||[]).length && !(S.agua||[]).length) return `<section class="block"><div class="card empty">
     <span class="ic">≡</span>${tx("Todavía no hay inspecciones cerradas.")}<br><span class="small">${tx("Empezá por una plantilla en Nueva.")}</span></div></section>`;
-  const orden = S.insp.slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const eppOrd = (S.epp||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const invOrd = (S.inv||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const capOrd = (S.cap||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const pttOrd = (S.ptt||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const luxOrd = (S.lux||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const audOrd = (S.aud||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const croOrd = (S.crono||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const parOrd = (S.parte||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
-  const aguOrd = (S.agua||[]).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const filtroMes = P.histFiltro === "mes";
+  const desdeMes = hoy().slice(0,7)+"-01";
+  const enMes = r => !filtroMes || (r.fecha||"") >= desdeMes;
+  const orden = S.insp.filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const eppOrd = (S.epp||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const invOrd = (S.inv||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const capOrd = (S.cap||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const pttOrd = (S.ptt||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const luxOrd = (S.lux||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const audOrd = (S.aud||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const croOrd = (S.crono||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const parOrd = (S.parte||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const aguOrd = (S.agua||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
   const porTpl = {};
   orden.forEach(r=>{ (porTpl[r.tpl]=porTpl[r.tpl]||[]).push(r); });
+  const hayResultados = orden.length||eppOrd.length||invOrd.length||capOrd.length||pttOrd.length||luxOrd.length||audOrd.length||croOrd.length||parOrd.length||aguOrd.length;
   return `
   <section class="block">
     <div class="section-title"><h2>${tx("Historial")}</h2><button class="btn ghost sm" onclick="exportarCSV()">${tx("Exportar CSV")}</button></div>
+    ${filtroMes?`<div class="card pad" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+      <span class="small">${tx("Mostrando solo")} <b>${tx("este mes")}</b></span>
+      <button class="btn ghost sm" onclick="go('historial')">${tx("Ver todo")}</button>
+    </div>`:""}
     <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Deslizá una fila hacia la izquierda para ver, editar o eliminar.")}</p>
+    ${!hayResultados?`<div class="card empty"><span class="ic">≡</span>${tx("No hay registros este mes.")}</div>`:""}
     ${Object.keys(porTpl).map(k=>`
       <div class="card pad" style="margin-bottom:12px">
         <div class="grp" style="margin-top:0">${TPL[k].ic} ${esc(TPL[k].nombre)}</div>
@@ -2184,7 +2195,6 @@ const PRENDAS = [
 const TILES_EPP = [
   {p:"personal", nombre:"Personal", ic:"👷", color:"var(--c5)", desc:"nómina, puestos y talles"},
   {p:"entrega",  nombre:"Entrega de EPP", ic:"📋", color:"var(--c1)", desc:"constancia Res. 299/11"},
-  {p:"uso",      nombre:"Uso diario de EPP", ic:"✅", color:"var(--c4)", desc:"verificación por área"},
   {p:"ropa",     nombre:"Ropa de trabajo", ic:"👕", color:"var(--c7)", desc:"talles y entrega"}
 ];
 function tilesCapHTML(){
@@ -13153,9 +13163,9 @@ function vInicioRH(){
         : `<div style="text-align:center;padding:2px 0 6px"><span class="eyebrow">${tx("Recursos Humanos")}</span>
            <h2 style="font-size:22px;font-weight:700;margin:2px 0 0">${esc(e.razon||tx("Empresa"))}</h2></div>`}
       <div class="kpis" style="grid-template-columns:repeat(${examVenc?3:2},minmax(0,140px));justify-content:center">
-        <div class="kpi"><b>${pers.length}</b><span class="tiny muted">${tx("personas")}</span></div>
-        <div class="kpi"><b>${activos}</b><span class="tiny muted">${tx("activas")}</span></div>
-        ${examVenc?`<div class="kpi" style="border-color:var(--no)"><b style="color:var(--no)">${examVenc}</b><span class="tiny muted">${tx("exámenes por vencer")}</span></div>`:""}
+        <button class="kpi" onclick="go('personal')"><b>${pers.length}</b><span class="tiny muted">${tx("personas")}</span></button>
+        <button class="kpi" onclick="go('personal')"><b>${activos}</b><span class="tiny muted">${tx("activas")}</span></button>
+        ${examVenc?`<button class="kpi" style="border-color:var(--no)" onclick="go('personal')"><b style="color:var(--no)">${examVenc}</b><span class="tiny muted">${tx("exámenes por vencer")}</span></button>`:""}
       </div>
     </div>
   </section>
@@ -13268,6 +13278,7 @@ function vInicioMC(){
   const ideas = (S.idea||[]).slice().sort((a,b)=>(b.cerrada||"").localeCompare(a.cerrada||""));
   const abiertas = ideas.filter(i=>i.estado!=="Implementada" && i.estado!=="Rechazada").length;
   const implem = ideas.filter(i=>i.estado==="Implementada").length;
+  const mcDestino = puedeAdministrar() ? "gestionIdeas" : "panel";
   return `
   ${bandaMundo()}
   <section class="block">
@@ -13277,9 +13288,9 @@ function vInicioMC(){
         : `<div style="text-align:center;padding:2px 0 6px"><span class="eyebrow">${tx("Mejora Continua")}</span>
            <h2 style="font-size:22px;font-weight:700;margin:2px 0 0">${esc(e.razon||tx("Empresa"))}</h2></div>`}
       <div class="kpis">
-        <div class="kpi"><b>${ideas.length}</b><span class="tiny muted">${tx("ideas")}</span></div>
-        <div class="kpi"><b>${abiertas}</b><span class="tiny muted">${tx("en curso")}</span></div>
-        <div class="kpi" style="border-color:var(--ok)"><b style="color:var(--ok)">${implem}</b><span class="tiny muted">${tx("implementadas")}</span></div>
+        <button class="kpi" onclick="go('${mcDestino}')"><b>${ideas.length}</b><span class="tiny muted">${tx("ideas")}</span></button>
+        <button class="kpi" onclick="go('${mcDestino}')"><b>${abiertas}</b><span class="tiny muted">${tx("en curso")}</span></button>
+        <button class="kpi" style="border-color:var(--ok)" onclick="go('${mcDestino}')"><b style="color:var(--ok)">${implem}</b><span class="tiny muted">${tx("implementadas")}</span></button>
       </div>
     </div>
   </section>
