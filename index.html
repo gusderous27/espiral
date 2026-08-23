@@ -1067,6 +1067,7 @@ function elegirGrupo(k){
 const $ = s => document.querySelector(s);
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hoy = () => new Date().toISOString().slice(0,10);
+const horaAhora = () => new Date().toISOString().slice(11,16);
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function fecha(d){ if(!d) return "—"; const p=String(d).slice(0,10).split("-"); return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:d; }
 function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),1900); }
@@ -2224,6 +2225,7 @@ function vPersonalEdit(e){
   return `
   <section class="block">
     <div class="section-title"><h2>${e.nuevo?tx("Nuevo empleado"):tx("Editar empleado")}</h2></div>
+    <p class="small muted" style="margin:-4px 0 12px">${tx("Los datos que cargues acá se reutilizan en los distintos formularios de la app (investigaciones, partes disciplinarios, matriz de riesgos y más), así no hace falta volver a escribirlos cada vez.")}</p>
     <div class="card pad">
       <label class="f"><span class="lb">${tx("Nombre y apellido")}</span>
         <input type="text" value="${esc(e.nombre)}" oninput="setP('nombre',this.value)"></label>
@@ -2711,7 +2713,7 @@ const CLASIF_RAIZ = ["Falta de estándar","Estándar inadecuado","Estándar no c
  "Falta de mantenimiento","Diseño inadecuado del puesto o equipo","Factores personales","Factores del trabajo","Otra"];
 const GRAVEDAD = ["1 · Catastrófico","2 · Mayor","3 · Serio","4 · Leve"];
 const FRECUENCIA = ["1 · Muy frecuente","2 · Frecuente","3 · Poco frecuente","4 · Muy poco frecuente"];
-const PASOS_INV = ["Identificación","Daños","Descripción","Causas","Causa raíz","Acciones y cierre"];
+const PASOS_INV = ["Identificación","Daños","Relato y fotos","Causas","Causa raíz","Acciones y cierre"];
 const DERIVACION_INV = ["Centro médico","Sin derivación"];
 const PARTES_CUERPO_INV = ["Cabeza","Ojo","Oído","Cara","Cuello","Hombro","Brazo","Antebrazo","Codo","Muñeca",
  "Mano","Dedo de la mano","Tórax","Espalda","Abdomen","Cadera","Pierna","Rodilla","Tobillo","Pie","Dedo del pie",
@@ -2723,7 +2725,7 @@ const TIPO_LESION_INV = ["Golpe / contusión","Corte / laceración","Fractura","
 function nuevaInv(){
   P.draft = {id:uid(), tipo:"inv", paso:1, fecha:hoy(),
     ident:{derivacion:"", sector:"", lugar:"", calificacion:"", fechaAcc:hoy(), hora:"", fechaInf:hoy()},
-    dp:{parte:"", lado:""}, dpr:{aplica:""}, dpo:{}, testigos:"",
+    dp:{parte:"", lado:""}, dpr:{aplica:""}, dpo:{}, testigos:"", testigosList:[], testigosNinguno:false, permAplica:"",
     ev:{gravedad:"", frecuencia:""},
     desc:{}, causas:{acciones:[], condiciones:[], otraAccion:"", otraCondicion:""},
     forma:{contacto:[], con:[], otroContacto:"", otroCon:""},
@@ -2805,9 +2807,109 @@ function fila(pth,i,d){
 function addFilaInv(p){ getI(p).push({a:"",r:"",p:"",c:""}); render(); }
 function delFilaInv(p,i){ const arr=getI(p); if(arr.length>1) arr.splice(i,1); render(); }
 function pasoInv(n){ P.draft.paso = n; window.scrollTo(0,0); render(); }
+/* diagrama interactivo de cuerpo humano para elegir la parte lesionada:
+   tocás una zona, confirma la elección con un botón (para no confirmar
+   sin querer con el dedo en pantallas chicas), y el desplegable de abajo
+   sigue disponible como alternativa completa */
+function diagramaCuerpoHtml(){
+  const pick = P.dpBodyPick;
+  const zonas = [
+    {parte:"Cabeza", lado:"", cx:100, cy:25},
+    {parte:"Cuello", lado:"", cx:100, cy:55},
+    {parte:"Hombro", lado:"Izquierda", cx:65, cy:72}, {parte:"Hombro", lado:"Derecha", cx:135, cy:72},
+    {parte:"Brazo", lado:"Izquierda", cx:50, cy:112}, {parte:"Brazo", lado:"Derecha", cx:150, cy:112},
+    {parte:"Antebrazo", lado:"Izquierda", cx:42, cy:160}, {parte:"Antebrazo", lado:"Derecha", cx:158, cy:160},
+    {parte:"Mano", lado:"Izquierda", cx:38, cy:204}, {parte:"Mano", lado:"Derecha", cx:162, cy:204},
+    {parte:"Tórax", lado:"", cx:100, cy:90},
+    {parte:"Abdomen", lado:"", cx:100, cy:128},
+    {parte:"Cadera", lado:"", cx:100, cy:158},
+    {parte:"Pierna", lado:"Izquierda", cx:78, cy:225}, {parte:"Pierna", lado:"Derecha", cx:122, cy:225},
+    {parte:"Rodilla", lado:"Izquierda", cx:78, cy:270}, {parte:"Rodilla", lado:"Derecha", cx:122, cy:270},
+    {parte:"Tobillo", lado:"Izquierda", cx:78, cy:315}, {parte:"Tobillo", lado:"Derecha", cx:122, cy:315},
+    {parte:"Pie", lado:"Izquierda", cx:78, cy:340}, {parte:"Pie", lado:"Derecha", cx:122, cy:340}
+  ];
+  const activo = z => pick && pick.parte===z.parte && pick.lado===z.lado;
+  return `
+  <div style="text-align:center;margin:6px 0 4px">
+    <svg viewBox="0 0 200 360" style="width:100%;max-width:220px;height:auto;touch-action:manipulation">
+      <g fill="none" stroke="var(--line)" stroke-width="2">
+        <circle cx="100" cy="25" r="18"/>
+        <line x1="100" y1="43" x2="100" y2="60"/>
+        <path d="M70,60 h60 v65 h-60 z"/>
+        <line x1="70" y1="90" x2="130" y2="90"/>
+        <line x1="70" y1="125" x2="130" y2="125"/>
+        <line x1="70" y1="70" x2="45" y2="150"/>
+        <line x1="45" y1="150" x2="38" y2="204"/>
+        <line x1="130" y1="70" x2="155" y2="150"/>
+        <line x1="155" y1="150" x2="162" y2="204"/>
+        <line x1="80" y1="125" x2="78" y2="340"/>
+        <line x1="120" y1="125" x2="122" y2="340"/>
+      </g>
+      ${zonas.map(z=>`<circle cx="${z.cx}" cy="${z.cy}" r="11" fill="${activo(z)?"var(--primary)":"rgba(23,162,198,.18)"}"
+        stroke="${activo(z)?"var(--primary)":"#17A2C6"}" stroke-width="1.5" style="cursor:pointer"
+        onclick="elegirParteBody('${z.parte}','${z.lado}')"><title>${esc(tx(z.parte))}${z.lado?" · "+esc(tx(z.lado)):""}</title></circle>`).join("")}
+    </svg>
+  </div>
+  <p class="tiny muted" style="text-align:center;margin:0 0 8px">${tx("Tocá una zona del cuerpo (tal como se ve en la pantalla) o usá el desplegable de abajo.")}</p>
+  ${pick?`<div style="text-align:center;margin:0 0 12px">
+    <button class="btn sm" onclick="confirmarParteBody()">${tx("Confirmar")}: ${esc(tx(pick.parte))}${pick.lado?" · "+esc(tx(pick.lado)):""}</button>
+  </div>`:""}`;
+}
+function elegirParteBody(parte, lado){ P.dpBodyPick = {parte, lado}; render(); }
+function confirmarParteBody(){
+  if(!P.dpBodyPick) return;
+  setI("dp.parte", P.dpBodyPick.parte);
+  if(P.dpBodyPick.lado) setI("dp.lado", P.dpBodyPick.lado);
+  P.dpBodyPick = null;
+  render();
+}
+function elegirDp(id){
+  const p = trab(id);
+  setI("dp.nombre", p.nombre||"");
+  if(p.legajo) setI("dp.legajo", p.legajo);
+  if(p.puesto) setI("dp.ocupacion", p.puesto);
+  render();
+}
+function addTestigo(){ P.draft.testigosList = P.draft.testigosList||[]; P.draft.testigosList.push({nombre:"",sector:""}); render(); }
+function delTestigo(i){ P.draft.testigosList.splice(i,1); render(); }
+function setTestigo(i,k,v){ P.draft.testigosList[i][k]=v; }
+function elegirTestigo(i,id){ const p=trab(id); P.draft.testigosList[i].nombre=p.nombre||""; P.draft.testigosList[i].sector=p.area||""; render(); }
+function toggleTestigosNinguno(v){ P.draft.testigosNinguno=v; if(v) P.draft.testigosList=[]; render(); }
 function setDprAplica(v){
   setI("dpr.aplica", v);
   if(v!=="Aplica"){ setI("dpr.propiedad",""); setI("dpr.naturaleza",""); setI("dpr.costo",""); setI("dpr.equipo",""); setI("dpr.personal",""); }
+  render();
+}
+function setPermAplica(v){
+  setI("permAplica", v);
+  if(v!=="Aplica"){ P.draft.per = [{a:"",r:"",p:"",c:""}]; }
+  render();
+}
+/* pide una firma por mail: como la app no tiene un servicio de envío de
+   mails propio, abre el cliente de correo de quien lo pide con el mensaje
+   ya armado, y deja un recordatorio interno en las notificaciones */
+function pedirFirmaMail(cual){
+  modalCampos(tx("Pedir firma por mail"), [{l:tx("Nombre de quien firma")},{l:tx("E-mail")}], v=>{
+    const nombre = v[0], email = v[1];
+    if(!email){ toast(tx("Falta el e-mail")); return; }
+    const e = S.empresa||{};
+    P.draft.com = P.draft.com||{};
+    P.draft.com["pedidoFirma"+cual] = {para:nombre, email:email, fecha:hoy()};
+    const asunto = tx("Firma pendiente")+" · "+tx("Investigación de accidentes e incidentes");
+    const cuerpo = (nombre?tx("Hola")+" "+nombre+",\n\n":"")
+      + tx("Te pedimos que revises y firmes el informe de investigación cargado en Espiral.")
+      + (e.razon?" ("+e.razon+")":"") + "\n\n" + tx("Gracias.");
+    S.notifEventos = S.notifEventos||[];
+    S.notifEventos.unshift({id:uid(), tipo:"firmaPendiente", emp:S.activa, invId:P.draft.id,
+      para:nombre, email:email, ts:new Date().toISOString(), leida:false});
+    guardar(); render();
+    location.href = "mailto:"+encodeURIComponent(email)+"?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(cuerpo);
+  });
+}
+function elegirComision(cual,id){
+  const p = trab(id);
+  if(cual==="inv"){ setI("com.inv", p.nombre||""); if(p.dni) setI("com.dniInv", p.dni); }
+  else { setI("com.supervisor", p.nombre||""); if(p.dni) setI("com.dniSup", p.dni); }
   render();
 }
 
@@ -2815,6 +2917,7 @@ function vInv(){
   if(!P.draft || P.draft.tipo!=="inv") nuevaInv();
   const d = P.draft, n = d.paso, r = nivelRiesgo(d);
   const nom = (S.personal||[]).map(p=>p.nombre);
+  const nomina = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
   let cuerpo = "";
 
   if(n===1) cuerpo = `<div class="card pad">
@@ -2822,12 +2925,17 @@ function vInv(){
     ${campoOtro("1 · Derivación",DERIVACION_INV,getI("ident.derivacion"),"invDerivOtro","v=>setI('ident.derivacion',v)","Especificá a dónde se derivó")}
     ${campoOtro("2 · Sector",areasIper(),getI("ident.sector"),"invSectorOtro","v=>setI('ident.sector',v)","Especificá el sector")}
     ${campoOtro("3 · Lugar del accidente / incidente",lugaresInv(),getI("ident.lugar"),"invLugarOtro","v=>setI('ident.lugar',v)","Escribí la dirección o el lugar")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Es la dirección donde ocurrió el hecho, no necesariamente el lugar donde se completa este formulario.")}</p>
     ${sI("ident.calificacion",tx("4 · Calificación"),["Incidente sin lesión","Accidente leve sin baja","Accidente con baja","Accidente grave","Fatal","Daño a la propiedad"])}
     <div class="grid2">
-      ${fI("ident.fechaAcc","5 · Fecha del hecho","date")}
-      ${fI("ident.hora","6 · Hora","time")}
+      <label class="f"><span class="lb">${tx("5 · Fecha del hecho")}</span>
+        <input type="date" max="${hoy()}" value="${esc(getI("ident.fechaAcc"))}" oninput="setI('ident.fechaAcc',this.value)"></label>
+      <label class="f"><span class="lb">${tx("6 · Hora")}</span>
+        <input type="time" ${getI("ident.fechaAcc")===hoy()?`max="${horaAhora()}"`:""} value="${esc(getI("ident.hora"))}" oninput="setI('ident.hora',this.value)"></label>
     </div>
-    ${fI("ident.fechaInf","7 · Fecha del informe","date")}
+    <p class="tiny muted" style="margin:-6px 0 8px">${tx("No se puede cargar una fecha u hora futura: el informe solo puede mirar hacia atrás, no anticipar hechos que todavía no pasaron.")}</p>
+    <label class="f"><span class="lb">${tx("7 · Fecha del informe")}</span>
+      <input type="date" max="${hoy()}" value="${esc(getI("ident.fechaInf"))}" oninput="setI('ident.fechaInf',this.value)"></label>
     <div class="grp">${tx("12 · Gravedad potencial")}</div>
     ${sI("ev.gravedad",tx("Gravedad"),GRAVEDAD.map(x=>x))}
     ${sI("ev.frecuencia",tx("13 · Frecuencia de ocurrencia"),FRECUENCIA.map(x=>x))}
@@ -2837,13 +2945,20 @@ function vInv(){
   const dprAplica = getI("dpr.aplica") || (getI("dpr.propiedad")?"Aplica":"No aplica");
   if(n===2) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("8 · Daño personal")}</div>
+    ${nomina.length?`<label class="f"><span class="lb">${tx("Traer de la nómina")}</span>
+      <select onchange="if(this.value)elegirDp(this.value)">
+        <option value="">${tx("Seleccionar…")}</option>
+        ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
+      </select></label>`:""}
     <label class="f"><span class="lb">${tx("a · Apellido y nombres")}</span>
       <input type="text" list="dlNom" value="${esc(getI("dp.nombre"))}" oninput="setI('dp.nombre',this.value)">
       <datalist id="dlNom">${nom.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist></label>
-    <div class="grid2">${fI("dp.legajo","Legajo N.º")}${fI("dp.ocupacion","b · Ocupación o cargo")}</div>
+    <div class="grid2">${fI("dp.legajo","Legajo")}${fI("dp.ocupacion","b · Ocupación o cargo")}</div>
     <p class="tiny muted" style="margin:-6px 0 8px">${tx("Costo estimado: una cifra aproximada, si se puede calcular. No es obligatorio.")}</p>
     ${fI("dp.costo","c · Costo estimado del daño")}
-    ${campoOtro("d · Parte lesionada",PARTES_CUERPO_INV,getI("dp.parte"),"invParteOtro","v=>setI('dp.parte',v)","Especificá la parte del cuerpo")}
+    <div class="grp">${tx("d · Parte lesionada")}</div>
+    ${diagramaCuerpoHtml()}
+    ${campoOtro("Parte lesionada (desplegable)",PARTES_CUERPO_INV,getI("dp.parte"),"invParteOtro","v=>setI('dp.parte',v)","Especificá la parte del cuerpo")}
     ${sI("dp.lado","Lado (si corresponde)",["Izquierda","Derecha","Ambas"])}
     ${campoOtro("Tipo de lesión",TIPO_LESION_INV,getI("dp.lesion"),"invLesionOtro","v=>setI('dp.lesion',v)","Especificá el tipo de lesión")}
     ${fI("dp.equipo","e · Equipo, material o herramienta que provocó la lesión")}
@@ -2867,25 +2982,39 @@ function vInv(){
 
     <div class="grp">${tx("10 · Daño potencial")}</div>
     <p class="tiny muted" style="margin:-2px 0 8px">${tx("Pensá en lo que podría haber pasado si las circunstancias hubieran sido apenas distintas, aunque esta vez no haya sido grave.")}</p>
-    ${fI("dpo.informa","A · Persona que informa")}
+    ${campoPersonaIper("A · Persona que informa",getI("dpo.informa"),"invInformaOtro","v=>setI('dpo.informa',v)")}
     ${fI("dpo.naturaleza","B · Naturaleza del daño posible")}
     <p class="tiny muted" style="margin:-6px 0 8px">${tx("Qué podría haber pasado: una lesión, un incendio, un derrame, etc.")}</p>
     ${fI("dpo.equipo","C · Equipo, material o sustancia relacionada")}
-    ${fI("dpo.control","D · Persona con más control sobre el punto C")}
-    <p class="tiny muted" style="margin:-6px 0 8px">${tx("Quién está en mejores condiciones de actuar sobre esa causa.")}</p>
 
-    ${tI("testigos","11 · Testigos directos o indirectos","Nombre, sector y qué presenció cada uno")}
+    <div class="grp">${tx("11 · Testigos directos o indirectos")}</div>
+    <label class="chk"><input type="checkbox" ${d.testigosNinguno?"checked":""} onchange="toggleTestigosNinguno(this.checked)">
+      <span>${tx("Sin testigos para este evento")}</span></label>
+    ${!d.testigosNinguno?`
+      ${(d.testigosList||[]).map((tst,i)=>`<div class="item">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b class="small">${tx("Testigo")} ${i+1}</b>
+          <button class="btn ghost sm" style="padding:4px 10px" onclick="delTestigo(${i})">${tx("Quitar")}</button>
+        </div>
+        ${nomina.length?`<label class="f"><span class="lb">${tx("Traer de la nómina")}</span>
+          <select onchange="if(this.value)elegirTestigo(${i},this.value)">
+            <option value="">${tx("Seleccionar…")}</option>
+            ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
+          </select></label>`:""}
+        <div class="grid2">
+          <label class="f"><span class="lb">${tx("Nombre y apellido")}</span>
+            <input type="text" value="${esc(tst.nombre)}" oninput="setTestigo(${i},'nombre',this.value)"></label>
+          <label class="f"><span class="lb">${tx("Sector")}</span>
+            <input type="text" value="${esc(tst.sector)}" oninput="setTestigo(${i},'sector',this.value)"></label>
+        </div>
+      </div>`).join("")}
+      <button class="btn soft sm" onclick="addTestigo()">${tx("+ Agregar testigo")}</button>
+    `:""}
   </div>`;
 
   if(n===3) cuerpo = `<div class="card pad">
-    <div class="grp" style="margin-top:0">${tx("Análisis 5W + 1H")}</div>
-    ${tI("desc.que","¿QUÉ? · naturaleza del hecho y parte del cuerpo","",80)}
-    ${tI("desc.cuando","¿CUÁNDO? · momento de la jornada (inicio de turno, comida, fin de turno)","",80)}
-    ${tI("desc.donde","¿DÓNDE? · lugar, puesto o máquina donde se hacía el trabajo","",80)}
-    ${tI("desc.quien","¿QUIÉN? · quién estaba haciendo la tarea","",80)}
-    ${tI("desc.cual","¿CUÁL? · qué tipo de operación estaba en curso","",80)}
-    ${tI("desc.como","¿CÓMO? · cómo se produjo la lesión o el daño","",80)}
-    <div class="grp">${tx("14 · Narración de lo ocurrido")}</div>
+    <p class="small muted" style="margin-top:0">${tx("Lo demás (fecha, lugar, sector, trabajador, gravedad) ya quedó cargado en los pasos anteriores. Acá va el relato de lo que pasó.")}</p>
+    <div class="grp" style="margin-top:0">${tx("14 · Narración de lo ocurrido")} <span style="color:var(--no)">*</span></div>
     ${tI("desc.narracion","Relato completo","Secuencia de los hechos, en orden, con el mayor detalle posible",190)}
     <div class="grp">${tx("Fotos del lugar")}</div>
     ${fotoBtns("insp")}
@@ -2912,14 +3041,20 @@ function vInv(){
     ${sI("why.clasif",tx("Clasificación de la causa raíz"),CLASIF_RAIZ)}
   </div>`;
 
+  const permAplica = getI("permAplica") || (d.per.some(x=>(x.a||"").trim())?"Aplica":"No aplica");
   if(n===6) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Contramedidas inmediatas")}</div>
     ${d.inm.map((x,i)=>fila("inm",i,d)).join("")}
     <button class="btn soft sm" onclick="addFilaInv('inm')">${tx("+ Agregar acción")}</button>
 
     <div class="grp">${tx("18 · Contramedidas permanentes")}</div>
+    <div class="opts" style="margin-left:0">
+      ${["No aplica","Aplica"].map(v=>`<button class="opt" data-on="${permAplica===v?1:0}" data-k="${permAplica===v?(v==="Aplica"?"ok":"no"):""}"
+        onclick="setPermAplica('${v}')">${tx(v)}</button>`).join("")}
+    </div>
+    ${permAplica==="Aplica"?`
     ${d.per.map((x,i)=>fila("per",i,d)).join("")}
-    <button class="btn soft sm" onclick="addFilaInv('per')">${tx("+ Agregar acción")}</button>
+    <button class="btn soft sm" onclick="addFilaInv('per')">${tx("+ Agregar acción")}</button>`:""}
 
     <div class="grp">${tx("Verificación de la eficacia")}</div>
     ${tI("verif.resultados","Resultados alcanzados","")}
@@ -2928,17 +3063,32 @@ function vInv(){
     ${getI("verif.repite")==="Sí"?tI("verif.plan","Plan de acción complementario",""):""}
 
     <div class="grp">${tx("19 · Comisión investigadora")}</div>
-    <div class="grid2">${fI("com.inv","Investigación realizada por")}${fI("com.dniInv","DNI")}</div>
+    ${nomina.length?`<label class="f"><span class="lb">${tx("Traer de la nómina")}</span>
+      <select onchange="if(this.value)elegirComision('inv',this.value)">
+        <option value="">${tx("Seleccionar…")}</option>
+        ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
+      </select></label>`:""}
+    <div class="grid2">${fI("com.inv","Investigación realizada por")}${fI("com.dniInv","DNI / documento")}</div>
     <canvas class="sig" id="sig"></canvas>
     <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig','firma')">${tx("Borrar firma")}</button>
-    <div class="grid2" style="margin-top:14px">${fI("com.supervisor","Supervisor")}${fI("com.dniSup","DNI")}</div>
+    <button class="btn soft sm" style="margin-top:8px" onclick="pedirFirmaMail('Inv')">${tx("✉️ Pedir firma por mail")}</button>
+    ${d.com.pedidoFirmaInv?`<p class="tiny muted" style="margin:4px 0 0">${tx("Pedido enviado a")} ${esc(d.com.pedidoFirmaInv.email)} ${tx("el")} ${fecha(d.com.pedidoFirmaInv.fecha)}</p>`:""}
+    ${nomina.length?`<label class="f" style="margin-top:14px"><span class="lb">${tx("Traer de la nómina")}</span>
+      <select onchange="if(this.value)elegirComision('sup',this.value)">
+        <option value="">${tx("Seleccionar…")}</option>
+        ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
+      </select></label>`:""}
+    <div class="grid2" style="margin-top:14px">${fI("com.supervisor","Supervisor")}${fI("com.dniSup","DNI / documento")}</div>
     <canvas class="sig" id="sig2"></canvas>
     <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig2','firma2')">${tx("Borrar firma")}</button>
+    <button class="btn soft sm" style="margin-top:8px" onclick="pedirFirmaMail('Sup')">${tx("✉️ Pedir firma por mail")}</button>
+    ${d.com.pedidoFirmaSup?`<p class="tiny muted" style="margin:4px 0 0">${tx("Pedido enviado a")} ${esc(d.com.pedidoFirmaSup.email)} ${tx("el")} ${fecha(d.com.pedidoFirmaSup.fecha)}</p>`:""}
+    <p class="tiny muted" style="margin:10px 0 0">${tx("Esto abre tu propio correo con el mensaje ya armado; todavía no enviamos el mail nosotros de forma automática.")}</p>
   </div>`;
 
   return `
   <section class="block"><div class="card pad">
-    <span class="eyebrow">P-SHL-01 · paso ${n} de 6</span>
+    <span class="eyebrow">${tx("Paso")} ${n} ${tx("de")} 6</span>
     <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">🔎 ${esc(tx(PASOS_INV[n-1]))}</h2>
     <div class="prog"><i style="width:${Math.round(n/6*100)}%"></i></div>
     <div class="opts" style="margin-top:10px">
@@ -2960,7 +3110,12 @@ function guardarInv(){
   capturarFirmas();
   const d = P.draft;
   if(!d.ident.calificacion) { pasoInv(1); return toast(tx("Falta la calificación del hecho")); }
+  if(d.ident.fechaAcc && d.ident.fechaAcc > hoy()){ pasoInv(1); return toast(tx("La fecha del hecho no puede ser futura")); }
+  if(d.ident.fechaAcc===hoy() && d.ident.hora && d.ident.hora > horaAhora()){ pasoInv(1); return toast(tx("La hora del hecho no puede ser futura")); }
+  if(d.ident.fechaInf && d.ident.fechaInf > hoy()){ pasoInv(1); return toast(tx("La fecha del informe no puede ser futura")); }
   if(!(d.desc.narracion||"").trim()) { pasoInv(3); return toast(tx("Falta la narración de lo ocurrido")); }
+  d.testigos = d.testigosNinguno ? tx("Sin testigos para este evento")
+    : (d.testigosList||[]).filter(t=>(t.nombre||"").trim()).map(t=>t.nombre+(t.sector?" ("+t.sector+")":"")).join(" · ");
   d.cerrada = new Date().toISOString();
   d.fecha = d.ident.fechaAcc || hoy();
   d.nombreTrab = d.dp.nombre || "";
@@ -3004,7 +3159,7 @@ function vVerInv(){
   <section class="block"><div class="card pad rephead">
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
-      <div class="eyebrow">${tx("Investigación de accidentes e incidentes · P-SHL-01")}</div>
+      <div class="eyebrow">${tx("Investigación de accidentes e incidentes")}</div>
       ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${fecha(r.fecha)}${r.ident.hora?" · "+esc(r.ident.hora):""}${r.ident.sector?" · "+esc(r.ident.sector):""}</div>
     </div>
@@ -3432,8 +3587,20 @@ function editarIper(id){
   if(!P.draft.numero) P.draft.numero = siguienteNumeroIper();
   go("iperEdit");
 }
+/* si ya hubo una investigación de accidente/incidente cargada en la misma
+   área o puesto, las tareas nuevas de la matriz arrancan con "Eventos
+   ocurridos" en Sí, en vez de forzar a marcarlo a mano */
+function huboEventoEnPuesto(area, maq){
+  const claves = [area, maq].filter(Boolean).map(x=>x.trim().toLowerCase());
+  if(!claves.length) return false;
+  return (S.inv||[]).some(r=>{
+    const sector = ((r.ident&&r.ident.sector)||"").trim().toLowerCase();
+    const lugar = ((r.ident&&r.ident.lugar)||"").trim().toLowerCase();
+    return claves.some(c=>c===sector || c===lugar);
+  });
+}
 function addTarea(){
-  P.draft.tareas.push({id:uid(), eventos:"N", desc:"", riesgos:[]});
+  P.draft.tareas.push({id:uid(), eventos:huboEventoEnPuesto(P.draft.area,P.draft.maq)?"S":"N", desc:"", riesgos:[]});
   P.draft.cantTareas = P.draft.tareas.length;
   render();
 }
@@ -3453,7 +3620,7 @@ function ajustarCantTareas(v){
     if(tieneDatos && !gate(tx("Vas a borrar tareas que ya tienen datos cargados. ¿Continuar?"), ()=>ajustarCantTareas(v))) return;
   }
   d.cantTareas = n || "";
-  while(d.tareas.length < n) d.tareas.push({id:uid(), eventos:"N", desc:"", riesgos:[]});
+  while(d.tareas.length < n) d.tareas.push({id:uid(), eventos:huboEventoEnPuesto(d.area,d.maq)?"S":"N", desc:"", riesgos:[]});
   if(d.tareas.length > n) d.tareas = d.tareas.slice(0,n);
   render();
 }
@@ -3659,6 +3826,7 @@ function vIperEdit(){
       <select onchange="setT(${i},'eventos',this.value)">
         <option value="N" ${t.eventos==="N"?"selected":""}>${tx("No")}</option>
         <option value="S" ${t.eventos==="S"?"selected":""}>${tx("Sí")}</option></select></label>
+    ${huboEventoEnPuesto(d.area,d.maq)?`<p class="tiny muted" style="margin:-6px 0 8px">⚠️ ${tx("Hay una investigación de accidente o incidente cargada en esta área o puesto.")}</p>`:""}
     <label class="f"><span class="lb">${tx("Descripción de la tarea paso a paso")}</span>
       <textarea oninput="setT(${i},'desc',this.value)" placeholder="${tx("Cada paso en el orden en que se ejecuta")}">${esc(t.desc)}</textarea></label>
 
@@ -4148,6 +4316,19 @@ function notificaciones(){
     }));
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+    // 4.7 · pedidos de firma enviados por mail: solo un recordatorio interno,
+    // el mail en sí lo manda el cliente de correo de quien lo pide
+    const evFirma = (S.notifEventos||[]).filter(e=>e.tipo==="firmaPendiente" && (!e.emp || e.emp===S.activa));
+    const evFirmaNoti = evFirma.map(e=>({
+      tipo:"eventoFirma", icono:"✍️",
+      titulo: tx("Firma pendiente")+(e.para?" · "+e.para:""),
+      sub: e.email ? tx("Se envió el pedido a")+" "+e.email : tx("Ingresá aquí para revisar."),
+      cuando: null, dias: e.leida ? 9998 : -9999,
+      leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
+      ir:()=>{ marcarNotifLeida(e.id); go("verInv", e.invId); }
+    }));
+    out.unshift(...evFirmaNoti.filter(n=>!n.leida));
+    evFirmaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   }
   // 4.6 · notificaciones que el usuario ya cerró con la crucecita hoy: es
   // un "ya la vi, listo", no un "no me lo muestres nunca más" — si mañana
@@ -4177,10 +4358,11 @@ function abrirNoti(){
   cont.id = "notipop";
   cont.className = "notipop";
   const fila = (n, idx) => {
-    const rojo = n.dias<0 && n.tipo!=="eventoIdea" && n.tipo!=="eventoIper";
-    const nuevo = (n.tipo==="eventoIdea" || n.tipo==="eventoIper") && !n.leida;
+    const eventoPropio = n.tipo==="eventoIdea" || n.tipo==="eventoIper" || n.tipo==="eventoFirma";
+    const rojo = n.dias<0 && !eventoPropio;
+    const nuevo = eventoPropio && !n.leida;
     let etq = "";
-    if(n.tipo==="eventoIdea" || n.tipo==="eventoIper") etq = n.sub||"";
+    if(eventoPropio) etq = n.sub||"";
     else if(n.dias<0) etq = tx("Venció el ")+fecha(n.cuando);
     else if(n.dias===0) etq = tx("Vence hoy");
     else etq = tx("Vence en ")+n.dias+" "+(n.dias===1?tx("día"):tx("días"));
