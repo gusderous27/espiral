@@ -1195,7 +1195,7 @@ function render(){
   const v = {login:vLogin, onboarding:vOnboarding, mundos:vMundos, inicioMC:vInicioMC, nueva:vNueva, form:vForm, historial:vHistorial, ver:vVer, panel:vPanel,
     inicio:vInicio, inicioRH:vInicioRH, ideaEdit:vIdeaEdit, verIdea:vVerIdea, ideaGestion:vIdeaGestion, gestionIdeas:vGestionIdeas, notificaciones:vNotificaciones,
     ajustes:vAjustes, personal:vPersonal, entrega:vEntrega, uso:vUso, ropa:vRopa, talles:vTalles, verEpp:vVerEpp,
-    inv:vInv, verInv:vVerInv, acciones:vAcciones, accionGestion:vAccionGestion,
+    inv:vInv, verInv:vVerInv, invGestion:vInvGestion, acciones:vAcciones, accionGestion:vAccionGestion,
     iper:vIper, iperEdit:vIperEdit, verIper:vVerIper, docs:vDocs, equiv:vEquiv,
     cap:vCap, verCap:vVerCap, ptt:vPtt, verPtt:vVerPtt,
     lux:vLux, luxEdit:vLuxEdit, verLux:vVerLux,
@@ -1647,27 +1647,44 @@ function usarCompleta(){
 
 function delFoto(i){ P.draft.fotos.splice(i,1); const y=window.scrollY; render(); window.scrollTo(0,y); }
 
-/* --------- firma --------- */
-let sigDraw=false;
-function montarFirma(id, key){
-  id = id || "sig"; key = key || "firma";
-  const c = document.getElementById(id); if(!c) return;
+/* --------- firma ---------
+   Motor único de dibujo, compartido por todos los canvas de firma de la app.
+   El asistente vuelve a renderizar (y por lo tanto vuelve a montar el canvas)
+   con cada cambio de un campo, así que NO se puede colgar un listener nuevo
+   de "mouseup" en window en cada montaje: se van acumulando y, si alguno
+   viejo queda apuntando a un canvas ya reemplazado, puede llegar a pisar la
+   firma recién dibujada con el contenido (en blanco) de ese canvas viejo.
+   Por eso el "mouseup" global se registra una sola vez para toda la app, y
+   siempre opera sobre el canvas realmente activo (SIG_ACTIVE). */
+let SIG_ACTIVE = null;      // {c, onEnd} del trazo en curso
+let SIG_GLOBAL_BOUND = false;
+function sigGlobalEnd(){
+  if(!SIG_ACTIVE) return;
+  const a = SIG_ACTIVE; SIG_ACTIVE = null;
+  a.onEnd(a.c);
+}
+function sigAttach(c, onEnd){
   const dpr = window.devicePixelRatio||1;
   c.width = c.offsetWidth*dpr; c.height = c.offsetHeight*dpr;
   const cx = c.getContext("2d"); cx.scale(dpr,dpr);
   cx.lineWidth=2.2; cx.lineCap="round";
   cx.strokeStyle = S.tema==="oscuro" ? "#E8EEF5" : "#16202E";
+  const pos = ev => { const r=c.getBoundingClientRect(); const p=ev.touches?ev.touches[0]:ev; return [p.clientX-r.left, p.clientY-r.top]; };
+  const start = ev => { ev.preventDefault(); SIG_ACTIVE = {c, onEnd}; cx.beginPath(); cx.moveTo(...pos(ev)); };
+  const move  = ev => { if(!SIG_ACTIVE || SIG_ACTIVE.c!==c) return; ev.preventDefault(); cx.lineTo(...pos(ev)); cx.stroke(); };
+  c.addEventListener("mousedown",start); c.addEventListener("mousemove",move);
+  c.addEventListener("touchstart",start,{passive:false}); c.addEventListener("touchmove",move,{passive:false});
+  c.addEventListener("touchend",sigGlobalEnd);
+  if(!SIG_GLOBAL_BOUND){ SIG_GLOBAL_BOUND = true; window.addEventListener("mouseup",sigGlobalEnd); }
+  return cx;
+}
+function montarFirma(id, key){
+  id = id || "sig"; key = key || "firma";
+  const c = document.getElementById(id); if(!c) return;
+  const cx = sigAttach(c, canvas => { if(P.draft) P.draft[key] = canvas.toDataURL("image/png"); });
   if(P.draft && P.draft[key]){
     const img=new Image(); img.onload=()=>cx.drawImage(img,0,0,c.offsetWidth,c.offsetHeight); img.src=P.draft[key];
   }
-  const pos = ev => { const r=c.getBoundingClientRect(); const p=ev.touches?ev.touches[0]:ev; return [p.clientX-r.left, p.clientY-r.top]; };
-  const start = ev => { ev.preventDefault(); sigDraw=id; cx.beginPath(); cx.moveTo(...pos(ev)); };
-  const move  = ev => { if(sigDraw!==id) return; ev.preventDefault(); cx.lineTo(...pos(ev)); cx.stroke(); };
-  const end   = () => { if(sigDraw!==id) return; sigDraw=false; if(P.draft) P.draft[key] = c.toDataURL("image/png"); };
-  c.addEventListener("mousedown",start); c.addEventListener("mousemove",move);
-  window.addEventListener("mouseup",end);
-  c.addEventListener("touchstart",start,{passive:false}); c.addEventListener("touchmove",move,{passive:false});
-  c.addEventListener("touchend",end);
 }
 function limpiarFirma(id,key){
   id = id || "sig"; key = key || "firma";
@@ -1695,22 +1712,8 @@ function montarFirmaVerInv(){
   if(r.com && r.com.pedidoFirmaSup && !r.firma2) montarFirmaCanvas("sigFirmaSup","vfSup");
 }
 function montarFirmaCanvas(id, tmpKey){
-  const c = document.getElementById(id); if(!c || c.dataset.montado) return;
-  c.dataset.montado = "1";
-  const dpr = window.devicePixelRatio||1;
-  c.width = c.offsetWidth*dpr; c.height = c.offsetHeight*dpr;
-  const cx = c.getContext("2d"); cx.scale(dpr,dpr);
-  cx.lineWidth=2.2; cx.lineCap="round";
-  cx.strokeStyle = S.tema==="oscuro" ? "#E8EEF5" : "#16202E";
-  const pos = ev => { const rc=c.getBoundingClientRect(); const p=ev.touches?ev.touches[0]:ev; return [p.clientX-rc.left, p.clientY-rc.top]; };
-  let draw=false;
-  const start = ev => { ev.preventDefault(); draw=true; cx.beginPath(); cx.moveTo(...pos(ev)); };
-  const move  = ev => { if(!draw) return; ev.preventDefault(); cx.lineTo(...pos(ev)); cx.stroke(); };
-  const end   = () => { if(!draw) return; draw=false; P.firmaTmp = P.firmaTmp||{}; P.firmaTmp[tmpKey] = c.toDataURL("image/png"); };
-  c.addEventListener("mousedown",start); c.addEventListener("mousemove",move);
-  window.addEventListener("mouseup",end);
-  c.addEventListener("touchstart",start,{passive:false}); c.addEventListener("touchmove",move,{passive:false});
-  c.addEventListener("touchend",end);
+  const c = document.getElementById(id); if(!c) return;
+  sigAttach(c, canvas => { P.firmaTmp = P.firmaTmp||{}; P.firmaTmp[tmpKey] = canvas.toDataURL("image/png"); });
 }
 function limpiarFirmaVerInv(id, tmpKey){
   const c = document.getElementById(id); if(!c) return;
@@ -1725,7 +1728,17 @@ function guardarFirmaVerInv(cual){
   const data = c.toDataURL("image/png");
   if(cual==="Inv") r.firma = data; else r.firma2 = data;
   r.com = r.com||{};
-  if(r.com["pedidoFirma"+cual]) r.com["pedidoFirma"+cual].firmado = true;
+  const pedido = r.com["pedidoFirma"+cual];
+  if(pedido){
+    pedido.firmado = true;
+    // avisa a quien pidió la firma que ya está hecha
+    if(pedido.deEmail){
+      const yo = sesionActiva();
+      S.notifEventos = S.notifEventos||[];
+      S.notifEventos.unshift({id:uid(), tipo:"firmaCompletada", emp:S.activa, invId:r.id, cual:cual,
+        para: yo?(yo.nombre||yo.email):pedido.para, deEmail: pedido.deEmail, ts:new Date().toISOString(), leida:false});
+    }
+  }
   guardar(); toast(tx("Firma guardada")); render();
 }
 function canvasTieneTrazo(c){
@@ -2178,6 +2191,9 @@ function tilesInvHTML(){
     <button class="tile" style="--tc:var(--c6)" onclick="go('inv')">
     <span class="ic">🔎</span><span class="nm">${tx("Investigación de accidentes")}</span>
     <span class="de">${tx("(incidentes, accidentes y 5 porqué)")}</span></button>
+    <button class="tile" style="--tc:var(--c6)" onclick="go('invGestion')">
+    <span class="ic">🗂</span><span class="nm">${tx("Gestión de accidentes")}</span>
+    <span class="de">${tx("(ver, imprimir o descargar investigaciones anteriores)")}</span></button>
     <button class="tile" style="--tc:var(--c8)" onclick="go('parte')">
     <span class="ic">⚠️</span><span class="nm">${tx("Parte disciplinario")}</span>
     <span class="de">${tx("(acta firmada por el trabajador)")}</span></button>`;
@@ -2244,7 +2260,7 @@ function exigeAdmin(){
   toast(tx("Solo el administrador de la empresa puede hacer esto."));
   return false;
 }
-function nuevoTrabajador(){ if(!exigeAdmin()) return; P.pEdit = {id:uid(), nombre:"", dni:"", legajo:"", puesto:"", area:"", empresa:"", talles:{}, nuevo:true}; P.areaOtroManual=false; render(); }
+function nuevoTrabajador(){ if(!exigeAdmin()) return; P.pEdit = {id:uid(), nombre:"", dni:"", legajo:"", email:"", puesto:"", area:"", empresa:"", talles:{}, nuevo:true}; P.areaOtroManual=false; render(); }
 function editarTrabajador(id){ if(!exigeAdmin()) return; P.pEdit = JSON.parse(JSON.stringify(trab(id))); P.areaOtroManual=false; render(); }
 function setP(k,v){ P.pEdit[k]=v; }
 function setTalle(k,v){ P.pEdit.talles = P.pEdit.talles||{}; P.pEdit.talles[k]=v; }
@@ -2276,6 +2292,9 @@ function vPersonalEdit(e){
         <label class="f"><span class="lb">${tx("Documento de identidad")}</span><input type="text" value="${esc(e.dni)}" oninput="setP('dni',this.value)"></label>
         <label class="f"><span class="lb">${tx("Nº de empleado")}</span><input type="text" value="${esc(e.legajo)}" oninput="setP('legajo',this.value)"></label>
       </div>
+      <label class="f"><span class="lb">${tx("E-mail")}</span>
+        <input type="email" value="${esc(e.email||"")}" oninput="setP('email',this.value)" placeholder="persona@correo.com" autocapitalize="off"></label>
+      <p class="tiny muted" style="margin:-6px 0 8px">${tx("Se usa para avisar cuando se le pide una firma. No es obligatorio.")}</p>
       <label class="f"><span class="lb">${tx("Área / sector")}</span>
         <select onchange="if(this.value==='__otro__'){P.areaOtroManual=true;}else{P.areaOtroManual=false;setP('area',this.value);}render()">
           <option value="">${tx("Seleccionar…")}</option>
@@ -2954,13 +2973,26 @@ function diagramaCuerpoHtml(){
         <g fill="var(--soft)" stroke="var(--line)" stroke-width="2">
           <ellipse cx="100" cy="27" rx="17" ry="20"/>
           <rect x="91" y="44" width="18" height="13" rx="5"/>
-          <path d="M70,58 Q100,49 130,58 L127,102 Q125,135 117,160 L83,160 Q75,135 73,102 Z"/>
-          <path d="M79,157 Q100,168 121,157 L123,182 L77,182 Z"/>
           <circle cx="38" cy="204" r="9"/>
           <circle cx="162" cy="204" r="9"/>
+        </g>
+        <!-- botas -->
+        <g fill="#4A3527" stroke="var(--line)" stroke-width="2">
           <ellipse cx="78" cy="349" rx="11" ry="7"/>
           <ellipse cx="122" cy="349" rx="11" ry="7"/>
         </g>
+        <!-- pantalón -->
+        <path d="M79,157 Q100,168 121,157 L123,182 L77,182 Z" fill="#2B3A55" stroke="var(--line)" stroke-width="2"/>
+        <!-- remera bajo el chaleco, asoma en el cuello -->
+        <path d="M83,58 L100,70 L117,58 L117,48 L83,48 Z" fill="#3A72B5" stroke="var(--line)" stroke-width="1"/>
+        <!-- chaleco reflectante -->
+        <path d="M70,58 Q100,49 130,58 L127,102 Q125,135 117,160 L83,160 Q75,135 73,102 Z" fill="#FF8A24" stroke="var(--line)" stroke-width="2"/>
+        <path d="M78,68 L94,155" stroke="#F6F8FA" stroke-width="6" fill="none"/>
+        <path d="M122,68 L106,155" stroke="#F6F8FA" stroke-width="6" fill="none"/>
+        <path d="M76,96 L124,96" stroke="#F6F8FA" stroke-width="6" fill="none"/>
+        <!-- casco -->
+        <path d="M79,19 Q100,-3 121,19 Q123,25 119,26 L81,26 Q77,25 79,19 Z" fill="#F5C518" stroke="var(--line)" stroke-width="1.5"/>
+        <rect x="78" y="25" width="44" height="4" rx="2" fill="#DDAE0C" stroke="var(--line)" stroke-width="1"/>
       </g>
       ${zonas.map(z=>`<circle cx="${z.cx}" cy="${z.cy}" r="10" fill="${activo(z)?"var(--primary)":"rgba(14,124,134,.28)"}"
         stroke="${activo(z)?"var(--primary)":"var(--primary)"}" stroke-width="1.5" style="cursor:pointer"
@@ -2979,6 +3011,7 @@ function confirmarParteBody(){
   if(P.dpBodyPick.lado) setI("dp.lado", P.dpBodyPick.lado);
   P.dpBodyPick = null;
   P.dpParteManual = false;
+  P.dpVisorAbierto = false;
   render();
 }
 function elegirDp(id){
@@ -2987,6 +3020,25 @@ function elegirDp(id){
   if(p.legajo) setI("dp.legajo", p.legajo);
   if(p.puesto) setI("dp.ocupacion", p.puesto);
   render();
+}
+/* "a · Apellido y nombres": un solo renglón que combina elegir de la nómina
+   (autocompleta legajo/ocupación) con la opción de escribirlo a mano */
+function campoDpNombre(nomina){
+  const valor = getI("dp.nombre");
+  if(!nomina.length){
+    return `<label class="f"><span class="lb">${tx("a · Apellido y nombres")}</span>
+      <input type="text" value="${esc(valor)}" oninput="setI('dp.nombre',this.value)"></label>`;
+  }
+  const enNomina = nomina.some(p=>p.nombre===valor);
+  const otro = !!(P.dpNombreOtro || (valor && !enNomina));
+  return `<label class="f"><span class="lb">${tx("a · Apellido y nombres")}</span>
+    <select onchange="if(this.value==='__otro__'){P.dpNombreOtro=true;render();}else if(this.value){P.dpNombreOtro=false;elegirDp(this.value);}else{P.dpNombreOtro=false;render();}">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${nomina.map(p=>`<option value="${p.id}" ${(!otro && valor===p.nombre)?"selected":""}>${esc(p.nombre)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx("Nombre y apellido")}</span>
+      <input type="text" value="${esc(valor)}" oninput="setI('dp.nombre',this.value)" autofocus></label>`:""}`;
 }
 function addTestigo(){ P.draft.testigosList = P.draft.testigosList||[]; P.draft.testigosList.push({nombre:"",sector:""}); render(); }
 function delTestigo(i){ P.draft.testigosList.splice(i,1); render(); }
@@ -3019,25 +3071,73 @@ function campoComision(label, campoNombre, campoDni){
     ${otro?fI(campoNombre,"Nombre"):""}
     ${fI(campoDni,"DNI / documento")}`;
 }
+/* guarda el borrador de investigación tal como está, sin las validaciones
+   del guardado final ni salir del asistente: hace falta para que el registro
+   ya exista (y se pueda abrir desde la notificación) apenas se pide una firma */
+function autosaveInvBorrador(){
+  if(!P.draft || P.draft.tipo!=="inv") return;
+  capturarFirmas();
+  const d = P.draft;
+  d.fecha = d.ident.fechaAcc || d.fecha || hoy();
+  d.nombreTrab = d.dp.nombre || "";
+  d.riesgo = (nivelRiesgo(d)||{}).t || "";
+  d.emp = S.activa;
+  upsert("inv", d);
+}
 /* pedido de firma: en primer lugar es un pedido DENTRO de la app (le llega
    una notificación a quien tenga que firmar y firma desde su propio
    dispositivo al abrir este mismo registro guardado). El e-mail es opcional
-   y solo sirve como aviso adicional, no es el medio de la firma en sí. */
+   y solo sirve como aviso adicional, no es el medio de la firma en sí; si la
+   persona ya tiene un e-mail cargado en la nómina se completa solo. */
 function pedirFirma(cual){
+  cerrarModal();
+  const nomina = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
   const nombrePrefill = cual==="Inv" ? (getI("com.inv")||"") : (getI("com.supervisor")||"");
-  modalCampos(tx("Pedir firma"), [
-    {l:tx("Nombre de quien va a firmar"), v:nombrePrefill},
-    {l:tx("E-mail (opcional, solo para avisar)")}
-  ], v=>{
-    const nombre = v[0], email = v[1];
+  const personaPrefill = nomina.find(p=>p.nombre===nombrePrefill);
+  const ov = document.createElement("div");
+  ov.className = "modal";
+  ov.innerHTML = `<div class="mcard" style="text-align:left">
+    <div class="grp" style="margin:0 0 10px">${tx("Pedir firma")}</div>
+    <label class="f"><span class="lb">${tx("Quién va a firmar")}</span>
+      <select id="pf_sel">
+        <option value="">${tx("Seleccionar…")}</option>
+        ${nomina.map(p=>`<option value="${p.id}" ${personaPrefill&&personaPrefill.id===p.id?"selected":""}>${esc(p.nombre)}</option>`).join("")}
+        <option value="__otro__" ${nombrePrefill && !personaPrefill?"selected":""}>${tx("Otro")}</option>
+      </select></label>
+    <div id="pf_otro_wrap" style="${(nombrePrefill && !personaPrefill)?"":"display:none"}">
+      <label class="f"><span class="lb">${tx("Nombre")}</span>
+        <input type="text" id="pf_otro_nombre" value="${esc(!personaPrefill?nombrePrefill:"")}"></label>
+    </div>
+    <label class="f"><span class="lb">${tx("E-mail (opcional, solo para avisar)")}</span>
+      <input type="email" id="pf_email" value="${esc((personaPrefill&&personaPrefill.email)||"")}" placeholder="persona@correo.com" autocapitalize="off"></label>
+    <button class="btn" id="pf_ok" style="margin-top:6px">${tx("Enviar pedido")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="cerrarModal()">${tx("Cancelar")}</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const sel = document.getElementById("pf_sel"), wrap = document.getElementById("pf_otro_wrap"), emailInp = document.getElementById("pf_email");
+  sel.onchange = () => {
+    if(sel.value === "__otro__"){ wrap.style.display = ""; return; }
+    wrap.style.display = "none";
+    const p = nomina.find(x=>x.id===sel.value);
+    if(p && p.email) emailInp.value = p.email;
+  };
+  document.getElementById("pf_ok").onclick = () => {
+    let nombre = "";
+    if(sel.value === "__otro__") nombre = (document.getElementById("pf_otro_nombre").value||"").trim();
+    else { const p = nomina.find(x=>x.id===sel.value); nombre = p ? p.nombre : ""; }
+    if(!nombre) return toast(tx("Elegí quién va a firmar"));
+    const email = (emailInp.value||"").trim().toLowerCase();
+    const yo = sesionActiva();
     P.draft.com = P.draft.com||{};
-    P.draft.com["pedidoFirma"+cual] = {para:nombre, email:email||"", fecha:hoy(), cual:cual};
+    P.draft.com["pedidoFirma"+cual] = {para:nombre, email:email, fecha:hoy(), cual:cual,
+      deEmail: yo?yo.email:"", deNombre: yo?(yo.nombre||yo.email):""};
     S.notifEventos = S.notifEventos||[];
     S.notifEventos.unshift({id:uid(), tipo:"firmaPendiente", emp:S.activa, invId:P.draft.id, cual:cual,
-      para:nombre, email:email||"", ts:new Date().toISOString(), leida:false});
-    guardar(); render();
-    toast(tx("Se envió el pedido. Cuando guardes el registro, va a poder firmarlo desde la app."));
-  }, tx("Enviar pedido"));
+      para:nombre, email:email, deEmail: yo?yo.email:"", ts:new Date().toISOString(), leida:false});
+    autosaveInvBorrador();
+    guardar(); cerrarModal(); render();
+    toast(tx("Se envió el pedido. Ya puede firmarlo desde la app."));
+  };
 }
 function cancelarPedidoFirma(cual){
   if(!P.draft || !P.draft.com) return;
@@ -3082,7 +3182,7 @@ function vInv(){
       <label class="f"><span class="lb">${tx("5 · Fecha del hecho")}</span>
         <input type="date" max="${hoy()}" value="${esc(getI("ident.fechaAcc"))}" oninput="setI('ident.fechaAcc',this.value)"></label>
       <label class="f"><span class="lb">${tx("6 · Hora")}</span>
-        <input type="time" ${getI("ident.fechaAcc")===hoy()?`max="${horaAhora()}"`:""} value="${esc(getI("ident.hora"))}" oninput="setI('ident.hora',this.value)"></label>
+        <input type="time" value="${esc(getI("ident.hora"))}" oninput="setI('ident.hora',this.value)"></label>
     </div>
     <p class="tiny muted" style="margin:-6px 0 8px">${tx("No se puede cargar una fecha u hora futura: el informe solo puede mirar hacia atrás, no anticipar hechos que todavía no pasaron.")}</p>
     <label class="f"><span class="lb">${tx("7 · Fecha del informe")}</span>
@@ -3096,19 +3196,22 @@ function vInv(){
   const dprAplica = getI("dpr.aplica") || (getI("dpr.propiedad")?"Aplica":"No aplica");
   if(n===2) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("8 · Daño personal")}</div>
-    ${nomina.length?`<label class="f"><span class="lb">${tx("Traer de la nómina")}</span>
-      <select onchange="if(this.value)elegirDp(this.value)">
-        <option value="">${tx("Seleccionar…")}</option>
-        ${nomina.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("")}
-      </select></label>`:""}
-    <label class="f"><span class="lb">${tx("a · Apellido y nombres")}</span>
-      <input type="text" list="dlNom" value="${esc(getI("dp.nombre"))}" oninput="setI('dp.nombre',this.value)">
-      <datalist id="dlNom">${nom.map(x=>`<option>${esc(x)}</option>`).join("")}</datalist></label>
+    ${campoDpNombre(nomina)}
     <div class="grid2">${fI("dp.legajo","Legajo")}${fI("dp.ocupacion","b · Ocupación o cargo")}</div>
     <p class="tiny muted" style="margin:-6px 0 8px">${tx("Costo estimado: una cifra aproximada, si se puede calcular. No es obligatorio.")}</p>
     ${fI("dp.costo","c · Costo estimado del daño")}
     <div class="grp">${tx("d · Parte lesionada")}</div>
-    ${diagramaCuerpoHtml()}
+    ${P.dpVisorAbierto ? `
+      ${diagramaCuerpoHtml()}
+      <div style="text-align:center;margin:0 0 10px">
+        <button class="btn ghost sm" onclick="P.dpVisorAbierto=false;render()">${tx("Cerrar visor")}</button>
+      </div>
+    ` : `
+      <div class="item" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span class="small">👁 ${tx("Abrí el visor para elegir la parte del cuerpo de la lesión")}</span>
+        <button class="btn soft sm" style="flex:none" onclick="P.dpVisorAbierto=true;render()">${tx("Abrir visor")}</button>
+      </div>
+    `}
     ${getI("dp.parte") && !P.dpParteManual ? `
       <div class="item" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <span class="small">${tx("Parte lesionada")}: <b>${esc(tx(getI("dp.parte")))}</b>${getI("dp.lado")?" · "+esc(tx(getI("dp.lado"))):""}</span>
@@ -3261,6 +3364,19 @@ function guardarInv(){
   d.emp = S.activa; const _ed = upsert("inv", d);
   guardar(); P.draft=null; toast(_ed ? tx("Registro actualizado") : "Investigación guardada"); go("verInv", d.id);
 }
+/* pantalla propia para ver, imprimir o descargar investigaciones anteriores,
+   sin tener que buscarlas mezcladas con el resto en el Historial general */
+function vInvGestion(){
+  const invOrd = (S.inv||[]).slice().sort((a,b)=> (b.cerrada||b.fecha||"").localeCompare(a.cerrada||a.fecha||""));
+  return `
+  <section class="block">
+    <div class="section-title"><h2>${tx("Gestión de accidentes")}</h2>
+      <button class="btn sm" onclick="P.draft=null;go('inv')">${tx("+ Nueva")}</button></div>
+    <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Deslizá una fila hacia la izquierda para ver, editar o eliminar. Desde cada registro podés imprimirlo o descargarlo.")}</p>
+    ${!invOrd.length?`<div class="card empty"><span class="ic">🔎</span>${tx("Todavía no cargaste ninguna investigación.")}</div>`:
+      `<div class="card pad">${invOrd.map(filaInvHist).join("")}</div>`}
+  </section>`;
+}
 function filaInvHist(r){
   const col = /baja|grave|Fatal/i.test(r.ident.calificacion) ? "var(--no)" : "var(--c6)";
   return swFila("inv", r.id, `<div class="row" onclick="go('verInv','${r.id}')">
@@ -3378,9 +3494,10 @@ function vVerInv(){
     </div>`:""}
   </section>`:""}
 
-  ${barraCompartir('inv', r.id)}
+  ${barraCompartir('inv', r.id, true)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
+    <button class="btn soft" onclick="editarInv('${r.id}')">${tx("✏️ Editar")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="go('inicio')">${tx("Finalizar")}</button>
     <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarInv('${r.id}')">${tx("Eliminar registro")}</button>
   </section><div style="height:10px"></div>`;
 }
@@ -4477,26 +4594,48 @@ function notificaciones(){
     }));
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
-    // 4.7 · pedidos de firma pendientes: se firma DENTRO de la app, así que la
-    // notificación desaparece sola en cuanto la firma quedó cargada en el registro
-    const evFirma = (S.notifEventos||[]).filter(e=>{
-      if(e.tipo!=="firmaPendiente" || (e.emp && e.emp!==S.activa)) return false;
-      const rec = (S.inv||[]).find(x=>x.id===e.invId);
-      if(!rec) return true; // el registro todavía no se terminó de guardar
-      const key = e.cual==="Sup" ? "firma2" : "firma";
-      return !rec[key];
-    });
-    const evFirmaNoti = evFirma.map(e=>({
-      tipo:"eventoFirma", icono:"✍️",
-      titulo: tx("Falta firmar")+(e.para?" · "+e.para:""),
-      sub: tx("Ingresá aquí para firmar."),
-      cuando: null, dias: e.leida ? 9998 : -9999,
-      leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
-      ir:()=>{ marcarNotifLeida(e.id); go("verInv", e.invId); }
-    }));
-    out.unshift(...evFirmaNoti.filter(n=>!n.leida));
-    evFirmaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   }
+  // 4.7 · pedidos de firma: van dirigidos a una persona puntual, no a
+  // cualquier administrador, así que no dependen de puedeAdministrar() sino
+  // de que el mail de la sesión activa coincida con el mail del pedido. Si el
+  // pedido no tiene mail cargado (no había en la nómina) lo ve un admin como
+  // respaldo, para que no quede totalmente inalcanzable.
+  const miEmail = ((S.sesion && S.sesion.email) || "").toLowerCase();
+  const esParaMi = correo => correo ? (miEmail && correo.toLowerCase()===miEmail)
+    : (typeof puedeAdministrar==="function" && puedeAdministrar());
+  // 4.7.a · falta firmar: se firma DENTRO de la app, así que la notificación
+  // desaparece sola en cuanto la firma quedó cargada en el registro
+  const evFirma = (S.notifEventos||[]).filter(e=>{
+    if(e.tipo!=="firmaPendiente" || (e.emp && e.emp!==S.activa)) return false;
+    if(!esParaMi(e.email)) return false;
+    const rec = (S.inv||[]).find(x=>x.id===e.invId);
+    if(!rec) return true; // el registro todavía no se terminó de guardar
+    const key = e.cual==="Sup" ? "firma2" : "firma";
+    return !rec[key];
+  });
+  const evFirmaNoti = evFirma.map(e=>({
+    tipo:"eventoFirma", icono:"✍️",
+    titulo: tx("Falta firmar")+(e.para?" · "+e.para:""),
+    sub: tx("Ingresá aquí para firmar."),
+    cuando: null, dias: e.leida ? 9998 : -9999,
+    leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
+    ir:()=>{ marcarNotifLeida(e.id); go("verInv", e.invId); }
+  }));
+  out.unshift(...evFirmaNoti.filter(n=>!n.leida));
+  evFirmaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+  // 4.7.b · firma completada: le avisa a quien la pidió
+  const evFirmada = (S.notifEventos||[]).filter(e=>
+    e.tipo==="firmaCompletada" && (!e.emp || e.emp===S.activa) && esParaMi(e.deEmail));
+  const evFirmadaNoti = evFirmada.map(e=>({
+    tipo:"eventoFirmada", icono:"✅",
+    titulo: tx("Firmaron la investigación")+(e.para?" · "+e.para:""),
+    sub: tx("Ingresá aquí para verla."),
+    cuando: null, dias: e.leida ? 9998 : -9999,
+    leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
+    ir:()=>{ marcarNotifLeida(e.id); go("verInv", e.invId); }
+  }));
+  out.unshift(...evFirmadaNoti.filter(n=>!n.leida));
+  evFirmadaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   // 4.6 · notificaciones que el usuario ya cerró con la crucecita hoy: es
   // un "ya la vi, listo", no un "no me lo muestres nunca más" — si mañana
   // sigue pendiente (el documento sigue vencido, la idea sigue sin leer),
@@ -4525,7 +4664,7 @@ function abrirNoti(){
   cont.id = "notipop";
   cont.className = "notipop";
   const fila = (n, idx) => {
-    const eventoPropio = n.tipo==="eventoIdea" || n.tipo==="eventoIper" || n.tipo==="eventoFirma";
+    const eventoPropio = n.tipo==="eventoIdea" || n.tipo==="eventoIper" || n.tipo==="eventoFirma" || n.tipo==="eventoFirmada";
     const rojo = n.dias<0 && !eventoPropio;
     const nuevo = eventoPropio && !n.leida;
     let etq = "";
