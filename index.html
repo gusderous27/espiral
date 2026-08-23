@@ -3108,7 +3108,7 @@ function cerrarAccion(t,id,k,i){
    sin tocar el registro de origen.
    ============================================================ */
 const ACC_ESTADOS = ["Abierto", "En proceso", "Finalizado"];
-function accClave(ref){ return ref.t+"|"+ref.id+"|"+(ref.k===undefined||ref.k===null?"":ref.k)+"|"+ref.i; }
+function accClave(ref){ return ref.t+"|"+ref.id+"|"+(ref.k===undefined||ref.k===null?"":ref.k)+"|"+(ref.i===undefined||ref.i===null?"":ref.i); }
 function accColor(est){
   return est==="Finalizado" ? "var(--ok)" : est==="En proceso" ? "var(--c2)" : "var(--c5)";
 }
@@ -3127,12 +3127,15 @@ function vAccionGestion(){
   if(!a) return `<section class="block"><div class="card empty">${tx("No se encontró la acción.")}</div></section>`;
   const seg = accSeg(a.ref);
   const c = accColor(seg.estado), av = accAvance(seg.estado);
+  const esIperEval = a.ref.t==="iperEval";
   return `${bandaMundo()}
   <section class="block"><div class="card pad">
-    <span class="eyebrow">${tx("Seguimiento de la acción")}</span>
+    <span class="eyebrow">${esIperEval?tx("Gestión de la evaluación de riesgos"):tx("Seguimiento de la acción")}</span>
     <h2 style="font-size:19px;font-weight:700;margin:4px 0 6px;line-height:1.3">${esc(a.texto||tx("Acción"))}</h2>
     <p class="tiny muted" style="margin:0">${esc(a.origen||"")}${a.resp?" · "+tx("Responsable")+": "+esc(a.resp):""}${a.vence?" · "+tx("Compromiso: ")+fecha(a.vence):""}</p>
   </div></section>
+
+  ${esIperEval ? vIperResumenGestion(a.ref.id) : ""}
 
   <section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Estado")}</div>
@@ -3164,7 +3167,9 @@ function vAccionGestion(){
 
   <section class="block noprint">
     <button class="btn" onclick="guardarAccGestion()">${tx("Guardar")}</button>
-    <button class="btn ghost" style="margin-top:8px" onclick="P.accGest=null;go('acciones')">${tx("Volver al plan de acción")}</button>
+    ${esIperEval
+      ? `<button class="btn ghost" style="margin-top:8px" onclick="P.accGest=null;go('verIper','${a.ref.id}')">${tx("Volver a la evaluación")}</button>`
+      : `<button class="btn ghost" style="margin-top:8px" onclick="P.accGest=null;go('acciones')">${tx("Volver al plan de acción")}</button>`}
   </section>
   <div style="height:10px"></div>`;
 }
@@ -3336,8 +3341,13 @@ function nivelIper(g,p){
   return {t:"Muy bajo", c:"#17A2C6", s};
 }
 
+/* siguiente número correlativo de evaluación, para toda la empresa */
+function siguienteNumeroIper(){
+  const nums = (S.iper||[]).map(x=>x.numero||0);
+  return nums.length ? Math.max(...nums)+1 : 1;
+}
 function nuevaIper(){
-  P.draft = {id:uid(), tipo:"iper", fecha:hoy(), area:"", responsable:(S.empresa||{}).responsable||"",
+  P.draft = {id:uid(), tipo:"iper", numero:siguienteNumeroIper(), fecha:hoy(), area:"", responsable:(S.empresa||{}).responsable||"",
     revision:"0", maq:"", actividad:"", cantTareas:"", tareas:[]};
 }
 function editarIper(id){
@@ -3349,6 +3359,8 @@ function editarIper(id){
   if(!P.draft.maq) P.draft.maq = (P.draft.tareas[0]||{}).maq || "";
   if(!P.draft.actividad) P.draft.actividad = (P.draft.tareas[0]||{}).actividad || "";
   P.draft.cantTareas = P.draft.tareas.length || "";
+  // compatibilidad con evaluaciones viejas sin número asignado
+  if(!P.draft.numero) P.draft.numero = siguienteNumeroIper();
   go("iperEdit");
 }
 function addTarea(){
@@ -3500,12 +3512,14 @@ function vIper(){
       `<div class="card pad">${lista.map(r=>{
         const tot = r.tareas.reduce((a,t)=>a+t.riesgos.length,0);
         const alt = r.tareas.reduce((a,t)=>a+t.riesgos.filter(x=>{const n=nivelIper(x.g,x.p);return n&&(n.t==="Alto"||n.t==="Muy alto");}).length,0);
+        const est = accSeg({t:"iperEval", id:r.id}).estado;
         return swFila("iper", r.id, `<div class="row" onclick="go('verIper','${r.id}')">
           <span class="dot" style="background:${alt?"var(--no)":"var(--ok)"}"></span>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:14.5px">📊 ${esc(r.area||"Sin área")}</div>
+            <div style="font-weight:600;font-size:14.5px">📊 ${r.numero?"N.º "+r.numero+" · ":""}${esc(r.area||"Sin área")}</div>
             <div class="tiny muted">${fecha(r.fecha)} · rev. ${esc(r.revision||"0")} · ${r.tareas.length} tareas · ${tot} riesgos</div>
           </div>
+          <span class="pill" style="border-color:${accColor(est)};color:${accColor(est)};flex:none;margin-right:4px">${tx(est)}</span>
           ${alt?`<span class="pill" style="border-color:var(--no);color:var(--no)">${alt} alto${alt===1?"":"s"}</span>`:`<span class="pill">OK</span>`}
         </div>`);}).join("")}</div>`}
   </section>`;
@@ -3521,6 +3535,7 @@ function vIperEdit(){
   <section class="block"><div class="card pad">
     <span class="eyebrow">${tx("registro de la evaluación de riesgos")}</span>
     <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">${tx("📊 Matriz de riesgos")}</h2>
+    <div class="tiny muted" style="margin:4px 2px 0">${tx("Evaluación N.º")} <b style="color:var(--fg,inherit)">${d.numero||"—"}</b> <span style="opacity:.7">(${tx("se numera sola")})</span></div>
     <p class="small muted" style="margin:6px 0 0;line-height:1.4">${tx("Identificá los peligros de un puesto de trabajo, evaluá su riesgo (gravedad × probabilidad) y definí qué medida de control tomar para cada uno. Se basa en la metodología de análisis de riesgo por tarea (JSA/IPER).")}</p>
     ${d.tareas.length?`<div class="tiny muted" style="margin-top:10px;display:flex;align-items:center;gap:8px">
       <span>📍 ${tx("Progreso")}: ${tareasCompletas} / ${d.tareas.length} ${tx("tareas evaluadas")}</span>
@@ -3558,14 +3573,12 @@ function vIperEdit(){
       <button class="btn ghost sm" style="padding:4px 10px" onclick="delTarea(${i})">${tx("Quitar")}</button>
     </div>
     <p class="tiny muted" style="margin:0 0 8px">${tx("Describí este paso del puesto y los peligros que tiene, con su gravedad, probabilidad y medida de control.")}</p>
-    <div class="grid2">
-      <label class="f"><span class="lb">${tx("Descripción de la tarea paso a paso")}</span>
-        <textarea oninput="setT(${i},'desc',this.value)" placeholder="${tx("Cada paso en el orden en que se ejecuta")}">${esc(t.desc)}</textarea></label>
-      <label class="f"><span class="lb">${tx("¿Eventos ocurridos?")}</span>
-        <select onchange="setT(${i},'eventos',this.value)">
-          <option value="N" ${t.eventos==="N"?"selected":""}>${tx("No")}</option>
-          <option value="S" ${t.eventos==="S"?"selected":""}>${tx("Sí")}</option></select></label>
-    </div>
+    <label class="f"><span class="lb">${tx("¿Eventos ocurridos?")}</span>
+      <select onchange="setT(${i},'eventos',this.value)">
+        <option value="N" ${t.eventos==="N"?"selected":""}>${tx("No")}</option>
+        <option value="S" ${t.eventos==="S"?"selected":""}>${tx("Sí")}</option></select></label>
+    <label class="f"><span class="lb">${tx("Descripción de la tarea paso a paso")}</span>
+      <textarea oninput="setT(${i},'desc',this.value)" placeholder="${tx("Cada paso en el orden en que se ejecuta")}">${esc(t.desc)}</textarea></label>
 
     ${t.riesgos.map((r,j)=>{const n=nivelIper(r.g,r.p); const cg=colorEscalaIper(r.g,"g"), cp=colorEscalaIper(r.p,"p");return `
     <div class="item" style="border-left:4px solid ${n?n.c:"var(--line)"};padding-left:10px;margin-top:10px">
@@ -3597,6 +3610,7 @@ function vIperEdit(){
       </div>
     </div>`;}).join("")}
     <button class="btn soft sm" style="margin-top:10px" onclick="abrirPeligros(${i})">${tx("+ Identificar peligro")}</button>
+    <p class="tiny muted" style="margin:8px 2px 0">${tx("Una vez que identifiques el o los peligros/riesgos del puesto o la tarea, se van a desplegar los campos de gravedad y probabilidad para determinar el nivel de riesgo.")}</p>
   </div></section>`).join("")}
 
   <section class="block noprint">
@@ -3630,14 +3644,16 @@ function vVerIper(){
   r.tareas.forEach(t=>t.riesgos.forEach(x=>{const n=nivelIper(x.g,x.p); todos.push({t,x,n});}));
   const conteo = cuenta(todos.filter(z=>z.n).map(z=>z.n.t));
   const criticos = todos.filter(z=>z.n && (z.n.t==="Alto"||z.n.t==="Muy alto"));
+  const estGest = accSeg({t:"iperEval", id:r.id}).estado;
   return `
   <section class="block"><div class="card pad rephead">
     ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
     <div style="flex:1;min-width:0">
-      <div class="eyebrow">${tx("Registro de la evaluación de riesgos")}</div>
+      <div class="eyebrow">${tx("Registro de la evaluación de riesgos")}${r.numero?" · N.º "+r.numero:""}</div>
       ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
       <div class="tiny muted">${esc(r.area)} · ${fecha(r.fecha)} · rev. ${esc(r.revision||"0")} · ${esc(r.responsable||"")}</div>
     </div>
+    <span class="pill noprint" style="border-color:${accColor(estGest)};color:${accColor(estGest)};flex:none">${tx(estGest)}</span>
   </div></section>
 
   <section class="block"><div class="card pad">
@@ -3670,12 +3686,48 @@ function vVerIper(){
     </div>`).join("")}
   </div></section>
 
-  ${barraCompartir('iper', r.id)}
+  ${barraCompartir('iper', r.id, true)}
   <section class="block noprint">
-    <button class="btn ghost" onclick="editarIper('${r.id}')">${tx("Editar evaluación")}</button>
-    <button class="btn ghost" style="margin-top:8px" onclick="go('iper')">${tx("Volver al listado")}</button>
-    <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarIper('${r.id}')">${tx("Eliminar evaluación")}</button>
+    <button class="btn" onclick="gestionarIperEval('${r.id}')">${tx("Gestionar evaluación")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="editarIper('${r.id}')">${tx("Editar")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="go('iper')">${tx("Volver")}</button>
+    <button onclick="borrarIper('${r.id}')" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;display:block;margin:16px auto 0">${tx("Eliminar evaluación")}</button>
   </section><div style="height:10px"></div>`;
+}
+/* 5.3 · gestión de la evaluación completa (como el plan de acción, pero
+   para la matriz de riesgos en su conjunto: abierta / en proceso / cerrada,
+   con historial de tareas propio) */
+function gestionarIperEval(id){
+  const r = (S.iper||[]).find(x=>x.id===id);
+  if(!r) return;
+  P.accGest = {
+    ref: {t:"iperEval", id:r.id},
+    texto: tx("Evaluación de riesgos")+" N.º "+(r.numero||"—")+(r.maq?" · "+r.maq:(r.area?" · "+r.area:"")),
+    origen: "📊 "+tx("Matriz de riesgos")+(r.area?" · "+r.area:""),
+    resp: r.responsable||"",
+    vence: null
+  };
+  go("accionGestion");
+}
+/* resumen de riesgos y medidas de control de una evaluación, para mostrar
+   dentro de su pantalla de gestión */
+function vIperResumenGestion(id){
+  const r = (S.iper||[]).find(x=>x.id===id);
+  if(!r) return "";
+  const todos = [];
+  r.tareas.forEach(t=>t.riesgos.forEach(x=>{const n=nivelIper(x.g,x.p); todos.push({t,x,n});}));
+  if(!todos.length) return "";
+  return `<section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Riesgos y medidas de control evaluados")}</div>
+    ${todos.map(z=>`<div class="item" style="border-left:4px solid ${z.n?z.n.c:"var(--line)"};padding-left:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <b class="small">${esc(z.x.tipo)}</b>
+        ${z.n?`<span class="pill" style="border-color:${z.n.c};color:${z.n.c};flex:none">${esc(tx(z.n.t))} · ${z.n.s}</span>`:""}
+      </div>
+      <div class="tiny muted" style="margin-top:2px">${esc(z.t.maq||r.maq||"")}</div>
+      ${z.x.ctrl?`<div class="small" style="margin-top:4px">${esc(z.x.ctrl)}</div>`:`<div class="tiny" style="color:var(--no);margin-top:4px">${tx("Sin medida de control cargada")}</div>`}
+    </div>`).join("")}
+  </div></section>`;
 }
 function borrarIper(id){
   if(!gate("¿Eliminar esta evaluación de riesgos?", ()=>borrarIper(id))) return;
