@@ -5234,14 +5234,8 @@ const TEMAS_CAP = [
 
 const NIVELES_CAP = ["Mandos operativos","Mandos medios","Alta dirección","Todos"];
 function nuevaCap(){
-  /* si hay un cronograma de capacitaciones con participantes previstos, se
-     precarga la lista de asistentes con esa nómina (se puede editar igual) */
-  const previstos = (typeof participantesDeCronoCap==="function" ? participantesDeCronoCap() : []).map(p=>{
-    const t = trab(p.id);
-    return {id:p.id, nombre:p.nombre||t.nombre||"", dni:t.dni||"", legajo:t.legajo||"", puesto:t.puesto||"", firma:null};
-  });
   P.draft = {id:uid(), tipo:"cap", fecha:hoy(), hora:"", duracion:"", instructor:(S.empresa||{}).responsable||"",
-    matricula:"", niveles:"Todos", lugar:"", temas:[], otros:[], descripcion:"", asistentes:previstos, firma:null};
+    matricula:"", niveles:"Todos", lugar:"", temas:[], otros:[], descripcion:"", asistentes:[], firma:null};
 }
 function setCap(k,v){ P.draft[k]=v; }
 function toggleTemaCap(t){
@@ -8949,7 +8943,7 @@ function regPorTipo(tipo, id){
     t=CRONO_TIT[r.clase]; f=r.fecha;
     M.push(["Período",r.anio||""],["Responsable",r.responsable||"—"],["Actividades",r.filas.length]);
     cols=["Actividades"].concat(MESES_C);
-    filas=r.filas.map(x=>[x.a].concat(x.m.map(v=>v?"X":"")));
+    filas=filasCronoVer(r).map(x=>[x.a].concat(x.m.map(v=>v?"X":"")));
     if(r.obs) M.push(["Observaciones",r.obs]);
     r.filas.filter(x=>(x.nota||"").trim()).forEach(x=>M.push([x.a, x.nota]));
   }
@@ -11985,7 +11979,15 @@ function nuevoCrono(clase){
 }
 function editarCrono(id){
   const r = (S.crono||[]).find(x=>x.id===id);
-  if(r){ P.draft = JSON.parse(JSON.stringify(r)); go("cronoEdit"); }
+  if(r){
+    P.draft = JSON.parse(JSON.stringify(r));
+    /* cronogramas guardados antes de que cronoAdd marcara el mes solo: si una
+       actividad quedó sin ningún mes tildado, se completa con el mes de la
+       fecha programada al entrar a editar (se guarda como cualquier otro cambio) */
+    const mi = mesDeFecha(P.draft.fecha);
+    if(mi>=0) P.draft.filas.forEach(f=>{ if(!f.m.some(Boolean)) f.m[mi] = 1; });
+    go("cronoEdit");
+  }
 }
 function borrarCrono(id){
   if(!gate(tx("¿Eliminar este cronograma?"), ()=>borrarCrono(id))) return;
@@ -12004,10 +12006,20 @@ function guardarCrono(){
   go("verCrono", d.id);
 }
 /* --- filas --- */
+/* índice de mes (0-11) a partir de una fecha "yyyy-mm" o "yyyy-mm-dd"; -1 si no hay fecha válida */
+function mesDeFecha(f){
+  const s = f||"";
+  if(!/^\d{4}-\d{2}/.test(s)) return -1;
+  const mi = parseInt(s.slice(5,7),10) - 1;
+  return (mi>=0 && mi<=11) ? mi : -1;
+}
 function cronoAdd(txt){
   const t = (txt||"").trim(); if(!t) return;
   if(P.draft.filas.some(f=>f.a.toLowerCase()===t.toLowerCase())) return;
-  P.draft.filas.push({id:uid(), a:t, m:[0,0,0,0,0,0,0,0,0,0,0,0], nota:""});
+  const m = [0,0,0,0,0,0,0,0,0,0,0,0];
+  const mi = mesDeFecha(P.draft.fecha);
+  if(mi>=0) m[mi] = 1;
+  P.draft.filas.push({id:uid(), a:t, m, nota:""});
 }
 function cronoOtra(){
   modalCampos(tx("Agregar actividad"), [{l:tx("Actividad o tema a agregar:")}], v=>{
@@ -12083,13 +12095,6 @@ function cronoGuardarParticipantes(){
   cerrarModal(); render();
 }
 function quitarParticipanteCrono(i){ P.draft.participantes.splice(i,1); render(); }
-/* qué personas participarán de la próxima capacitación programada, para
-   precargar la constancia de capacitación recibida cuando se la dicta */
-function participantesDeCronoCap(){
-  const cronos = (S.crono||[]).filter(r=>r.clase==="cap" && (r.participantes||[]).length)
-    .slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
-  return cronos.length ? cronos[0].participantes : [];
-}
 /* --- pantallas --- */
 function vCrono(){
   const lista = (S.crono||[]).slice().sort((a,b)=>(b.cerrada||"").localeCompare(a.cerrada||""));
@@ -12125,6 +12130,18 @@ function filaCronoHist(r){
     <span class="pill" style="border-color:${col};color:${col}">${esc(r.anio||"")}</span>
   </div>`);
 }
+/* solo para la vista de solo lectura: si una actividad quedó sin ningún mes
+   tildado (cronogramas guardados antes de que cronoAdd marcara el mes solo),
+   se muestra el mes de la fecha programada como tildado, sin tocar los datos
+   guardados. */
+function filasCronoVer(r){
+  const mi = mesDeFecha(r.fecha);
+  return r.filas.map(f=>{
+    if(mi<0 || f.m.some(Boolean)) return f;
+    const m = f.m.slice(); m[mi] = 1;
+    return Object.assign({}, f, {m});
+  });
+}
 function cronoGrilla(d, editable){
   const filas = d.filas.map((f,i)=>`<tr>
     <th class="cact">${esc(tx(f.a))}${editable?`<span class="cdel" onclick="cronoQuitar(${i})">✕</span>
@@ -12151,7 +12168,7 @@ function vCronoEdit(){
     </div>
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Período (año)")}</span>
-        <select onchange="P.draft.anio=this.value">
+        <select onchange="P.draft.anio=this.value;if(P.draft.fecha)P.draft.fecha=this.value+'-'+P.draft.fecha.slice(5);render()">
           ${aniosCrono().map(a=>`<option ${d.anio===a?"selected":""}>${a}</option>`).join("")}
           ${d.anio && aniosCrono().indexOf(d.anio)<0?`<option selected>${esc(d.anio)}</option>`:""}
         </select></label>
@@ -12224,16 +12241,18 @@ function vVerCrono(){
   const notas = r.filas.filter(f=>(f.nota||"").trim());
   const pResp = r.com && r.com.pedidoFirmaResp, faltaResp = pResp && !r.firma;
   return `
-  <section class="block"><div class="card pad">
-    ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin-bottom:8px">`:""}
-    <span class="eyebrow">${esc(e.razon||"")}${e.obra?" · "+esc(e.obra):""}</span>
-    <h2 style="font-size:20px;font-weight:700;margin:2px 0 2px">${tx(CRONO_TIT[r.clase])}</h2>
-    <p class="small muted" style="margin:0">${tx("Período")} ${esc(r.anio||"")}${r.responsable?" · "+esc(r.responsable):""}</p>
-    ${r.clase==="cap" && (r.fecha||r.horario||r.direccion||r.sala)?`<p class="small muted" style="margin:4px 0 0">
-      ${r.fecha?fecha(r.fecha):""}${r.horario?" · "+esc(r.horario):""}${r.sala?" · "+esc(r.sala):""}${r.direccion?" · "+esc(r.direccion):""}</p>`:""}
+  <section class="block"><div class="card pad rephead">
+    ${e.logo?`<img src="${e.logo}" class="replogo">`:""}
+    <div style="flex:1;min-width:0">
+      <div class="eyebrow">${tx(CRONO_TIT[r.clase])}</div>
+      ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
+      <div class="tiny muted">${tx("Período")} ${esc(r.anio||"")}${r.responsable?" · "+esc(r.responsable):""}</div>
+      ${r.clase==="cap" && (r.fecha||r.horario||r.direccion||r.sala)?`<div class="tiny muted">
+        ${r.fecha?fecha(r.fecha):""}${r.horario?" · "+esc(r.horario):""}${r.sala?" · "+esc(r.sala):""}${r.direccion?" · "+esc(r.direccion):""}</div>`:""}
+    </div>
   </div></section>
 
-  <section class="block"><div class="card pad">${cronoGrilla(r, false)}</div></section>
+  <section class="block"><div class="card pad">${cronoGrilla(Object.assign({}, r, {filas:filasCronoVer(r)}), false)}</div></section>
 
   ${r.clase==="cap" && (r.participantes||[]).length?`<section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Personas que participarán")}</div>
