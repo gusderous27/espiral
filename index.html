@@ -2070,11 +2070,32 @@ function agruparPorMesSemana(rows){
 }
 function histAbierto(key, def){ return (P.histOpen && P.histOpen[key]!==undefined) ? P.histOpen[key] : def; }
 function toggleHist(key, estaba){ P.histOpen = P.histOpen||{}; P.histOpen[key] = !estaba; render(); }
+/* qué tipos de registro tienen datos para mostrar en el historial ahora mismo
+   (respeta el filtro de "solo este mes"); se usa para armar la lista de
+   secciones y para el botón de desplegar/colapsar todo */
+function tiposConDatosHist(){
+  const filtroMes = P.histFiltro === "mes";
+  const desdeMes = hoy().slice(0,7)+"-01";
+  const enMes = r => !filtroMes || (r.fecha||"") >= desdeMes;
+  const porTplKeys = {};
+  S.insp.filter(enMes).forEach(r=>{ porTplKeys[r.tpl]=true; });
+  const extra = [["inv",S.inv],["aud",S.aud],["lux",S.lux],["ptt",S.ptt],["cap",S.cap],["epp",S.epp],["parte",S.parte],["crono",S.crono],["agua",S.agua]]
+    .filter(([,arr])=>(arr||[]).filter(enMes).length).map(([k])=>k);
+  return Object.keys(porTplKeys).concat(extra);
+}
+/* abre o cierra de una sola vez varias secciones de nivel superior; las
+   claves ya vienen con su prefijo (ej. "t:epp" o "acc:Auditoría diaria")
+   para poder reutilizarlo tanto en el Historial como en el Plan de acción */
+function toggleTodosHist(claves, abrir){
+  P.histOpen = P.histOpen || {};
+  claves.forEach(k=>{ P.histOpen[k] = abrir; });
+  render();
+}
 /* card colapsable de un tipo de registro, sub-agrupada por mes (colapsable, el más
    reciente abierto) y por semana (lunes a domingo) para poder ubicar una fecha puntual */
 function bloqueHistTipo(key, icono, nombre, rows, filaFn){
   if(!rows.length) return "";
-  const abierto = histAbierto("t:"+key, true);
+  const abierto = histAbierto("t:"+key, false);
   const meses = agruparPorMesSemana(rows);
   return `<div class="acc" data-open="${abierto?1:0}" style="margin-bottom:12px">
     <div class="acc-h" onclick="toggleHist('t:${key}', ${abierto})">
@@ -2121,6 +2142,8 @@ function vHistorial(){
   const porTpl = {};
   orden.forEach(r=>{ (porTpl[r.tpl]=porTpl[r.tpl]||[]).push(r); });
   const hayResultados = orden.length||eppOrd.length||invOrd.length||capOrd.length||pttOrd.length||luxOrd.length||audOrd.length||croOrd.length||parOrd.length||aguOrd.length;
+  const tiposConDatos = tiposConDatosHist();
+  const todoAbierto = tiposConDatos.length>0 && tiposConDatos.every(k=>histAbierto("t:"+k,false));
   return `
   <section class="block">
     <div class="section-title"><h2>${tx("Historial")}</h2><button class="btn ghost sm" onclick="exportarCSV()">${tx("Exportar CSV")}</button></div>
@@ -2128,6 +2151,7 @@ function vHistorial(){
       <span class="small">${tx("Mostrando solo")} <b>${tx("este mes")}</b></span>
       <button class="btn ghost sm" onclick="go('historial')">${tx("Ver todo")}</button>
     </div>`:""}
+    ${tiposConDatos.length?`<button class="btn soft sm" style="margin-bottom:10px" onclick="toggleTodosHist(tiposConDatosHist().map(k=>'t:'+k), ${!todoAbierto})">${todoAbierto?tx("Colapsar todo"):tx("Desplegar todo")}</button>`:""}
     <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Deslizá una fila hacia la izquierda para ver, editar o eliminar. Tocá el título de cada sección para desplegarla.")}</p>
     ${!hayResultados?`<div class="card empty"><span class="ic">≡</span>${tx("No hay registros este mes.")}</div>`:""}
     ${Object.keys(porTpl).map(k=>bloqueHistTipo(k, TPL[k].ic, esc(TPL[k].nombre), porTpl[k], filaHist)).join("")}
@@ -3922,14 +3946,75 @@ function borrarBitacora(i){
   const seg = accSeg(P.accGest.ref);
   (seg.bitacora||[]).splice(i,1); guardar(); render();
 }
+/* fila de una acción individual del plan de acción */
+function filaAccionItem(a){
+  const venc = !a.hecha && a.vence && a.vence < hoy();
+  const seg = accSeg(a.ref);
+  const c = accColor(seg.estado), av = accAvance(seg.estado);
+  const admin = puedeAdministrar();
+  return `<div class="item">
+  <div style="display:flex;gap:10px;align-items:flex-start">
+    <button class="opt" style="padding:6px 10px" data-on="${a.hecha?1:0}" data-k="${a.hecha?"ok":""}"
+      onclick="cerrarAccion('${a.ref.t}','${a.ref.id}','${a.ref.k||""}',${a.ref.i})">${a.hecha?"✓":"○"}</button>
+    <div style="flex:1;min-width:0;${admin?"cursor:pointer":""}" ${admin?`onclick="gestionarAccion('${accClave(a.ref)}')"`:""}>
+      <div class="small" style="${a.hecha?"text-decoration:line-through;opacity:.6":""}">${esc(a.texto)}</div>
+      <div class="tiny muted" style="margin-top:3px">${esc(a.origen)} · ${esc(a.fuente)}${a.resp?" · "+esc(a.resp):""}
+        ${a.sinAccion?`<span class="pill" style="border-color:var(--c2);color:var(--c2);margin-left:4px">${tx("sin acción definida")}</span>`:""}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+        <span class="pill" style="border-color:${c};color:${c};flex:none">${tx(seg.estado)}</span>
+        <div style="flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${av}%;background:${c}"></div></div>
+        ${admin?`<span class="tiny muted" style="flex:none">${tx("Gestionar")} ›</span>`:""}
+      </div>
+      ${a.vence?`<div class="tiny" style="color:${venc?"var(--no)":"var(--muted)"};margin-top:3px">
+        ${venc?tx("Vencida el "):tx("Compromiso: ")}${fecha(a.vence)}</div>`:""}
+    </div>
+  </div></div>`;
+}
+/* secciones del plan de acción, en el mismo orden en que se generan las
+   acciones (investigación → matriz de riesgos → auditoría diaria → auditoría
+   mensual); cada una es una card colapsable, igual que en el Historial */
+const ACC_MOD_ORDEN = [
+  {mod:"Investigación de accidentes", icono:"🔎"},
+  {mod:"Matriz de riesgos", icono:"📊"},
+  {mod:"Auditoría diaria", icono:"🔍"},
+  {mod:"Auditoría mensual", icono:"📋"}
+];
+function bloqueAccionesMod(key, icono, nombre, items){
+  if(!items.length) return "";
+  const abierto = histAbierto("acc:"+key, false);
+  return `<div class="acc" data-open="${abierto?1:0}" style="margin-bottom:12px">
+    <div class="acc-h" onclick="toggleHist('acc:${key}', ${abierto})">
+      <span class="acc-ic">${icono}</span>
+      <span class="acc-t">${esc(nombre)}</span>
+      <span class="tiny muted" style="flex:none;margin-right:2px">${items.length}</span>
+      <span class="acc-ch">›</span>
+    </div>
+    <div class="acc-body">${items.map(filaAccionItem).join("")}</div>
+  </div>`;
+}
+/* lista de acciones según el filtro actual (Abiertas / Todas) */
+function accionesListaActual(){
+  const todas = accionesTodas();
+  return P.accFiltro !== "todas" ? todas.filter(a=>!a.hecha) : todas;
+}
+function tiposConDatosAcciones(){
+  const porMod = {};
+  accionesListaActual().forEach(a=>{ (porMod[a.mod]=porMod[a.mod]||[]).push(a); });
+  return ACC_MOD_ORDEN.filter(m=>(porMod[m.mod]||[]).length).map(m=>m.mod);
+}
 function vAcciones(){
   const todas = accionesTodas();
   const soloAbiertas = P.accFiltro !== "todas";
-  const lista = soloAbiertas ? todas.filter(a=>!a.hecha) : todas;
+  const lista = accionesListaActual();
   const vencidas = todas.filter(a=>!a.hecha && a.vence && a.vence < hoy()).length;
   if(!todas.length) return `<section class="block"><div class="card empty"><span class="ic">🗂</span>
     ${tx("Todavía no hay acciones correctivas cargadas.")}<br>
     <span class="small">${tx("Salen de las investigaciones y de la auditoría diaria.")}</span></div></section>`;
+  const porMod = {};
+  lista.forEach(a=>{ (porMod[a.mod]=porMod[a.mod]||[]).push(a); });
+  const tiposConDatos = tiposConDatosAcciones();
+  const todoAbierto = tiposConDatos.length>0 && tiposConDatos.every(k=>histAbierto("acc:"+k,false));
   return `
   <section class="block">
     <div class="section-title"><h2>${tx("Plan de acción")}</h2></div>
@@ -3942,32 +4027,9 @@ function vAcciones(){
       <button class="opt" data-on="${soloAbiertas?1:0}" data-k="${soloAbiertas?"ok":""}" onclick="P.accFiltro='abiertas';render()">${tx("Abiertas")}</button>
       <button class="opt" data-on="${soloAbiertas?0:1}" data-k="${soloAbiertas?"":"ok"}" onclick="P.accFiltro='todas';render()">${tx("Todas")}</button>
     </div>
-    <div class="card pad">
-      ${lista.map(a=>{
-        const venc = !a.hecha && a.vence && a.vence < hoy();
-        const seg = accSeg(a.ref);
-        const c = accColor(seg.estado), av = accAvance(seg.estado);
-        const admin = puedeAdministrar();
-        return `<div class="item">
-        <div style="display:flex;gap:10px;align-items:flex-start">
-          <button class="opt" style="padding:6px 10px" data-on="${a.hecha?1:0}" data-k="${a.hecha?"ok":""}"
-            onclick="cerrarAccion('${a.ref.t}','${a.ref.id}','${a.ref.k||""}',${a.ref.i})">${a.hecha?"✓":"○"}</button>
-          <div style="flex:1;min-width:0;${admin?"cursor:pointer":""}" ${admin?`onclick="gestionarAccion('${accClave(a.ref)}')"`:""}>
-            <div class="small" style="${a.hecha?"text-decoration:line-through;opacity:.6":""}">${esc(a.texto)}</div>
-            <div class="tiny muted" style="margin-top:3px">${esc(a.origen)} · ${esc(a.fuente)}${a.resp?" · "+esc(a.resp):""}
-              ${a.sinAccion?`<span class="pill" style="border-color:var(--c2);color:var(--c2);margin-left:4px">${tx("sin acción definida")}</span>`:""}</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
-              <span class="pill" style="border-color:${c};color:${c};flex:none">${tx(seg.estado)}</span>
-              <div style="flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden">
-                <div style="height:100%;width:${av}%;background:${c}"></div></div>
-              ${admin?`<span class="tiny muted" style="flex:none">${tx("Gestionar")} ›</span>`:""}
-            </div>
-            ${a.vence?`<div class="tiny" style="color:${venc?"var(--no)":"var(--muted)"};margin-top:3px">
-              ${venc?tx("Vencida el "):tx("Compromiso: ")}${fecha(a.vence)}</div>`:""}
-          </div>
-        </div></div>`;}).join("")}
-      ${!lista.length?`<p class="small muted" style="text-align:center;margin:14px 0">${tx("No hay acciones abiertas. 👏")}</p>`:""}
-    </div>
+    ${tiposConDatos.length?`<button class="btn soft sm" style="margin-bottom:10px" onclick="toggleTodosHist(tiposConDatosAcciones().map(k=>'acc:'+k), ${!todoAbierto})">${todoAbierto?tx("Colapsar todo"):tx("Desplegar todo")}</button>`:""}
+    ${ACC_MOD_ORDEN.map(m=>bloqueAccionesMod(m.mod, m.icono, esc(tx(m.mod)), porMod[m.mod]||[])).join("")}
+    ${!lista.length?`<div class="card pad"><p class="small muted" style="text-align:center;margin:14px 0">${tx("No hay acciones abiertas. 👏")}</p></div>`:""}
   </section><div style="height:10px"></div>`;
 }
 
