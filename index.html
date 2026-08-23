@@ -1237,19 +1237,33 @@ function render(){
   if(P.page==="verInv") montarFirmaVerInv();
   if(P.page==="verPtt") montarFirmaVerPtt();
   if(P.page==="verCrono") montarFirmaVerCrono();
+  if(P.page==="verAgua") montarFirmaVerAgua();
+  if(P.page==="verParte") montarFirmaVerParte();
 }
 
 /* ============================================================
    INICIO
    ============================================================ */
+/* último trabajo hecho en cualquier módulo, ordenado por la fecha de cierre
+   más reciente, para la sección "Últimas" de la pantalla principal */
+function ultimosTrabajados(n){
+  n = n || 5;
+  const fuentes = [
+    ["insp", S.insp, filaHist], ["epp", S.epp, filaEppHist], ["inv", S.inv, filaInvHist],
+    ["cap", S.cap, filaCapHist], ["ptt", S.ptt, filaPttHist], ["lux", S.lux, filaLuxHist],
+    ["aud", S.aud, filaAudHist], ["crono", S.crono, filaCronoHist],
+    ["parte", S.parte, filaParteHist], ["agua", S.agua, filaAguaHist]
+  ];
+  let todos = [];
+  fuentes.forEach(([,arr,filaFn])=>{
+    (arr||[]).forEach(r=>{ todos.push({r, filaFn, cuando:r.cerrada||r.fecha||""}); });
+  });
+  todos.sort((a,b)=>(b.cuando||"").localeCompare(a.cuando||""));
+  return todos.slice(0,n).map(x=>x.filaFn(x.r)).join("");
+}
 function vInicio(){
   const e = S.empresa||{};
-  const hs = S.insp.slice(-3).reverse();
-  const hsE = (S.epp||[]).slice(-2).reverse();
-  const hsI = (S.inv||[]).slice(-2).reverse();
-  const hsC = (S.cap||[]).slice(-2).reverse();
-  const hsP = (S.ptt||[]).slice(-2).reverse();
-  const hsL = (S.lux||[]).slice(-2).reverse();
+  const ultimasHTML = ultimosTrabajados(5);
   const eppR = (S.epp||[]).concat(S.inv||[]);
   const audR = (S.aud||[]);
   const audMes = audR.filter(r=>(r.fecha||"")>=hoy().slice(0,7)+"-01").length;
@@ -1310,9 +1324,9 @@ function vInicio(){
     <div class="tiles">${tilesDocHTML()}</div>
   </section>
 
-  ${(hs.length||hsE.length||hsI.length||hsC.length||hsP.length||hsL.length)?`<section class="block">
+  ${ultimasHTML?`<section class="block">
     <div class="section-title"><h2>${t("home.ultimas")}</h2><button class="btn ghost sm" onclick="go('historial')">${t("home.verTodas")}</button></div>
-    <div class="card pad">${hsI.map(filaInvHist).join("")}${hs.map(filaHist).join("")}${hsP.map(filaPttHist).join("")}${hsL.map(filaLuxHist).join("")}${hsC.map(filaCapHist).join("")}${hsE.map(filaEppHist).join("")}</div>
+    <div class="card pad">${ultimasHTML}</div>
   </section>`:""}
   <div style="height:8px"></div>`;
 }
@@ -1748,6 +1762,17 @@ function montarFirmaVerCrono(){
   const r = (S.crono||[]).find(x=>x.id===P.verId); if(!r) return;
   if(r.com && r.com.pedidoFirmaResp && !r.firma) montarFirmaCanvas("sigFirmaCronoResp","vfCronoResp");
 }
+function montarFirmaVerAgua(){
+  const r = (S.agua||[]).find(x=>x.id===P.verId); if(!r) return;
+  if(r.com && r.com.pedidoFirmaResp && !r.firma) montarFirmaCanvas("sigFirmaAguaResp","vfAguaResp");
+}
+/* misma idea, para el parte de acción disciplinaria: la firma del
+   trabajador se hace en el momento, la del responsable puede pedirse a
+   distancia (queda en firma2, no en firma) */
+function montarFirmaVerParte(){
+  const r = (S.parte||[]).find(x=>x.id===P.verId); if(!r) return;
+  if(r.com && r.com.pedidoFirmaResp && !r.firma2) montarFirmaCanvas("sigFirmaParteResp","vfParteResp");
+}
 function montarFirmaCanvas(id, tmpKey){
   const c = document.getElementById(id); if(!c) return;
   sigAttach(c, canvas => { P.firmaTmp = P.firmaTmp||{}; P.firmaTmp[tmpKey] = canvas.toDataURL("image/png"); });
@@ -1815,6 +1840,48 @@ function guardarFirmaVerCrono(){
       const yo = sesionActiva();
       S.notifEventos = S.notifEventos||[];
       S.notifEventos.unshift({id:uid(), tipo:"firmaCompletada", emp:S.activa, invId:r.id, cual:"Resp", modulo:"crono",
+        para: yo?(yo.nombre||yo.email):pedido.para, deEmail: pedido.deEmail, ts:new Date().toISOString(), leida:false});
+    }
+  }
+  guardar(); toast(tx("Firma guardada")); render();
+}
+/* misma idea que guardarFirmaVerInv() pero para agua potable (análisis y dispensers) */
+function guardarFirmaVerAgua(){
+  const r = (S.agua||[]).find(x=>x.id===P.verId); if(!r) return;
+  const c = document.getElementById("sigFirmaAguaResp");
+  if(!c || !canvasTieneTrazo(c)){ toast(tx("Dibujá tu firma antes de guardar")); return; }
+  const data = c.toDataURL("image/png");
+  r.firma = data;
+  r.com = r.com||{};
+  const pedido = r.com.pedidoFirmaResp;
+  if(pedido){
+    pedido.firmado = true;
+    if(pedido.deEmail){
+      const yo = sesionActiva();
+      S.notifEventos = S.notifEventos||[];
+      S.notifEventos.unshift({id:uid(), tipo:"firmaCompletada", emp:S.activa, invId:r.id, cual:"Resp", modulo:"agua",
+        para: yo?(yo.nombre||yo.email):pedido.para, deEmail: pedido.deEmail, ts:new Date().toISOString(), leida:false});
+    }
+  }
+  guardar(); toast(tx("Firma guardada")); render();
+}
+/* misma idea que guardarFirmaVerAgua() pero para el parte de acción
+   disciplinaria: la firma pedida a distancia es la del responsable, que
+   se guarda en firma2 (firma queda reservada para el trabajador) */
+function guardarFirmaVerParte(){
+  const r = (S.parte||[]).find(x=>x.id===P.verId); if(!r) return;
+  const c = document.getElementById("sigFirmaParteResp");
+  if(!c || !canvasTieneTrazo(c)){ toast(tx("Dibujá tu firma antes de guardar")); return; }
+  const data = c.toDataURL("image/png");
+  r.firma2 = data;
+  r.com = r.com||{};
+  const pedido = r.com.pedidoFirmaResp;
+  if(pedido){
+    pedido.firmado = true;
+    if(pedido.deEmail){
+      const yo = sesionActiva();
+      S.notifEventos = S.notifEventos||[];
+      S.notifEventos.unshift({id:uid(), tipo:"firmaCompletada", emp:S.activa, invId:r.id, cual:"Resp", modulo:"parte",
         para: yo?(yo.nombre||yo.email):pedido.para, deEmail: pedido.deEmail, ts:new Date().toISOString(), leida:false});
     }
   }
@@ -2079,12 +2146,14 @@ function tiposConDatosHist(){
   const enMes = r => !filtroMes || (r.fecha||"") >= desdeMes;
   const porTplKeys = {};
   S.insp.filter(enMes).forEach(r=>{ porTplKeys[r.tpl]=true; });
-  const extra = [["inv",S.inv],["aud",S.aud],["lux",S.lux],["ptt",S.ptt],["cap",S.cap],["epp",S.epp],["parte",S.parte],["crono",S.crono],["agua",S.agua]]
+  const extra = [["inv",S.inv],["aud",S.aud],["lux",S.lux],["ptt",S.ptt],["cap",S.cap],["parte",S.parte],["crono",S.crono],["agua",S.agua]]
     .filter(([,arr])=>(arr||[]).filter(enMes).length).map(([k])=>k);
-  return Object.keys(porTplKeys).concat(extra);
+  const eppTipos = ["uso","entrega","ropa"]
+    .filter(t=>(S.epp||[]).filter(r=>r.tipo===t).filter(enMes).length).map(t=>"epp-"+t);
+  return Object.keys(porTplKeys).concat(extra).concat(eppTipos);
 }
 /* abre o cierra de una sola vez varias secciones de nivel superior; las
-   claves ya vienen con su prefijo (ej. "t:epp" o "acc:Auditoría diaria")
+   claves ya vienen con su prefijo (ej. "t:epp-uso" o "acc:Auditoría diaria")
    para poder reutilizarlo tanto en el Historial como en el Plan de acción */
 function toggleTodosHist(claves, abrir){
   P.histOpen = P.histOpen || {};
@@ -2131,6 +2200,9 @@ function vHistorial(){
   const enMes = r => !filtroMes || (r.fecha||"") >= desdeMes;
   const orden = S.insp.filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
   const eppOrd = (S.epp||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
+  const eppUsoOrd = eppOrd.filter(r=>r.tipo==="uso");
+  const eppEntregaOrd = eppOrd.filter(r=>r.tipo==="entrega");
+  const eppRopaOrd = eppOrd.filter(r=>r.tipo==="ropa");
   const invOrd = (S.inv||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
   const capOrd = (S.cap||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
   const pttOrd = (S.ptt||[]).filter(enMes).slice().sort((a,b)=> (b.cerrada||"").localeCompare(a.cerrada||""));
@@ -2160,7 +2232,9 @@ function vHistorial(){
     ${bloqueHistTipo("lux", "", esc(tx("💡 Mediciones de iluminación")), luxOrd, filaLuxHist)}
     ${bloqueHistTipo("ptt", "", esc(tx("📝 Permisos de trabajo")), pttOrd, filaPttHist)}
     ${bloqueHistTipo("cap", "", esc(tx("🎓 Capacitaciones")), capOrd, filaCapHist)}
-    ${bloqueHistTipo("epp", "🦺", esc(tx("EPP y ropa de trabajo")), eppOrd, filaEppHist)}
+    ${bloqueHistTipo("epp-uso", ICONO_EPP.uso, esc(tx(TITULO_EPP.uso)), eppUsoOrd, filaEppHist)}
+    ${bloqueHistTipo("epp-entrega", ICONO_EPP.entrega, esc(tx(TITULO_EPP.entrega)), eppEntregaOrd, filaEppHist)}
+    ${bloqueHistTipo("epp-ropa", ICONO_EPP.ropa, esc(tx(TITULO_EPP.ropa)), eppRopaOrd, filaEppHist)}
     ${bloqueHistTipo("parte", "", esc(tx("⚠️ Partes de acción disciplinaria")), parOrd, filaParteHist)}
     ${bloqueHistTipo("crono", "", esc(tx("📅 Cronogramas anuales")), croOrd, filaCronoHist)}
     ${bloqueHistTipo("agua", "", esc(tx("💧 Agua potable")), aguOrd, filaAguaHist)}
@@ -3274,16 +3348,32 @@ function autosaveCronoBorrador(){
   d.emp = S.activa;
   upsert("crono", d);
 }
+/* mismo autoguardado, para agua potable (análisis y dispensers) */
+function autosaveAguaBorrador(){
+  if(!P.draft || P.draft.tipo!=="agua") return;
+  const d = P.draft;
+  d.emp = S.activa;
+  upsert("agua", d);
+}
+/* mismo autoguardado, para el parte de acción disciplinaria */
+function autosaveParteBorrador(){
+  if(!P.draft || P.draft.tipo!=="parte") return;
+  const d = P.draft;
+  d.emp = S.activa;
+  upsert("parte", d);
+}
 /* dispara el autoguardado que corresponda según el tipo de borrador activo */
 function autosaveDraftBorrador(){
   if(!P.draft) return;
   if(P.draft.tipo==="inv") autosaveInvBorrador();
   else if(P.draft.tipo==="ptt") autosavePttBorrador();
   else if(P.draft.tipo==="crono") autosaveCronoBorrador();
+  else if(P.draft.tipo==="agua") autosaveAguaBorrador();
+  else if(P.draft.tipo==="parte") autosaveParteBorrador();
 }
 /* campo del borrador donde vive el nombre precargado para cada "cual" de
-   pedido de firma, según el módulo (investigación, permiso de trabajo o
-   cronograma anual) */
+   pedido de firma, según el módulo (investigación, permiso de trabajo,
+   cronograma anual o agua potable) */
 function prefillFirmaPath(modulo, cual){
   if(modulo==="ptt"){
     if(cual==="Ejec") return "resp.ejec";
@@ -3291,7 +3381,7 @@ function prefillFirmaPath(modulo, cual){
     if(cual==="Fin") return "resp.finNombre";
     return "";
   }
-  if(modulo==="crono") return "responsable";
+  if(modulo==="crono" || modulo==="agua" || modulo==="parte") return "responsable";
   return cual==="Inv" ? "com.inv" : "com.supervisor";
 }
 /* pedido de firma: en primer lugar es un pedido DENTRO de la app (le llega
@@ -3362,7 +3452,9 @@ function cancelarPedidoFirma(cual){
 function avisarFirmaMail(cual){
   const p = P.draft && P.draft.com && P.draft.com["pedidoFirma"+cual];
   if(!p || !p.email) return;
-  const nombreDoc = p.modulo==="ptt" ? tx("Permiso de trabajo") : p.modulo==="crono" ? tx("Cronograma anual") : tx("Investigación de accidentes e incidentes");
+  const nombreDoc = p.modulo==="ptt" ? tx("Permiso de trabajo") : p.modulo==="crono" ? tx("Cronograma anual")
+    : p.modulo==="agua" ? tx(AGUA_TIT[(P.draft&&P.draft.clase)||"muestra"])
+    : p.modulo==="parte" ? tx("Parte de acción disciplinaria") : tx("Investigación de accidentes e incidentes");
   const asunto = tx("Firma pendiente")+" · "+nombreDoc;
   const cuerpo = (p.para?tx("Hola")+" "+p.para+",\n\n":"")
     + tx("Te pedimos que ingreses a la app para revisar y firmar")+" "+nombreDoc.toLowerCase()+"."
@@ -4573,20 +4665,20 @@ AR:[
   {k:"afip",            l:"Constancia de inscripción AFIP"}
 ],
 US:[
-  {k:"coi",       l:"Certificate of Insurance (COI)"},
-  {k:"wc",        l:"Workers' Compensation policy"},
-  {k:"gl",        l:"General Liability policy"},
-  {k:"auto",      l:"Commercial Auto Liability"},
-  {k:"umbrella",  l:"Umbrella / Excess Liability"},
-  {k:"waiver",    l:"Waiver of Subrogation endorsement"},
-  {k:"addins",    l:"Additional Insured endorsement"},
-  {k:"emr",       l:"EMR letter (Experience Modification Rate)"},
-  {k:"osha300",   l:"OSHA 300 / 300A logs"},
-  {k:"ssp",       l:"Site-Specific Safety Plan"},
-  {k:"training",  l:"Training records (OSHA 10 / 30, competent person)"},
-  {k:"sds",       l:"Safety Data Sheets (SDS)"},
-  {k:"w9",        l:"W-9 / business license"},
-  {k:"roster",    l:"Crew roster on site"}
+  {k:"coi",       l:"Certificado de seguro (COI)"},
+  {k:"wc",        l:"Póliza de compensación laboral (Workers' Comp)"},
+  {k:"gl",        l:"Póliza de responsabilidad civil general (General Liability)"},
+  {k:"auto",      l:"Responsabilidad civil de vehículos comerciales (Auto Liability)"},
+  {k:"umbrella",  l:"Póliza paraguas / de exceso (Umbrella)"},
+  {k:"waiver",    l:"Endoso de renuncia a subrogación (Waiver of Subrogation)"},
+  {k:"addins",    l:"Endoso de asegurado adicional (Additional Insured)"},
+  {k:"emr",       l:"Carta del índice de modificación por experiencia (EMR)"},
+  {k:"osha300",   l:"Registros OSHA 300 / 300A"},
+  {k:"ssp",       l:"Plan de seguridad específico del sitio"},
+  {k:"training",  l:"Registros de capacitación (OSHA 10/30, persona competente)"},
+  {k:"sds",       l:"Hojas de datos de seguridad (SDS)"},
+  {k:"w9",        l:"Formulario W-9 / habilitación comercial"},
+  {k:"roster",    l:"Nómina de personal en el sitio"}
 ],
 BR:[
   {k:"cnpj",      l:"Cartão CNPJ e contrato social"},
@@ -4865,7 +4957,7 @@ function notificaciones(){
   // "módulo" (inv o ptt) dice de qué colección viene el registro y a qué
   // pantalla hay que ir a firmarlo; los eventos viejos sin módulo son de
   // investigación (es lo único que existía cuando se creó este sistema).
-  const pantallaVer = modulo => modulo==="ptt" ? "verPtt" : modulo==="crono" ? "verCrono" : "verInv";
+  const pantallaVer = modulo => modulo==="ptt" ? "verPtt" : modulo==="crono" ? "verCrono" : modulo==="agua" ? "verAgua" : modulo==="parte" ? "verParte" : "verInv";
   const evFirma = (S.notifEventos||[]).filter(e=>{
     if(e.tipo!=="firmaPendiente" || (e.emp && e.emp!==S.activa)) return false;
     if(!esParaMi(e.email)) return false;
@@ -4874,6 +4966,7 @@ function notificaciones(){
     if(!rec) return true; // el registro todavía no se terminó de guardar
     const key = modulo==="ptt"
       ? (e.cual==="Autoriz"?"firmaAu":e.cual==="Fin"?"firmaFin":"firmaEj")
+      : modulo==="parte" ? "firma2"
       : (e.cual==="Sup"?"firma2":"firma");
     return !rec[key];
   });
@@ -4892,7 +4985,7 @@ function notificaciones(){
     e.tipo==="firmaCompletada" && (!e.emp || e.emp===S.activa) && esParaMi(e.deEmail));
   const evFirmadaNoti = evFirmada.map(e=>({
     tipo:"eventoFirmada", icono:"✅",
-    titulo: (e.modulo==="ptt"?tx("Firmaron el permiso de trabajo"):e.modulo==="crono"?tx("Firmaron el cronograma"):tx("Firmaron la investigación"))+(e.para?" · "+e.para:""),
+    titulo: (e.modulo==="ptt"?tx("Firmaron el permiso de trabajo"):e.modulo==="crono"?tx("Firmaron el cronograma"):e.modulo==="agua"?tx("Firmaron el registro de agua"):e.modulo==="parte"?tx("Firmaron el parte"):tx("Firmaron la investigación"))+(e.para?" · "+e.para:""),
     sub: tx("Ingresá aquí para verla."),
     cuando: null, dias: e.leida ? 9998 : -9999,
     leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
@@ -5154,7 +5247,7 @@ function vDocs(){
     ${venc.slice(0,14).map(v=>`<div class="row" onclick="editarContratista('${v.id}')">
       <span class="dot" style="background:${v.e.c}"></span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:14px">${esc(v.doc)}</div>
+        <div style="font-weight:600;font-size:14px">${esc(tx(v.doc))}</div>
         <div class="tiny muted">${esc(v.empresa)}</div>
       </div>
       <span class="pill" style="border-color:${v.e.c};color:${v.e.c}">${esc(tx(v.e.t))}</span>
@@ -5179,22 +5272,32 @@ function vDocs(){
   ${barraCompartir('docs','')}<div style="height:10px"></div>`;
 }
 
+/* direcciones ya usadas por contratistas + la de la propia empresa, para
+   que el desplegable de dirección se autocomplete y no haya que reescribirla
+   cada vez que se repite la misma obra o establecimiento */
+function direccionesDocs(){
+  const e = S.empresa||{};
+  const usadas = (S.docs||[]).map(r=>r.obra).filter(Boolean);
+  const todas = (e.direccion?[e.direccion]:[]).concat(usadas);
+  return Array.from(new Set(todas));
+}
 function vDocEdit(c){
   const docs = docsStd().concat(c.extras||[]);
   return `
-  <section class="block">
-    <div class="section-title"><h2>${c.nuevo?"Nueva empresa":"Editar empresa"}</h2></div>
-    <div class="card pad">
+  <section class="block"><div class="card pad">
+    <div style="text-align:center">
+    <span class="eyebrow">${tx("Empresa contratista")}</span>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${c.nuevo?tx("Nueva empresa"):esc(c.empresa||tx("Editar empresa"))}</h2>
+    </div>
       <label class="f"><span class="lb">${tx("Empresa / contratista")}</span>
         <input type="text" value="${esc(c.empresa)}" oninput="setC('empresa',this.value)"></label>
       <div class="grid2">
         <label class="f"><span class="lb">${tx("Tarea que realiza")}</span>
           <input type="text" value="${esc(c.tarea)}" oninput="setC('tarea',this.value)"></label>
-        <label class="f"><span class="lb">CUIT</span>
+        <label class="f"><span class="lb">${paisAct().id}</span>
           <input type="text" value="${esc(c.cuit)}" oninput="setC('cuit',this.value)"></label>
       </div>
-      <label class="f"><span class="lb">${tx("Obra / establecimiento")}</span>
-        <input type="text" value="${esc(c.obra)}" oninput="setC('obra',this.value)"></label>
+      ${campoOtro("Dirección",direccionesDocs(),c.obra||"","cDirOtro","v=>setC('obra',v)","Escribí la dirección")}
       <div class="grid2">
         <label class="f"><span class="lb">${tx("Fecha de ingreso")}</span>
           <input type="date" value="${esc(c.ingreso)}" oninput="setC('ingreso',this.value)"></label>
@@ -5238,7 +5341,7 @@ function vDocEdit(c){
     ${docs.map(x=>{ const d=(c.docs||{})[x.k]||{estado:"Pendiente"}; const e=estadoDoc(d);
       return `<div class="item" style="border-left:4px solid ${e.c};padding-left:10px">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-          <b class="small">${esc(x.l)}</b>
+          <b class="small">${esc(tx(x.l))}</b>
           <span class="pill" style="border-color:${e.c};color:${e.c};flex:none">${esc(tx(e.t))}</span>
         </div>
         <div class="grid2" style="margin-top:8px">
@@ -5988,6 +6091,20 @@ let TPL = TPL_ES;
    argentina, que no aplica fuera del país.
    ============================================================ */
 const DIC = {
+"Certificado de seguro (COI)":["Certificate of Insurance (COI)","Certificado de Seguro (COI)"],
+"Póliza de compensación laboral (Workers' Comp)":["Workers' Compensation policy","Apólice de Compensação Trabalhista (Workers' Comp)"],
+"Póliza de responsabilidad civil general (General Liability)":["General Liability policy","Apólice de Responsabilidade Civil Geral (General Liability)"],
+"Responsabilidad civil de vehículos comerciales (Auto Liability)":["Commercial Auto Liability","Responsabilidade Civil de Veículos Comerciais (Auto Liability)"],
+"Póliza paraguas / de exceso (Umbrella)":["Umbrella / Excess Liability","Apólice Guarda-chuva / Excedente (Umbrella)"],
+"Endoso de renuncia a subrogación (Waiver of Subrogation)":["Waiver of Subrogation endorsement","Endosso de Renúncia à Sub-rogação (Waiver of Subrogation)"],
+"Endoso de asegurado adicional (Additional Insured)":["Additional Insured endorsement","Endosso de Segurado Adicional (Additional Insured)"],
+"Carta del índice de modificación por experiencia (EMR)":["EMR letter (Experience Modification Rate)","Carta do Índice de Modificação por Experiência (EMR)"],
+"Registros OSHA 300 / 300A":["OSHA 300 / 300A logs","Registros OSHA 300 / 300A"],
+"Plan de seguridad específico del sitio":["Site-Specific Safety Plan","Plano de Segurança Específico do Local"],
+"Registros de capacitación (OSHA 10/30, persona competente)":["Training records (OSHA 10 / 30, competent person)","Registros de Treinamento (OSHA 10/30, pessoa competente)"],
+"Hojas de datos de seguridad (SDS)":["Safety Data Sheets (SDS)","Fichas de Dados de Segurança (SDS)"],
+"Formulario W-9 / habilitación comercial":["W-9 / business license","Formulário W-9 / licença comercial"],
+"Nómina de personal en el sitio":["Crew roster on site","Lista de pessoal no local"],
 "Persona agregada. El correo no salió":["Person added. The email didn't go out","Pessoa adicionada. O e-mail não saiu"],
 "Podés pasarle el código directamente.":["You can share the code directly.","Você pode passar o código diretamente."],
 "Documento de identidad":["Social Security Number (SSN)","Documento de identidade"],
@@ -10663,9 +10780,9 @@ function panelResumen(){
   ${acc.length?`<section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Plan de acción")}</div>
     <div class="kpis">
-      <div class="kpi"><b>${acc.length}</b><span class="tiny muted">${tx("Totales")}</span></div>
-      <div class="kpi"><b style="color:${ab?"var(--warn)":"var(--ok)"}">${ab}</b><span class="tiny muted">${tx("Abiertas")}</span></div>
-      <div class="kpi"><b style="color:${vencidas?"var(--no)":"inherit"}">${vencidas}</b><span class="tiny muted">${tx("Vencidas")}</span></div>
+      <button class="kpi" onclick="P.accFiltro='todas';go('acciones')"><b>${acc.length}</b><span class="tiny muted">${tx("Totales")}</span></button>
+      <button class="kpi" onclick="P.accFiltro='abiertas';go('acciones')"><b style="color:${ab?"var(--warn)":"var(--ok)"}">${ab}</b><span class="tiny muted">${tx("Abiertas")}</span></button>
+      <button class="kpi" onclick="P.accFiltro='abiertas';go('acciones')"><b style="color:${vencidas?"var(--no)":"inherit"}">${vencidas}</b><span class="tiny muted">${tx("Vencidas")}</span></button>
     </div>
     <button class="btn soft sm" style="margin-top:10px" onclick="go('acciones')">${tx("Ver el plan de acción")}</button>
   </div></section>`:""}`;
@@ -11246,7 +11363,7 @@ function hojasSeccionPanel(sec){
         return f;
       });
       hoja(tx("Contratistas"), tx("Documentación de empresas contratistas"),
-        ["Empresa","Tarea","CUIT","Obra","Contacto","E-mail","Teléfono","ART","Tel. ART",
+        ["Empresa","Tarea","CUIT","Dirección","Contacto","E-mail","Teléfono","ART","Tel. ART",
           "Responsable H&S","E-mail responsable","Ingreso","Salida"]
           .concat([].concat.apply([],docsStd().map(x=>[x.l+" · estado", x.l+" · vence"]))), filas);
     }
@@ -11422,7 +11539,7 @@ function exportarExcel(){
       return f;
     });
     hoja(tx("Contratistas"), tx("Documentación de empresas contratistas"),
-      ["Empresa","Tarea","CUIT","Obra","Contacto","E-mail","Teléfono","ART","Tel. ART",
+      ["Empresa","Tarea","CUIT","Dirección","Contacto","E-mail","Teléfono","ART","Tel. ART",
         "Responsable H&S","E-mail responsable","Ingreso","Salida"]
         .concat([].concat.apply([],docsStd().map(x=>[x.l+" · estado", x.l+" · vence"]))), filas);
   }
@@ -12372,6 +12489,32 @@ const PARTE_MOTIVOS = [
   "Agresión verbal o física a un compañero",
   "Presentarse en condiciones no aptas para la tarea"
 ];
+/* mismos 16 motivos de arriba, agrupados por tema para el desplegable
+   de la sección Motivo (cada sección se abre y cierra por separado) */
+const PARTE_MOTIVOS_SECC = [
+  {t:"EPP y elementos de protección", ic:"🦺", items:[
+    "No uso de los elementos de protección personal",
+    "Uso de EPP en mal estado o inadecuado",
+    "Retirar o dañar un elemento de seguridad"]},
+  {t:"Máquinas, equipos y tareas de riesgo", ic:"⚙️", items:[
+    "Trabajo en altura sin protección contra caídas",
+    "Anulación o retiro de un resguardo de máquina",
+    "Operar un equipo sin habilitación"]},
+  {t:"Permisos y procedimientos de trabajo", ic:"📋", items:[
+    "Trabajo sin permiso de trabajo habilitado",
+    "Incumplimiento del bloqueo y etiquetado (LOTO)"]},
+  {t:"Circulación, accesos y señalización", ic:"🚧", items:[
+    "Circular a velocidad excesiva o maniobra peligrosa",
+    "Ingreso a un sector restringido sin autorización",
+    "No respetar la señalización o el vallado"]},
+  {t:"Orden, limpieza y reportes", ic:"🧹", items:[
+    "Desorden o falta de limpieza en el puesto",
+    "No reportar un incidente o un daño"]},
+  {t:"Conducta y comportamiento", ic:"🚫", items:[
+    "Fumar en un sector prohibido",
+    "Agresión verbal o física a un compañero",
+    "Presentarse en condiciones no aptas para la tarea"]}
+];
 
 function nuevoParte(){
   const e = S.empresa||{};
@@ -12380,7 +12523,7 @@ function nuevoParte(){
     trabajador:"", dni:"", puesto:"", sector:"",
     supervisor:"", motivos:[], detalle:"", medidasTomadas:"", reincidencia:"No",
     responsable:e.responsable||"", matricula:"",
-    firma:null, firma2:null };
+    firma:null, firma2:null, com:{} };
 }
 function editarParte(id){
   const r = (S.parte||[]).find(x=>x.id===id);
@@ -12488,13 +12631,16 @@ function filaParteHist(r){
 function vParteEdit(){
   if(!P.draft || P.draft.tipo!=="parte") nuevoParte();
   const d = P.draft, e = S.empresa||{};
+  d.com = d.com || {};
   const f = (k,l,t) => `<label class="f"><span class="lb">${tx(l)}</span>
     <input type="${t||"text"}" value="${esc(d[k]||"")}" oninput="P.draft.${k}=this.value"></label>`;
   const nomina = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||""));
   return `
   <section class="block"><div class="card pad">
+    <div style="text-align:center">
     <span class="eyebrow">${esc(e.razon||tx("Empresa"))}${e.obra?" · "+esc(e.obra):""}</span>
     <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${tx("Parte de acción disciplinaria")}</h2>
+    </div>
     <div class="grid2">${f("fecha","Fecha","date")}${f("hora","Hora","time")}</div>
 
     <div class="grp">${tx("Medida")}</div>
@@ -12542,8 +12688,22 @@ function vParteEdit(){
     <div class="section-title"><h2>${tx("Motivo")}</h2></div>
     <div class="card pad">
       <p class="small muted" style="margin:0 0 10px">${tx("Marcá todos los que correspondan.")}</p>
-      ${PARTE_MOTIVOS.map(m=>`<label class="chk"><input type="checkbox" ${d.motivos.indexOf(m)>=0?"checked":""}
-        onchange="parteMotivo('${m.replace(/'/g,"\\'")}')"><span>${tx(m)}</span></label>`).join("")}
+      ${PARTE_MOTIVOS_SECC.map(sec=>{
+        const abierto = histAbierto("pm:"+sec.t, false);
+        const marcados = sec.items.filter(m=>d.motivos.indexOf(m)>=0).length;
+        return `<div class="acc" data-open="${abierto?1:0}" style="margin-bottom:10px">
+          <div class="acc-h" onclick="toggleHist('pm:${sec.t}', ${abierto})">
+            <span class="acc-ic">${sec.ic}</span>
+            <span class="acc-t">${tx(sec.t)}</span>
+            ${marcados?`<span class="tiny muted" style="flex:none;margin-right:2px">${marcados}</span>`:""}
+            <span class="acc-ch">›</span>
+          </div>
+          <div class="acc-body">
+            ${sec.items.map(m=>`<label class="chk"><input type="checkbox" ${d.motivos.indexOf(m)>=0?"checked":""}
+              onchange="parteMotivo('${m.replace(/'/g,"\\'")}')"><span>${tx(m)}</span></label>`).join("")}
+          </div>
+        </div>`;
+      }).join("")}
       <label class="f" style="margin-top:12px"><span class="lb">${tx("Detalle de lo sucedido")}</span>
         <textarea oninput="P.draft.detalle=this.value" placeholder="${tx("Qué pasó, dónde y en qué momento…")}">${esc(d.detalle||"")}</textarea></label>
       <label class="f"><span class="lb">${tx("Medidas tomadas en el momento")}</span>
@@ -12561,6 +12721,9 @@ function vParteEdit(){
       <div class="grp">${tx("Firma del responsable")}</div>
       <canvas class="sig" id="sig2"></canvas>
       <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig2','firma2')">${tx("Borrar firma")}</button>
+      <p class="tiny muted" style="margin:10px 0 0">${tx("¿El responsable no está acá? Pedile la firma a distancia: la va a poder hacer desde su propio celular.")}</p>
+      ${d.com.pedidoFirmaResp?estadoPedidoFirma(d.com.pedidoFirmaResp,"Resp"):
+        `<button class="btn soft sm" style="margin-top:8px" onclick="pedirFirma('Resp','parte')">${tx("Pedir firma")}</button>`}
     </div>
   </section>
 
@@ -12618,6 +12781,18 @@ function vVerParte(){
       </div>
     </div>
   </div></section>
+  ${(()=>{ const pResp = r.com && r.com.pedidoFirmaResp, faltaResp = pResp && !r.firma2;
+    return faltaResp?`<section class="block">
+    <div class="card pad" style="border:1.5px solid var(--primary)">
+      <div class="grp" style="margin-top:0">✍️ ${tx("Falta tu firma")}${pResp.para?" · "+esc(pResp.para):""}</div>
+      <p class="tiny muted" style="margin:0 0 8px">${tx("Te pidieron que firmes este parte como responsable. Firmá abajo y guardá.")}</p>
+      <canvas class="sig" id="sigFirmaParteResp"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ghost sm" onclick="limpiarFirmaVerInv('sigFirmaParteResp','vfParteResp')">${tx("Borrar")}</button>
+        <button class="btn sm" onclick="guardarFirmaVerParte()">${tx("Guardar firma")}</button>
+      </div>
+    </div>
+  </section>`:""; })()}
   ${barraCompartir("parte", r.id)}
   <div style="height:10px"></div>`;
 }
@@ -12649,10 +12824,18 @@ const AGUA_TIT = { muestra:"Análisis de agua potable", disp:"Verificación de d
 function nuevaAgua(clase){
   const e = S.empresa||{};
   P.draft = clase==="disp"
-    ? { id:uid(), tipo:"agua", clase:"disp", fecha:hoy(), responsable:e.responsable||"", obs:"",
-        equipos:[], firma:null }
+    ? { id:uid(), tipo:"agua", clase:"disp", fecha:hoy(), direccion:e.direccion||"", responsable:e.responsable||"", obs:"",
+        equipos:[], firma:null, com:{} }
     : { id:uid(), tipo:"agua", clase:"muestra", fecha:hoy(), direccion:e.direccion||"",
-        laboratorio:"", responsable:e.responsable||"", obs:"", muestras:[], firma:null };
+        laboratorio:"", responsable:e.responsable||"", obs:"", muestras:[], firma:null, com:{} };
+}
+/* direcciones ya usadas en registros de agua anteriores, más la de la
+   empresa, para armar el desplegable sin tener que escribirla de nuevo */
+function direccionesAgua(){
+  const e = S.empresa||{};
+  const usadas = (S.agua||[]).map(r=>r.direccion).filter(Boolean);
+  const todas = (e.direccion?[e.direccion]:[]).concat(usadas);
+  return Array.from(new Set(todas));
 }
 function editarAgua(id){
   const r = (S.agua||[]).find(x=>x.id===id);
@@ -12761,19 +12944,18 @@ function filaAguaHist(r){
 function vAguaEdit(){
   if(!P.draft || P.draft.tipo!=="agua") nuevaAgua("muestra");
   const d = P.draft, e = S.empresa||{};
+  d.com = d.com || {};
   const cab = `
   <section class="block"><div class="card pad">
+    <div style="text-align:center">
     <span class="eyebrow">${esc(e.razon||tx("Empresa"))}${e.obra?" · "+esc(e.obra):""}</span>
     <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${tx(AGUA_TIT[d.clase])}</h2>
-    <div class="grid2">
-      <label class="f"><span class="lb">${tx("Fecha")}</span>
-        <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
-      <label class="f"><span class="lb">${tx("Responsable")}</span>
-        <input type="text" value="${esc(d.responsable||"")}" oninput="P.draft.responsable=this.value"></label>
     </div>
+    <label class="f"><span class="lb">${tx("Fecha")}</span>
+      <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
+    ${campoPersonaIper("Responsable",d.responsable,"aguaRespOtro","v=>P.draft.responsable=v")}
+    ${campoOtro("Dirección del establecimiento",direccionesAgua(),d.direccion||"","aguaDirOtro","v=>P.draft.direccion=v","Escribí la dirección")}
     ${d.clase==="muestra"?`
-      <label class="f"><span class="lb">${tx("Dirección del establecimiento")}</span>
-        <input type="text" value="${esc(d.direccion||"")}" oninput="P.draft.direccion=this.value"></label>
       <label class="f"><span class="lb">${tx("Laboratorio")}</span>
         <input type="text" value="${esc(d.laboratorio||"")}" placeholder="${tx("Quién hace el análisis")}"
           oninput="P.draft.laboratorio=this.value"></label>`:""}
@@ -12866,6 +13048,8 @@ function vAguaEdit(){
     <div class="grp">${tx("Firma del responsable")}</div>
     <canvas class="sig" id="sig"></canvas>
     <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig','firma')">${tx("Borrar firma")}</button>
+    ${d.com.pedidoFirmaResp?estadoPedidoFirma(d.com.pedidoFirmaResp,"Resp"):
+      `<button class="btn soft sm" style="margin-top:8px" onclick="pedirFirma('Resp','agua')">${tx("Pedir firma")}</button>`}
   </div></section>
 
   <section class="block noprint">
@@ -12914,6 +13098,18 @@ function vVerAgua(){
     ${r.firma?`<img src="${r.firma}" style="max-height:70px">`:`<div style="height:46px;border-bottom:1px solid var(--line)"></div>`}
     <p class="tiny muted" style="margin:6px 0 0">${tx("Firma del responsable")}${r.responsable?" · "+esc(r.responsable):""}</p>
   </div></section>
+  ${(()=>{ const pResp = r.com && r.com.pedidoFirmaResp, faltaResp = pResp && !r.firma;
+    return faltaResp?`<section class="block">
+    <div class="card pad" style="border:1.5px solid var(--primary)">
+      <div class="grp" style="margin-top:0">✍️ ${tx("Falta tu firma")}${pResp.para?" · "+esc(pResp.para):""}</div>
+      <p class="tiny muted" style="margin:0 0 8px">${tx("Te pidieron que firmes este registro como responsable. Firmá abajo y guardá.")}</p>
+      <canvas class="sig" id="sigFirmaAguaResp"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ghost sm" onclick="limpiarFirmaVerInv('sigFirmaAguaResp','vfAguaResp')">${tx("Borrar")}</button>
+        <button class="btn sm" onclick="guardarFirmaVerAgua()">${tx("Guardar firma")}</button>
+      </div>
+    </div>
+  </section>`:""; })()}
   ${barraCompartir("agua", r.id)}
   <div style="height:10px"></div>`;
 }
