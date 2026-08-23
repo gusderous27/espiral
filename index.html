@@ -3338,21 +3338,43 @@ function nivelIper(g,p){
 
 function nuevaIper(){
   P.draft = {id:uid(), tipo:"iper", fecha:hoy(), area:"", responsable:(S.empresa||{}).responsable||"",
-    revision:"0", tareas:[]};
+    revision:"0", maq:"", actividad:"", cantTareas:"", tareas:[]};
 }
 function editarIper(id){
   const r = (S.iper||[]).find(x=>x.id===id);
   if(!r) return;
   P.draft = JSON.parse(JSON.stringify(r));
+  // compatibilidad con evaluaciones viejas, que guardaban máquina/actividad
+  // por cada tarea: las subimos al encabezado, que es donde se cargan ahora
+  if(!P.draft.maq) P.draft.maq = (P.draft.tareas[0]||{}).maq || "";
+  if(!P.draft.actividad) P.draft.actividad = (P.draft.tareas[0]||{}).actividad || "";
+  P.draft.cantTareas = P.draft.tareas.length || "";
   go("iperEdit");
 }
 function addTarea(){
-  P.draft.tareas.push({id:uid(), maq:"", eventos:"N", actividad:"", desc:"", riesgos:[]});
+  P.draft.tareas.push({id:uid(), eventos:"N", desc:"", riesgos:[]});
+  P.draft.cantTareas = P.draft.tareas.length;
   render();
 }
 function delTarea(i){
   if(!gate("¿Eliminar esta tarea con todos sus riesgos?", ()=>delTarea(i))) return;
-  P.draft.tareas.splice(i,1); render();
+  P.draft.tareas.splice(i,1);
+  P.draft.cantTareas = P.draft.tareas.length || "";
+  render();
+}
+/* pregunta "cantidad de tareas del puesto" y arma (o recorta) la lista */
+function ajustarCantTareas(v){
+  const d = P.draft;
+  const n = Math.max(0, Math.min(30, parseInt(v,10)||0));
+  if(n < d.tareas.length){
+    const sobran = d.tareas.slice(n);
+    const tieneDatos = sobran.some(t=>(t.desc||"").trim() || t.riesgos.length);
+    if(tieneDatos && !gate(tx("Vas a borrar tareas que ya tienen datos cargados. ¿Continuar?"), ()=>ajustarCantTareas(v))) return;
+  }
+  d.cantTareas = n || "";
+  while(d.tareas.length < n) d.tareas.push({id:uid(), eventos:"N", desc:"", riesgos:[]});
+  if(d.tareas.length > n) d.tareas = d.tareas.slice(0,n);
+  render();
 }
 function setT(i,k,v){ P.draft.tareas[i][k]=v; }
 function setRg(ti,ri,k,v){
@@ -3360,6 +3382,85 @@ function setRg(ti,ri,k,v){
   if(k==="g"||k==="p"){ const y=window.scrollY; render(); window.scrollTo(0,y); }
 }
 function delRiesgo(ti,ri){ P.draft.tareas[ti].riesgos.splice(ri,1); render(); }
+/* colorea gravedad/probabilidad con el mismo criterio semáforo del nivel de riesgo */
+function colorEscalaIper(v, tipo){
+  v = parseInt(v,10); if(!v) return "";
+  if(tipo==="g") return v>=9?"#A11B1B":v>=4?"#F5A524":"#3FA34D";
+  return v>=8?"#A11B1B":v>=6?"#D64545":v>=5?"#F5A524":"#3FA34D";
+}
+function areasIper(){
+  const s = new Set();
+  (S.personal||[]).forEach(p=>{ if(p.area) s.add(p.area); });
+  (S.iper||[]).forEach(r=>{ if(r.area) s.add(r.area); });
+  return Array.from(s).sort((a,b)=>a.localeCompare(b,"es"));
+}
+/* desplegable de área/local con opción "Otro" */
+function campoAreaIper(valor){
+  const lista = areasIper();
+  const otro = !!(P.iperAreaOtro || (valor && !lista.includes(valor)));
+  return `<label class="f"><span class="lb">${tx("Área / local")}</span>
+    <select onchange="if(this.value==='__otro__'){P.iperAreaOtro=true;}else{P.iperAreaOtro=false;P.draft.area=this.value;}render()">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${lista.map(a=>`<option value="${esc(a)}" ${(!otro && valor===a)?"selected":""}>${esc(a)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx("Especificá el área o local")}</span>
+      <input type="text" value="${esc(valor)}" oninput="P.draft.area=this.value" autofocus></label>`:""}`;
+}
+/* desplegable genérico de personal (con "Otro") reutilizable en cualquier campo de responsable */
+function campoPersonaIper(label, valor, otroKey, setterFn){
+  const lista = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es")).map(p=>p.nombre).filter(Boolean);
+  const otro = !!(P[otroKey] || (valor && !lista.includes(valor)));
+  return `<label class="f"><span class="lb">${tx(label)}</span>
+    <select onchange="if(this.value==='__otro__'){P['${otroKey}']=true;}else{P['${otroKey}']=false;(${setterFn})(this.value);}render()">
+      <option value="">${tx("Seleccionar…")}</option>
+      ${lista.map(n=>`<option value="${esc(n)}" ${(!otro && valor===n)?"selected":""}>${esc(n)}</option>`).join("")}
+      <option value="__otro__" ${otro?"selected":""}>${tx("Otro")}</option>
+    </select></label>
+    ${otro?`<label class="f"><span class="lb">${tx("Especificá el nombre")}</span>
+      <input type="text" value="${esc(valor)}" oninput="(${setterFn})(this.value)" autofocus></label>`:""}`;
+}
+/* modal de referencia: tablas de gravedad, probabilidad y nivel de riesgo */
+function abrirTablasIper(){
+  const probsAsc = GRAV_IPER && PROB_IPER ? PROB_IPER.slice().reverse() : [];
+  const th = "padding:6px 8px;border:1px solid rgba(255,255,255,.25);background:#1e293b;color:#fff;font-size:11px";
+  const td = "padding:6px 8px;border:1px solid var(--line);font-size:11.5px;line-height:1.3";
+  const ov = document.createElement("div");
+  ov.className = "modal";
+  ov.innerHTML = `<div class="mcard" style="text-align:left;max-height:86vh;overflow:auto;max-width:480px">
+    <div class="grp" style="margin:0 0 6px">${tx("Cómo evaluar gravedad y probabilidad")}</div>
+    <p class="small muted" style="margin:0 0 12px">${tx("Elegí un valor de gravedad y uno de probabilidad para cada riesgo; el sistema cruza ambos y calcula el nivel de riesgo solo.")}</p>
+    <div class="grp">${tx("Gravedad")}</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      ${GRAV_IPER.map(x=>`<tr><td style="${td};font-weight:600;white-space:nowrap">${esc(tx(x.l))}</td><td style="${td}">${esc(tx(x.d))}</td></tr>`).join("")}
+    </table>
+    <div class="grp">${tx("Probabilidad")}</div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      ${PROB_IPER.map(x=>`<tr><td style="${td};font-weight:600;white-space:nowrap">${esc(tx(x.l))}</td><td style="${td}">${esc(tx(x.d))}</td></tr>`).join("")}
+    </table>
+    <div class="grp">${tx("Nivel de riesgo (gravedad × probabilidad)")}</div>
+    <div style="overflow-x:auto">
+    <table style="border-collapse:collapse;font-size:10.5px;text-align:center">
+      <tr><th style="${th}"></th>${probsAsc.map(p=>`<th style="${th}">${esc(tx(p.l))}</th>`).join("")}</tr>
+      ${GRAV_IPER.map(g=>`<tr><th style="${th};text-align:left">${esc(tx(g.l))}</th>
+        ${probsAsc.map(p=>{const n=nivelIper(g.v,p.v);return `<td style="padding:6px 8px;border:1px solid var(--line);background:${n.c};color:#fff;font-weight:700">${esc(tx(n.t))}<br>${n.s}</td>`;}).join("")}</tr>`).join("")}
+    </table>
+    </div>
+    <button class="btn ghost" style="margin-top:12px" onclick="this.closest('.modal').remove()">${tx("Cerrar")}</button>
+  </div>`;
+  document.body.appendChild(ov);
+}
+/* 4.4 · avisa al admin cuando se completa una evaluación de riesgos, sin
+   generar una notificación por cada medida de control (serían demasiadas) */
+function notifIperNueva(d){
+  S.notifEventos = S.notifEventos || [];
+  S.notifEventos.unshift({
+    id: uid(), tipo: "iperNueva", emp: S.activa,
+    puesto: d.maq || d.area || "", iperId: d.id,
+    ts: new Date().toISOString(), leida: false
+  });
+  if(S.notifEventos.length>50) S.notifEventos = S.notifEventos.slice(0,50);
+}
 function abrirPeligros(ti){
   const cats = Object.keys(PELIGROS);
   const ov = document.createElement("div");
@@ -3415,23 +3516,37 @@ function vIperEdit(){
   const d = P.draft;
   const conteo = {};
   d.tareas.forEach(t=>t.riesgos.forEach(r=>{const n=nivelIper(r.g,r.p); if(n) conteo[n.t]=(conteo[n.t]||0)+1;}));
+  const tareasCompletas = d.tareas.filter(t=>t.riesgos.length && t.riesgos.every(r=>r.g&&r.p)).length;
   return `
   <section class="block"><div class="card pad">
     <span class="eyebrow">${tx("registro de la evaluación de riesgos")}</span>
     <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">${tx("📊 Matriz de riesgos")}</h2>
+    <p class="small muted" style="margin:6px 0 0;line-height:1.4">${tx("Identificá los peligros de un puesto de trabajo, evaluá su riesgo (gravedad × probabilidad) y definí qué medida de control tomar para cada uno. Se basa en la metodología de análisis de riesgo por tarea (JSA/IPER).")}</p>
+    ${d.tareas.length?`<div class="tiny muted" style="margin-top:10px;display:flex;align-items:center;gap:8px">
+      <span>📍 ${tx("Progreso")}: ${tareasCompletas} / ${d.tareas.length} ${tx("tareas evaluadas")}</span>
+    </div>
+    <div style="height:8px;background:var(--line);border-radius:5px;overflow:hidden;margin-top:4px">
+      <div style="height:100%;width:${d.tareas.length?Math.round(tareasCompletas/d.tareas.length*100):0}%;background:var(--ok);transition:width .3s"></div>
+    </div>`:""}
     <div class="grid2" style="margin-top:12px">
-      <label class="f"><span class="lb">${tx("Área / local")}</span>
-        <input type="text" value="${esc(d.area)}" oninput="P.draft.area=this.value"></label>
-      <label class="f"><span class="lb">${tx("Fecha de elaboración")}</span>
+      ${campoAreaIper(d.area)}
+      <label class="f"><span class="lb">${tx("Fecha de evaluación")}</span>
         <input type="date" value="${d.fecha}" oninput="P.draft.fecha=this.value"></label>
     </div>
     <div class="grid2">
-      <label class="f"><span class="lb">${tx("Responsable del análisis")}</span>
-        <input type="text" value="${esc(d.responsable)}" oninput="P.draft.responsable=this.value"></label>
+      ${campoPersonaIper("Responsable del análisis", d.responsable, "iperRespAnalisisOtro", "v=>P.draft.responsable=v")}
       <label class="f"><span class="lb">${tx("N.º de revisión")}</span>
         <input type="text" value="${esc(d.revision)}" oninput="P.draft.revision=this.value"></label>
     </div>
-    ${Object.keys(conteo).length?`<div class="opts">${["Muy alto","Alto","Medio","Bajo","Muy bajo"].filter(k=>conteo[k]).map(k=>{
+    <label class="f"><span class="lb">${tx("Máquina / equipo / operación / puesto")}</span>
+      <input type="text" value="${esc(d.maq)}" oninput="P.draft.maq=this.value" placeholder="${tx("Ej.: Autoelevador, línea de ensamblaje, playa de maniobras")}"></label>
+    <label class="f"><span class="lb">${tx("Actividad del puesto")}</span>
+      <input type="text" value="${esc(d.actividad)}" oninput="P.draft.actividad=this.value"></label>
+    <p class="tiny muted" style="margin:-6px 2px 10px">${tx("Qué se hace en este puesto, en términos generales (por ejemplo: armado de pedidos, soldadura, manejo de autoelevador). Vale para todas las tareas de esta evaluación, no hace falta repetirlo en cada una.")}</p>
+    <label class="f"><span class="lb">${tx("Cantidad de tareas del puesto")}</span>
+      <input type="number" min="0" max="30" value="${d.cantTareas}" onchange="ajustarCantTareas(this.value)" placeholder="${tx("¿Cuántos pasos o tareas tiene este puesto?")}"></label>
+    <p class="tiny muted" style="margin:-6px 2px 0">${tx("Al poner un número se arman automáticamente los bloques de tarea de abajo, para completar uno por uno.")}</p>
+    ${Object.keys(conteo).length?`<div class="opts" style="margin-top:12px">${["Muy alto","Alto","Medio","Bajo","Muy bajo"].filter(k=>conteo[k]).map(k=>{
       const c = nivelIper(k==="Muy alto"?9:k==="Alto"?9:k==="Medio"?4:k==="Bajo"?1:1, k==="Muy alto"?8:k==="Alto"?5:k==="Medio"?6:k==="Bajo"?6:1).c;
       return `<span class="opt" data-on="1" style="background:${c};border-color:${c};color:#fff">${k}: ${conteo[k]}</span>`;}).join("")}</div>`:""}
   </div></section>
@@ -3439,43 +3554,44 @@ function vIperEdit(){
   ${d.tareas.map((t,i)=>`
   <section class="block"><div class="card pad">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <div class="grp" style="margin-top:0">Tarea ${i+1}</div>
+      <div class="grp" style="margin-top:0">${tx("Tarea")} ${i+1} ${tx("de")} ${d.tareas.length}</div>
       <button class="btn ghost sm" style="padding:4px 10px" onclick="delTarea(${i})">${tx("Quitar")}</button>
     </div>
-    <label class="f"><span class="lb">${tx("Máquina / equipo / operación / puesto")}</span>
-      <input type="text" value="${esc(t.maq)}" oninput="setT(${i},'maq',this.value)"></label>
+    <p class="tiny muted" style="margin:0 0 8px">${tx("Describí este paso del puesto y los peligros que tiene, con su gravedad, probabilidad y medida de control.")}</p>
     <div class="grid2">
-      <label class="f"><span class="lb">${tx("Actividad del puesto")}</span>
-        <input type="text" value="${esc(t.actividad)}" oninput="setT(${i},'actividad',this.value)"></label>
+      <label class="f"><span class="lb">${tx("Descripción de la tarea paso a paso")}</span>
+        <textarea oninput="setT(${i},'desc',this.value)" placeholder="${tx("Cada paso en el orden en que se ejecuta")}">${esc(t.desc)}</textarea></label>
       <label class="f"><span class="lb">${tx("¿Eventos ocurridos?")}</span>
         <select onchange="setT(${i},'eventos',this.value)">
-          <option ${t.eventos==="N"?"selected":""}>N</option><option ${t.eventos==="S"?"selected":""}>S</option></select></label>
+          <option value="N" ${t.eventos==="N"?"selected":""}>${tx("No")}</option>
+          <option value="S" ${t.eventos==="S"?"selected":""}>${tx("Sí")}</option></select></label>
     </div>
-    <label class="f"><span class="lb">${tx("Descripción de la tarea paso a paso")}</span>
-      <textarea oninput="setT(${i},'desc',this.value)" placeholder="${tx("Cada paso en el orden en que se ejecuta")}">${esc(t.desc)}</textarea></label>
 
-    ${t.riesgos.map((r,j)=>{const n=nivelIper(r.g,r.p);return `
+    ${t.riesgos.map((r,j)=>{const n=nivelIper(r.g,r.p); const cg=colorEscalaIper(r.g,"g"), cp=colorEscalaIper(r.p,"p");return `
     <div class="item" style="border-left:4px solid ${n?n.c:"var(--line)"};padding-left:10px;margin-top:10px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
         <b class="small">${esc(r.tipo)}</b>
         <button class="btn ghost sm" style="padding:4px 10px;flex:none" onclick="delRiesgo(${i},${j})">×</button>
       </div>
-      <div class="grid2" style="margin-top:8px">
-        <label class="f"><span class="lb">${tx("Gravedad")}</span>
-          <select onchange="setRg(${i},${j},'g',this.value)"><option value="">—</option>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:2px">
+        <button class="btn ghost sm" style="padding:2px 8px;font-size:11px" onclick="abrirTablasIper()">ℹ️ ${tx("Ver tablas de referencia")}</button>
+      </div>
+      <div class="grid2" style="margin-top:4px">
+        <label class="f"><span class="lb">${tx("Gravedad")}${cg?` <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${cg}"></span>`:""}</span>
+          <select onchange="setRg(${i},${j},'g',this.value)" style="${cg?`border-color:${cg}`:""}"><option value="">—</option>
           ${GRAV_IPER.map(x=>`<option value="${x.v}" ${r.g===x.v?"selected":""}>${esc(tx(x.l))}</option>`).join("")}</select></label>
-        <label class="f"><span class="lb">${tx("Probabilidad")}</span>
-          <select onchange="setRg(${i},${j},'p',this.value)"><option value="">—</option>
+        <label class="f"><span class="lb">${tx("Probabilidad")}${cp?` <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${cp}"></span>`:""}</span>
+          <select onchange="setRg(${i},${j},'p',this.value)" style="${cp?`border-color:${cp}`:""}"><option value="">—</option>
           ${PROB_IPER.map(x=>`<option value="${x.v}" ${r.p===x.v?"selected":""}>${esc(tx(x.l))}</option>`).join("")}</select></label>
       </div>
       ${n?`<div style="background:${n.c};color:#fff;border-radius:10px;padding:8px 12px;margin-bottom:10px">
+        <span class="tiny" style="opacity:.85;text-transform:uppercase;letter-spacing:.4px">${tx("Nivel de riesgo")}</span><br>
         <b style="font-family:'Barlow Condensed';font-size:19px;text-transform:uppercase">${esc(tx(n.t))} · ${n.s}</b>
         <div style="font-size:11.5px;opacity:.92;line-height:1.35">${esc(tx(NIVEL_DESC[n.t]))}</div></div>`:""}
       <label class="f"><span class="lb">${tx("Medidas de control / corrección")}</span>
         <textarea oninput="setRg(${i},${j},'ctrl',this.value)" placeholder="${tx("Eliminación, sustitución, control de ingeniería, administrativo o EPP")}">${esc(r.ctrl)}</textarea></label>
       <div class="grid2">
-        <label class="f"><span class="lb">${tx("Responsable")}</span>
-          <input type="text" value="${esc(r.resp)}" oninput="setRg(${i},${j},'resp',this.value)"></label>
+        ${campoPersonaIper("Responsable", r.resp, "iperRespTarea_"+i+"_"+j, "v=>setRg("+i+","+j+",'resp',v)")}
         <label class="f"><span class="lb">${tx("Fecha de implementación")}</span>
           <input type="date" value="${esc(r.fecha)}" oninput="setRg(${i},${j},'fecha',this.value)"></label>
       </div>
@@ -3485,7 +3601,7 @@ function vIperEdit(){
 
   <section class="block noprint">
     <button class="btn ghost" onclick="addTarea()">${tx("+ Agregar tarea")}</button>
-    <button class="btn" style="margin-top:8px" onclick="guardarIper()">${txGuardar("iper","Guardar evaluación")}</button>
+    <button class="btn" style="margin-top:8px" onclick="guardarIper()">${txGuardar("iper","Guardar")}</button>
     <button class="btn ghost" style="margin-top:8px" onclick="P.draft=null;go('iper')">${tx("Salir sin guardar")}</button>
   </section><div style="height:10px"></div>`;
 }
@@ -3495,8 +3611,14 @@ function guardarIper(){
   if(!(d.area||"").trim()) return toast(tx("Poné el área o local evaluado"));
   if(!d.tareas.length) return toast(tx("Agregá al menos una tarea"));
   d.cerrada = new Date().toISOString();
+  // la máquina/actividad se cargan una sola vez, en el encabezado; se replican
+  // en cada tarea para no tocar el resto de la app (Excel, PDF, detalle) que
+  // ya lee esos campos por tarea
+  d.tareas.forEach(t=>{ t.maq = d.maq||""; t.actividad = d.actividad||""; });
   const i = (S.iper||[]).findIndex(x=>x.id===d.id);
+  const esNueva = i<0;
   if(i>=0) S.iper[i]=d; else (S.iper=S.iper||[]).push(d);
+  if(esNueva) notifIperNueva(d);
   guardar(); P.draft=null; toast(tx("Evaluación guardada")); go("verIper", d.id);
 }
 
@@ -3837,6 +3959,10 @@ function notificaciones(){
   accionesTodas().forEach(a=>{
     if(a.hecha || !a.vence) return;
     if(accSeg(a.ref).estado !== "Abierto") return;
+    // las medidas de control de la matriz de riesgos no generan una
+    // notificación por cada una (serían demasiadas); se avisa una sola vez
+    // por evaluación completada, más abajo, y quedan igual en el plan de acción
+    if(a.ref.t==="iper") return;
     const dias = dh(a.vence);
     if(dias===null || dias>NOTI_DIAS) return;
     out.push({
@@ -3873,6 +3999,19 @@ function notificaciones(){
     }));
     out.unshift(...evFsNoti.filter(n=>!n.leida));
     evFsNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+    // 4.4 · una evaluación de riesgos (IPER) completada, sin el detalle
+    // de cada medida de control (eso queda para el plan de acción)
+    const evIper = (S.notifEventos||[]).filter(e=>e.tipo==="iperNueva" && (!e.emp || e.emp===S.activa));
+    const evIperNoti = evIper.map(e=>({
+      tipo:"eventoIper", icono:"📊",
+      titulo: tx("Se completó una evaluación de riesgos") + (e.puesto?" · "+e.puesto:""),
+      sub: tx("Ingresá aquí para verla."),
+      cuando: null, dias: e.leida ? 9998 : -9999,
+      leida: e.leida, eventoId: e.id,
+      ir:()=>{ marcarNotifLeida(e.id); go("verIper", e.iperId); }
+    }));
+    out.unshift(...evIperNoti.filter(n=>!n.leida));
+    evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   }
   return out;
 }
@@ -3887,10 +4026,10 @@ function abrirNoti(){
   cont.id = "notipop";
   cont.className = "notipop";
   const fila = (n, idx) => {
-    const rojo = n.dias<0 && n.tipo!=="eventoIdea";
-    const nuevo = n.tipo==="eventoIdea" && !n.leida;
+    const rojo = n.dias<0 && n.tipo!=="eventoIdea" && n.tipo!=="eventoIper";
+    const nuevo = (n.tipo==="eventoIdea" || n.tipo==="eventoIper") && !n.leida;
     let etq = "";
-    if(n.tipo==="eventoIdea") etq = n.sub||"";
+    if(n.tipo==="eventoIdea" || n.tipo==="eventoIper") etq = n.sub||"";
     else if(n.dias<0) etq = tx("Venció el ")+fecha(n.cuando);
     else if(n.dias===0) etq = tx("Vence hoy");
     else etq = tx("Vence en ")+n.dias+" "+(n.dias===1?tx("día"):tx("días"));
