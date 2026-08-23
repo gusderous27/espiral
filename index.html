@@ -133,6 +133,8 @@ html[data-tema="oscuro"] .grp{color:var(--primary)}
 .verdict .big{font-family:"Barlow Condensed";font-weight:700;font-size:30px;text-transform:uppercase;line-height:1}
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
 .kpi{background:var(--soft);border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center}
+button.kpi{cursor:pointer}
+button.kpi:active{transform:scale(.96);opacity:.85}
 .kpi b{display:block;font-family:"Barlow Condensed";font-size:24px;line-height:1}
 
 /* ---------- firma / foto ---------- */
@@ -1148,6 +1150,9 @@ function comprimir(file, cb){
    NAVEGACIÓN
    ============================================================ */
 const HIST = [];
+/* pila de "adelante": simétrica a HIST, se llena cuando volvemos (botón o swipe)
+   y se vacía apenas se navega a algo nuevo, igual que el atrás/adelante de un navegador */
+const FWD = [];
 const PANT_EDIT = ["form","cap","ptt","inv","entrega","uso","ropa","luxEdit","audEdit","iperEdit",
   "cronoEdit","parteEdit","aguaEdit","audNueva","audArmar","nueva"];
 let SIN_HIST = false;
@@ -1161,6 +1166,7 @@ function go(p, arg){
   if(!SIN_HIST && P.page && P.page !== p){
     HIST.push({p:P.page, verId:P.verId, tpl:P.tpl});
     if(HIST.length > 30) HIST.shift();
+    FWD.length = 0;
   }
   SIN_HIST = false;
   P.page = p;
@@ -1188,10 +1194,22 @@ function volver(){
   /* no volvemos a un formulario a medio llenar: ya no existe el borrador */
   let prev = HIST.pop();
   while(prev && PANT_EDIT.indexOf(prev.p) >= 0) prev = HIST.pop();
+  FWD.push({p:P.page, verId:P.verId, tpl:P.tpl});
+  if(FWD.length > 30) FWD.shift();
   SIN_HIST = true;
   if(!prev) return go("inicio");
   P.tpl = prev.tpl;
   go(prev.p, prev.verId);
+}
+/* "adelante": simétrico a volver(), solo llega hasta donde ya veníamos */
+function avanzar(){
+  const next = FWD.pop();
+  if(!next) return;
+  HIST.push({p:P.page, verId:P.verId, tpl:P.tpl});
+  if(HIST.length > 30) HIST.shift();
+  SIN_HIST = true;
+  P.tpl = next.tpl;
+  go(next.p, next.verId);
 }
 
 function render(){
@@ -1218,6 +1236,7 @@ function render(){
   if(["form","entrega","uso","ropa","inv","cap","luxEdit","audEdit","cronoEdit","parteEdit","aguaEdit","ideaEdit"].indexOf(P.page)>=0){ montarFirma("sig","firma"); montarFirma("sig2","firma2"); }
   if(P.page==="verInv") montarFirmaVerInv();
   if(P.page==="verPtt") montarFirmaVerPtt();
+  if(P.page==="verCrono") montarFirmaVerCrono();
 }
 
 /* ============================================================
@@ -1724,6 +1743,11 @@ function montarFirmaVerPtt(){
   if(r.com && r.com.pedidoFirmaAutoriz && !r.firmaAu) montarFirmaCanvas("sigFirmaPttAutoriz","vfPttAutoriz");
   if(r.com && r.com.pedidoFirmaFin && !r.firmaFin) montarFirmaCanvas("sigFirmaPttFin","vfPttFin");
 }
+/* misma idea, para el cronograma anual (un solo firmante: el responsable) */
+function montarFirmaVerCrono(){
+  const r = (S.crono||[]).find(x=>x.id===P.verId); if(!r) return;
+  if(r.com && r.com.pedidoFirmaResp && !r.firma) montarFirmaCanvas("sigFirmaCronoResp","vfCronoResp");
+}
 function montarFirmaCanvas(id, tmpKey){
   const c = document.getElementById(id); if(!c) return;
   sigAttach(c, canvas => { P.firmaTmp = P.firmaTmp||{}; P.firmaTmp[tmpKey] = canvas.toDataURL("image/png"); });
@@ -1771,6 +1795,26 @@ function guardarFirmaVerPtt(cual){
       const yo = sesionActiva();
       S.notifEventos = S.notifEventos||[];
       S.notifEventos.unshift({id:uid(), tipo:"firmaCompletada", emp:S.activa, invId:r.id, cual:cual, modulo:"ptt",
+        para: yo?(yo.nombre||yo.email):pedido.para, deEmail: pedido.deEmail, ts:new Date().toISOString(), leida:false});
+    }
+  }
+  guardar(); toast(tx("Firma guardada")); render();
+}
+/* misma idea que guardarFirmaVerInv() pero para el cronograma anual */
+function guardarFirmaVerCrono(){
+  const r = (S.crono||[]).find(x=>x.id===P.verId); if(!r) return;
+  const c = document.getElementById("sigFirmaCronoResp");
+  if(!c || !canvasTieneTrazo(c)){ toast(tx("Dibujá tu firma antes de guardar")); return; }
+  const data = c.toDataURL("image/png");
+  r.firma = data;
+  r.com = r.com||{};
+  const pedido = r.com.pedidoFirmaResp;
+  if(pedido){
+    pedido.firmado = true;
+    if(pedido.deEmail){
+      const yo = sesionActiva();
+      S.notifEventos = S.notifEventos||[];
+      S.notifEventos.unshift({id:uid(), tipo:"firmaCompletada", emp:S.activa, invId:r.id, cual:"Resp", modulo:"crono",
         para: yo?(yo.nombre||yo.email):pedido.para, deEmail: pedido.deEmail, ts:new Date().toISOString(), leida:false});
     }
   }
@@ -1992,6 +2036,71 @@ function vHistorialMC(){
   </section>
   <div style="height:10px"></div>`;
 }
+/* ---------- historial: agrupado por tipo, y dentro por mes/semana ---------- */
+const MESES_NOMBRE = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+function labelMes(mesKey){
+  if(!mesKey) return tx("Sin fecha");
+  const p = mesKey.split("-"); const i = parseInt(p[1],10)-1;
+  return `${tx(MESES_NOMBRE[i]||"")} ${p[0]}`;
+}
+function inicioSemana(f){
+  const d = new Date(f+"T00:00:00"); if(isNaN(d.getTime())) return "";
+  const dow = d.getDay(); const diff = dow===0 ? -6 : 1-dow;
+  d.setDate(d.getDate()+diff);
+  return d.toISOString().slice(0,10);
+}
+function labelSemana(lunes){
+  if(!lunes) return tx("Sin fecha");
+  const d1 = new Date(lunes+"T00:00:00"); d1.setDate(d1.getDate()+6);
+  return `${tx("Semana del")} ${fecha(lunes)} ${tx("al")} ${fecha(d1.toISOString().slice(0,10))}`;
+}
+/* agrupa filas (ya ordenadas desc) en meses -> semanas (lunes a domingo), preservando el orden */
+function agruparPorMesSemana(rows){
+  const meses = []; const porMes = {};
+  rows.forEach(r=>{
+    const f = r.fecha || (r.cerrada||"").slice(0,10) || "";
+    const mk = f ? f.slice(0,7) : "";
+    if(!porMes[mk]){ porMes[mk] = {key:mk, label:labelMes(mk), semanas:[], porSemana:{}}; meses.push(porMes[mk]); }
+    const m = porMes[mk];
+    const sk = f ? inicioSemana(f) : "";
+    if(!m.porSemana[sk]){ m.porSemana[sk] = {key:sk, label:labelSemana(sk), rows:[]}; m.semanas.push(m.porSemana[sk]); }
+    m.porSemana[sk].rows.push(r);
+  });
+  return meses;
+}
+function histAbierto(key, def){ return (P.histOpen && P.histOpen[key]!==undefined) ? P.histOpen[key] : def; }
+function toggleHist(key, estaba){ P.histOpen = P.histOpen||{}; P.histOpen[key] = !estaba; render(); }
+/* card colapsable de un tipo de registro, sub-agrupada por mes (colapsable, el más
+   reciente abierto) y por semana (lunes a domingo) para poder ubicar una fecha puntual */
+function bloqueHistTipo(key, icono, nombre, rows, filaFn){
+  if(!rows.length) return "";
+  const abierto = histAbierto("t:"+key, true);
+  const meses = agruparPorMesSemana(rows);
+  return `<div class="acc" data-open="${abierto?1:0}" style="margin-bottom:12px">
+    <div class="acc-h" onclick="toggleHist('t:${key}', ${abierto})">
+      ${icono?`<span class="acc-ic">${icono}</span>`:""}
+      <span class="acc-t">${nombre}</span>
+      <span class="tiny muted" style="flex:none;margin-right:2px">${rows.length}</span>
+      <span class="acc-ch">›</span>
+    </div>
+    <div class="acc-body">
+      ${meses.map((m,i)=>{
+        const mKey = "t:"+key+":"+m.key;
+        const mAbierto = histAbierto(mKey, i===0);
+        const total = m.semanas.reduce((a,s)=>a+s.rows.length,0);
+        return `<div style="${i?"margin-top:14px;padding-top:12px;border-top:1px solid var(--line)":"margin-top:2px"}">
+          <div class="tiny muted" style="font-weight:700;text-transform:uppercase;letter-spacing:.03em;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:2px" onclick="toggleHist('${mKey}', ${mAbierto})">
+            <span>${esc(m.label)} · ${total}</span>
+            <span style="display:inline-block;transition:transform .2s;transform:rotate(${mAbierto?90:0}deg)">›</span>
+          </div>
+          ${mAbierto?m.semanas.map(s=>`
+            <div class="tiny muted" style="margin:10px 2px 4px">${esc(s.label)}</div>
+            ${s.rows.map(filaFn).join("")}`).join(""):""}
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
 function vHistorial(){
   if(S.mundo==="mc") return vHistorialMC();
   if(!S.insp.length && !(S.epp||[]).length && !(S.inv||[]).length && !(S.cap||[]).length && !(S.ptt||[]).length && !(S.lux||[]).length && !(S.aud||[]).length && !(S.crono||[]).length && !(S.parte||[]).length && !(S.agua||[]).length) return `<section class="block"><div class="card empty">
@@ -2019,40 +2128,18 @@ function vHistorial(){
       <span class="small">${tx("Mostrando solo")} <b>${tx("este mes")}</b></span>
       <button class="btn ghost sm" onclick="go('historial')">${tx("Ver todo")}</button>
     </div>`:""}
-    <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Deslizá una fila hacia la izquierda para ver, editar o eliminar.")}</p>
+    <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Deslizá una fila hacia la izquierda para ver, editar o eliminar. Tocá el título de cada sección para desplegarla.")}</p>
     ${!hayResultados?`<div class="card empty"><span class="ic">≡</span>${tx("No hay registros este mes.")}</div>`:""}
-    ${Object.keys(porTpl).map(k=>`
-      <div class="card pad" style="margin-bottom:12px">
-        <div class="grp" style="margin-top:0">${TPL[k].ic} ${esc(TPL[k].nombre)}</div>
-        ${porTpl[k].map(filaHist).join("")}
-      </div>`).join("")}
-    ${invOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("🔎 Investigación de accidentes")}</div>
-      ${invOrd.map(filaInvHist).join("")}</div>`:""}
-    ${audOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("📋 Auditorías mensuales")}</div>
-      ${audOrd.map(filaAudHist).join("")}</div>`:""}
-    ${luxOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("💡 Mediciones de iluminación")}</div>
-      ${luxOrd.map(filaLuxHist).join("")}</div>`:""}
-    ${pttOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("📝 Permisos de trabajo")}</div>
-      ${pttOrd.map(filaPttHist).join("")}</div>`:""}
-    ${capOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("🎓 Capacitaciones")}</div>
-      ${capOrd.map(filaCapHist).join("")}</div>`:""}
-    ${eppOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("EPP y ropa de trabajo")}</div>
-      ${eppOrd.map(filaEppHist).join("")}</div>`:""}
-    ${parOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("⚠️ Partes de acción disciplinaria")}</div>
-      ${parOrd.map(filaParteHist).join("")}</div>`:""}
-    ${croOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("📅 Cronogramas anuales")}</div>
-      ${croOrd.map(filaCronoHist).join("")}</div>`:""}
-    ${aguOrd.length?`<div class="card pad" style="margin-bottom:12px">
-      <div class="grp" style="margin-top:0">${tx("💧 Agua potable")}</div>
-      ${aguOrd.map(filaAguaHist).join("")}</div>`:""}
+    ${Object.keys(porTpl).map(k=>bloqueHistTipo(k, TPL[k].ic, esc(TPL[k].nombre), porTpl[k], filaHist)).join("")}
+    ${bloqueHistTipo("inv", "", esc(tx("🔎 Investigación de accidentes")), invOrd, filaInvHist)}
+    ${bloqueHistTipo("aud", "", esc(tx("📋 Auditorías mensuales")), audOrd, filaAudHist)}
+    ${bloqueHistTipo("lux", "", esc(tx("💡 Mediciones de iluminación")), luxOrd, filaLuxHist)}
+    ${bloqueHistTipo("ptt", "", esc(tx("📝 Permisos de trabajo")), pttOrd, filaPttHist)}
+    ${bloqueHistTipo("cap", "", esc(tx("🎓 Capacitaciones")), capOrd, filaCapHist)}
+    ${bloqueHistTipo("epp", "🦺", esc(tx("EPP y ropa de trabajo")), eppOrd, filaEppHist)}
+    ${bloqueHistTipo("parte", "", esc(tx("⚠️ Partes de acción disciplinaria")), parOrd, filaParteHist)}
+    ${bloqueHistTipo("crono", "", esc(tx("📅 Cronogramas anuales")), croOrd, filaCronoHist)}
+    ${bloqueHistTipo("agua", "", esc(tx("💧 Agua potable")), aguOrd, filaAguaHist)}
   </section>`;
 }
 
@@ -2519,20 +2606,53 @@ function vEntrega(){
 }
 
 /* ---------- 2 · verificación diaria de uso ---------- */
+/* emoji de ayuda visual para cada EPP, en la sección Verificación */
+const EPP_EMOJI = {
+  "Casco de seguridad":"⛑️","Barbijo / cubreboca":"😷","Antiparras":"🥽","Lentes de seguridad":"🥽",
+  "Protección ocular":"🥽","Protección facial / máscara":"🛡️","Protección facial":"🛡️",
+  "Protector auditivo de copa":"🎧","Protector auditivo endoaural":"🎧","Protector auditivo":"🎧",
+  "Protección respiratoria (semimáscara)":"😮‍💨","Protección respiratoria (máscara full face)":"😮‍💨",
+  "Guantes de descarne":"🧤","Guantes de nitrilo":"🧤","Guantes anticorte":"🧤","Guantes dieléctricos":"🧤","Guantes":"🧤",
+  "Mangas anticorte":"💪","Calzado de seguridad":"🥾","Botas de goma":"🥾","Zapato dieléctrico":"🥾",
+  "Chaleco reflectivo":"🦺","Arnés de seguridad":"🧗","Cabo de vida / eslinga":"🪢","Delantal de cuero":"🥼",
+  "Polainas":"🦵","Ropa de trabajo":"👕","Traje de agua / lluvia":"☔","Protector solar":"🧴",
+  "Rodilleras":"🦵","Faja lumbar":"🩹"
+};
+function eppEmoji(nombre){ return EPP_EMOJI[nombre] || "🦺"; }
 function nuevoUso(){
-  P.draft = {id:uid(), tipo:"uso", fecha:hoy(), area:"", epps:EPP_DEFAULT.slice(), filas:[], firma:null};
+  P.draft = {id:uid(), tipo:"uso", fecha:hoy(), filas:[], firma:null};
 }
-function setU(k,v){ P.draft[k]=v; if(k==="area") cargarArea(); }
-function cargarArea(){
-  const a = P.draft.area;
-  const gente = (S.personal||[]).filter(p=>(p.area||"")===a);
-  P.draft.filas = gente.map(p=>({id:p.id, nombre:p.nombre, marcas:{}, obs:""}));
+function setU(k,v){ P.draft[k]=v; }
+/* qué EPP le corresponden a una persona: se toman de su última constancia de
+   entrega (Res. 299/11) -- primero lo tildado como "necesario para el puesto",
+   si no hay, lo que se le entregó. Si nunca se le cargó una entrega, se usa
+   un listado genérico y desde el formulario se puede completar a mano. */
+function eppsParaPersona(pid){
+  const entregas = (S.epp||[]).filter(r=>r.tipo==="entrega" && r.trabajadorId===pid)
+    .slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const e = entregas[0];
+  if(e && e.necesariosL && e.necesariosL.length) return e.necesariosL.slice();
+  if(e && e.items && e.items.length){
+    const prods = Array.from(new Set(e.items.map(i=>(i.prod||"").trim()).filter(Boolean)));
+    if(prods.length) return prods;
+  }
+  return EPP_DEFAULT.slice();
+}
+function agregarPersonaUso(pid){
+  if(!pid) return;
+  if(P.draft.filas.some(f=>f.id===pid)) return toast(tx("Esa persona ya está en la lista"));
+  const p = trab(pid);
+  P.draft.filas.push({id:pid, nombre:p.nombre, area:p.area||"", epps:eppsParaPersona(pid), marcas:{}, obs:""});
   render();
 }
-function toggleEpp(e){
-  const i = P.draft.epps.indexOf(e);
-  if(i>=0) P.draft.epps.splice(i,1); else P.draft.epps.push(e);
-  render();
+function quitarFilaUso(i){ P.draft.filas.splice(i,1); render(); }
+function agregarEppFila(i){
+  modalCampos(tx("Agregar EPP"), [{l:tx("Nombre del EPP")}], v=>{
+    const nombre = (v[0]||"").trim(); if(!nombre) return;
+    const f = P.draft.filas[i]; f.epps = f.epps||[];
+    if(f.epps.indexOf(nombre)<0) f.epps.push(nombre);
+    render();
+  });
 }
 function ciclo(fi, epp){
   const m = P.draft.filas[fi].marcas;
@@ -2543,14 +2663,27 @@ function ciclo(fi, epp){
 function setObsFila(i,v){ P.draft.filas[i].obs = v; }
 function addPersonaSuelta(){
   modalCampos(tx("Agregar persona"), [{l:tx("Nombre y apellido")}], v=>{
-    P.draft.filas.push({id:null, nombre:v[0], marcas:{}, obs:""}); render();
+    P.draft.filas.push({id:null, nombre:v[0], area:"", epps:EPP_DEFAULT.slice(), marcas:{}, obs:""}); render();
+  });
+}
+/* compatibilidad con registros viejos, guardados con un único listado de EPP
+   para todas las filas (d.epps/d.area) en vez de uno por persona */
+function migrarFilasUso(d){
+  d.filas.forEach(f=>{
+    if(!f.epps || !f.epps.length){
+      f.epps = (d.epps && d.epps.length) ? d.epps.slice()
+             : (Object.keys(f.marcas||{}).length ? Object.keys(f.marcas) : EPP_DEFAULT.slice());
+    }
+    if(!f.area) f.area = (f.id ? (trab(f.id).area||"") : "") || d.area || "";
   });
 }
 function vUso(){
   if(!P.draft || P.draft.tipo!=="uso") nuevoUso();
   const d = P.draft;
-  const areas = Array.from(new Set((S.personal||[]).map(p=>p.area).filter(Boolean)));
+  migrarFilasUso(d);
   const faltas = d.filas.reduce((a,f)=>a+Object.values(f.marcas).filter(v=>v==="no").length,0);
+  const yaAgregados = d.filas.map(f=>f.id).filter(Boolean);
+  const disponibles = (S.personal||[]).filter(p=>yaAgregados.indexOf(p.id)<0);
   return `
   <section class="block"><div class="card pad">
     <div style="text-align:center">
@@ -2561,34 +2694,33 @@ function vUso(){
   </div></section>
 
   <section class="block"><div class="card pad">
-    <div class="grid2">
-      <label class="f"><span class="lb">${tx("Fecha")}</span><input type="date" value="${d.fecha}" oninput="setU('fecha',this.value)"></label>
-      <label class="f"><span class="lb">${tx("Área")}</span>
-        <select onchange="setU('area',this.value)">
-          <option value="">${tx("Seleccionar…")}</option>
-          ${areas.map(a=>`<option ${d.area===a?"selected":""}>${esc(a)}</option>`).join("")}
-        </select></label>
-    </div>
-    <div class="grp">${tx("EPP a verificar")}</div>
-    <div class="opts">${EPP_LISTA.map(x=>`<button class="opt" ${d.epps.indexOf(x)>=0?'data-on="1" data-k="ok"':""} onclick="toggleEpp('${x}')">${tx(x)}</button>`).join("")}</div>
+    <label class="f"><span class="lb">${tx("Fecha")}</span><input type="date" value="${d.fecha}" oninput="setU('fecha',this.value)"></label>
+    <div class="grp">${tx("Sumá a quién vas a verificar")}</div>
+    <p class="tiny muted" style="margin:-2px 0 10px">${tx("Al elegir a la persona se completa sola su área y los EPP que le corresponden, según su última entrega Res. 299/11.")}</p>
+    ${disponibles.length?`<div class="grid2">
+      ${selTrabajador("","agregarPersonaUso")}
+    </div>`:""}
+    <button class="btn ghost sm" style="margin-top:10px" onclick="addPersonaSuelta()">${tx("+ Agregar persona que no está en la nómina")}</button>
   </div></section>
 
   ${!d.filas.length?`<section class="block"><div class="card empty">
-    <span class="ic">👷</span>${tx("Elegí un área con personal cargado, o sumá gente a mano.")}
-    <br><button class="btn sm" style="margin-top:12px" onclick="addPersonaSuelta()">${tx("+ Agregar persona")}</button></div></section>`:
+    <span class="ic">👷</span>${tx("Todavía no sumaste a nadie para verificar.")}</div></section>`:
   `<section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Verificación")}</div>
     <p class="tiny muted" style="margin:-2px 0 10px">${tx("Tocá cada EPP: gris sin verificar · verde lo usa · rojo no lo usa · gris oscuro no aplica.")}</p>
     ${d.filas.map((f,i)=>`<div class="item">
-      <b class="small">${esc(f.nombre)}</b>
-      <div class="opts" style="margin-left:0">
-        ${d.epps.map(x=>{const v=f.marcas[x];
-          return `<button class="opt" data-k="${v==="ok"?"ok":v==="no"?"no":v==="na"?"na":""}" data-on="${v?1:0}" onclick="ciclo(${i},'${x}')">${x}</button>`;}).join("")}
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div><b class="small">${esc(f.nombre)}</b>${f.area?`<div class="tiny muted">${esc(f.area)}</div>`:""}</div>
+        <button class="btn ghost sm" style="padding:4px 10px;flex:none" onclick="quitarFilaUso(${i})">${tx("Quitar")}</button>
       </div>
-      <div class="obs" style="margin-left:0"><input type="text" placeholder="${tx("Observaciones")}" value="${esc(f.obs)}" oninput="setObsFila(${i},this.value)"></div>
+      <div class="opts" style="margin-left:0;margin-top:8px">
+        ${(f.epps||[]).map(x=>{const v=f.marcas[x];
+          return `<button class="opt" data-k="${v==="ok"?"ok":v==="no"?"no":v==="na"?"na":""}" data-on="${v?1:0}" onclick="ciclo(${i},'${x}')">${eppEmoji(x)} ${esc(tx(x))}</button>`;}).join("")}
+      </div>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="agregarEppFila(${i})">${tx("+ Agregar EPP a mano")}</button>
+      <div class="obs" style="margin-left:0;margin-top:8px"><input type="text" placeholder="${tx("Observaciones")}" value="${esc(f.obs)}" oninput="setObsFila(${i},this.value)"></div>
     </div>`).join("")}
-    <button class="btn ghost sm" style="margin-top:10px" onclick="addPersonaSuelta()">${tx("+ Agregar persona")}</button>
-  </div></section>
+  </div></section>`}
 
   <section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Firma y aclaración H&S")}</div>
@@ -2599,7 +2731,7 @@ function vUso(){
   <section class="block noprint">
     <button class="btn" onclick="guardarEpp()">${txGuardar("epp","Guardar")}</button>
     <button class="btn ghost" style="margin-top:8px" onclick="P.draft=null;go('inicio')">${tx("Descartar")}</button>
-  </section>`}
+  </section>
   <div style="height:10px"></div>`;
 }
 
@@ -2708,6 +2840,9 @@ function guardarEpp(){
     if(!d.filas.length) return toast(tx("No hay personal cargado en la verificación"));
     d.faltas = d.filas.reduce((a,f)=>a+Object.values(f.marcas).filter(v=>v==="no").length,0);
     d.verificados = d.filas.reduce((a,f)=>a+Object.keys(f.marcas).length,0);
+    /* área "de portada" del registro: la única si todos coinciden, si no una etiqueta genérica */
+    const areasUso = Array.from(new Set(d.filas.map(f=>f.area).filter(Boolean)));
+    d.area = areasUso.length===1 ? areasUso[0] : (areasUso.length>1 ? tx("Varias áreas") : "");
   }
   d.cerrada = new Date().toISOString();
   d.nombreTrab = d.trabajadorId ? nomTrab(d.trabajadorId) : "";
@@ -3108,14 +3243,23 @@ function autosavePttBorrador(){
   d.emp = S.activa;
   upsert("ptt", d);
 }
+/* mismo autoguardado, para el cronograma anual */
+function autosaveCronoBorrador(){
+  if(!P.draft || P.draft.tipo!=="crono") return;
+  const d = P.draft;
+  d.emp = S.activa;
+  upsert("crono", d);
+}
 /* dispara el autoguardado que corresponda según el tipo de borrador activo */
 function autosaveDraftBorrador(){
   if(!P.draft) return;
   if(P.draft.tipo==="inv") autosaveInvBorrador();
   else if(P.draft.tipo==="ptt") autosavePttBorrador();
+  else if(P.draft.tipo==="crono") autosaveCronoBorrador();
 }
 /* campo del borrador donde vive el nombre precargado para cada "cual" de
-   pedido de firma, según el módulo (investigación o permiso de trabajo) */
+   pedido de firma, según el módulo (investigación, permiso de trabajo o
+   cronograma anual) */
 function prefillFirmaPath(modulo, cual){
   if(modulo==="ptt"){
     if(cual==="Ejec") return "resp.ejec";
@@ -3123,6 +3267,7 @@ function prefillFirmaPath(modulo, cual){
     if(cual==="Fin") return "resp.finNombre";
     return "";
   }
+  if(modulo==="crono") return "responsable";
   return cual==="Inv" ? "com.inv" : "com.supervisor";
 }
 /* pedido de firma: en primer lugar es un pedido DENTRO de la app (le llega
@@ -3193,7 +3338,7 @@ function cancelarPedidoFirma(cual){
 function avisarFirmaMail(cual){
   const p = P.draft && P.draft.com && P.draft.com["pedidoFirma"+cual];
   if(!p || !p.email) return;
-  const nombreDoc = p.modulo==="ptt" ? tx("Permiso de trabajo") : tx("Investigación de accidentes e incidentes");
+  const nombreDoc = p.modulo==="ptt" ? tx("Permiso de trabajo") : p.modulo==="crono" ? tx("Cronograma anual") : tx("Investigación de accidentes e incidentes");
   const asunto = tx("Firma pendiente")+" · "+nombreDoc;
   const cuerpo = (p.para?tx("Hola")+" "+p.para+",\n\n":"")
     + tx("Te pedimos que ingreses a la app para revisar y firmar")+" "+nombreDoc.toLowerCase()+"."
@@ -4658,6 +4803,7 @@ function notificaciones(){
   // "módulo" (inv o ptt) dice de qué colección viene el registro y a qué
   // pantalla hay que ir a firmarlo; los eventos viejos sin módulo son de
   // investigación (es lo único que existía cuando se creó este sistema).
+  const pantallaVer = modulo => modulo==="ptt" ? "verPtt" : modulo==="crono" ? "verCrono" : "verInv";
   const evFirma = (S.notifEventos||[]).filter(e=>{
     if(e.tipo!=="firmaPendiente" || (e.emp && e.emp!==S.activa)) return false;
     if(!esParaMi(e.email)) return false;
@@ -4675,7 +4821,7 @@ function notificaciones(){
     sub: tx("Ingresá aquí para firmar."),
     cuando: null, dias: e.leida ? 9998 : -9999,
     leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
-    ir:()=>{ marcarNotifLeida(e.id); go(e.modulo==="ptt"?"verPtt":"verInv", e.invId); }
+    ir:()=>{ marcarNotifLeida(e.id); go(pantallaVer(e.modulo), e.invId); }
   }));
   out.unshift(...evFirmaNoti.filter(n=>!n.leida));
   evFirmaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
@@ -4684,14 +4830,31 @@ function notificaciones(){
     e.tipo==="firmaCompletada" && (!e.emp || e.emp===S.activa) && esParaMi(e.deEmail));
   const evFirmadaNoti = evFirmada.map(e=>({
     tipo:"eventoFirmada", icono:"✅",
-    titulo: (e.modulo==="ptt"?tx("Firmaron el permiso de trabajo"):tx("Firmaron la investigación"))+(e.para?" · "+e.para:""),
+    titulo: (e.modulo==="ptt"?tx("Firmaron el permiso de trabajo"):e.modulo==="crono"?tx("Firmaron el cronograma"):tx("Firmaron la investigación"))+(e.para?" · "+e.para:""),
     sub: tx("Ingresá aquí para verla."),
     cuando: null, dias: e.leida ? 9998 : -9999,
     leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
-    ir:()=>{ marcarNotifLeida(e.id); go(e.modulo==="ptt"?"verPtt":"verInv", e.invId); }
+    ir:()=>{ marcarNotifLeida(e.id); go(pantallaVer(e.modulo), e.invId); }
   }));
   out.unshift(...evFirmadaNoti.filter(n=>!n.leida));
   evFirmadaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+  // 4.8 · capacitación programada con fecha exacta a menos de 7 días: le
+  // avisa a TODA la empresa (no solo a quien la cargó), porque conviene que
+  // todos sepan que se acerca. Si el cronograma solo tiene el mes cargado
+  // (sin día puntual) no se puede calcular la cuenta regresiva, así que no
+  // se avisa hasta que se precise el día.
+  (S.crono||[]).filter(r=>r.clase==="cap" && !r.soloMes && /^\d{4}-\d{2}-\d{2}$/.test(r.fecha||"")).forEach(r=>{
+    const dias = dh(r.fecha);
+    if(dias===null || dias<0 || dias>7) return;
+    out.push({
+      tipo:"cronoCap", icono:"🎓",
+      titulo: tx("Capacitación programada")+(r.sala?" · "+r.sala:""),
+      sub: (dias===0?tx("Es hoy."):dias===1?tx("Es mañana."):tx("Faltan")+" "+dias+" "+tx("días.")),
+      cuando: r.fecha, dias,
+      clave: "cronoCap|"+r.id,
+      ir:()=>go("verCrono", r.id)
+    });
+  });
   // 4.6 · notificaciones que el usuario ya cerró con la crucecita hoy: es
   // un "ya la vi, listo", no un "no me lo muestres nunca más" — si mañana
   // sigue pendiente (el documento sigue vencido, la idea sigue sin leer),
@@ -5069,9 +5232,16 @@ const TEMAS_CAP = [
  "Andamios y escaleras","Permisos de trabajo","Investigación de accidentes e incidentes",
  "Riesgos psicosociales","Uso seguro de máquinas y resguardos","Residuos y cuidado del ambiente"];
 
+const NIVELES_CAP = ["Mandos operativos","Mandos medios","Alta dirección","Todos"];
 function nuevaCap(){
+  /* si hay un cronograma de capacitaciones con participantes previstos, se
+     precarga la lista de asistentes con esa nómina (se puede editar igual) */
+  const previstos = (typeof participantesDeCronoCap==="function" ? participantesDeCronoCap() : []).map(p=>{
+    const t = trab(p.id);
+    return {id:p.id, nombre:p.nombre||t.nombre||"", dni:t.dni||"", legajo:t.legajo||"", puesto:t.puesto||"", firma:null};
+  });
   P.draft = {id:uid(), tipo:"cap", fecha:hoy(), hora:"", duracion:"", instructor:(S.empresa||{}).responsable||"",
-    matricula:"", niveles:"Todos", lugar:"", temas:[], otros:[], descripcion:"", asistentes:[], firma:null};
+    matricula:"", niveles:"Todos", lugar:"", temas:[], otros:[], descripcion:"", asistentes:previstos, firma:null};
 }
 function setCap(k,v){ P.draft[k]=v; }
 function toggleTemaCap(t){
@@ -5181,7 +5351,11 @@ function vCap(){
     </div>
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Duración")}</span><input type="text" value="${esc(d.duracion)}" placeholder="${tx("Ej.: 1 hora")}" oninput="setCap('duracion',this.value)"></label>
-      <label class="f"><span class="lb">${tx("Niveles / destinatarios")}</span><input type="text" value="${esc(d.niveles)}" oninput="setCap('niveles',this.value)"></label>
+      <label class="f"><span class="lb">${tx("Niveles / destinatarios")}</span>
+        <select onchange="setCap('niveles',this.value)">
+          ${NIVELES_CAP.map(x=>`<option ${d.niveles===x?"selected":""}>${esc(tx(x))}</option>`).join("")}
+          ${d.niveles && NIVELES_CAP.indexOf(d.niveles)<0?`<option selected>${esc(d.niveles)}</option>`:""}
+        </select></label>
     </div>
     ${campoOtro("Lugar donde se dictó",lugaresInv(),d.lugar,"capLugarOtro","v=>setCap('lugar',v)","Escribí el lugar")}
     <div class="grid2">
@@ -10913,7 +11087,7 @@ function bloqueUsoEpp(usos){
   const faltasEpp = [], faltasPer = [], porArea = [];
   usos.forEach(r=>r.filas.forEach(f=>Object.keys(f.marcas).forEach(k=>{
     if(f.marcas[k]!=="no") return;
-    faltasEpp.push(k); faltasPer.push(f.nombre); porArea.push(r.area||"Sin área");
+    faltasEpp.push(k); faltasPer.push(f.nombre); porArea.push(f.area||r.area||"Sin área");
   })));
   const total = faltasEpp.length;
   const mesAct = hoy().slice(0,7);
@@ -10965,7 +11139,7 @@ function hojasSeccionPanel(sec){
       const filas = [];
       usos.forEach(r=>r.filas.forEach(f=>{
         const fal = Object.keys(f.marcas).filter(k=>f.marcas[k]==="no");
-        filas.push([fecha(r.fecha), r.area||"", f.nombre, fal.join(", "), fal.length, f.obs||""]);
+        filas.push([fecha(r.fecha), f.area||r.area||"", f.nombre, fal.join(", "), fal.length, f.obs||""]);
       }));
       hoja(tx("Uso diario EPP"), tx("Verificación diaria de uso de EPP"),
         ["Fecha","Área","Trabajador","EPP sin usar","Cantidad de faltas","Observaciones"], filas);
@@ -11797,10 +11971,17 @@ const CRONO_EHS = [
 const CRONO_TIT = { ehs:"Cronograma anual de seguridad e higiene", cap:"Cronograma anual de capacitaciones" };
 function cronoCat(clase){ return clase==="cap" ? TEMAS_CAP.slice() : CRONO_EHS.slice(); }
 
+/* años disponibles para programar: un par para atrás y varios para adelante */
+function aniosCrono(){
+  const base = new Date().getFullYear();
+  const out = []; for(let y=base-2; y<=base+5; y++) out.push(String(y));
+  return out;
+}
 function nuevoCrono(clase){
   const e = S.empresa||{};
   P.draft = { id:uid(), tipo:"crono", clase:clase||"ehs", anio:String(new Date().getFullYear()),
-    fecha:hoy(), responsable:e.responsable||"", filas:[], obs:"", firma:null };
+    soloMes:false, fecha:hoy(), responsable:e.responsable||"", horario:"", direccion:e.direccion||"", sala:"",
+    participantes:[], filas:[], obs:"", firma:null, com:{} };
 }
 function editarCrono(id){
   const r = (S.crono||[]).find(x=>x.id===id);
@@ -11811,6 +11992,7 @@ function borrarCrono(id){
   S.crono = (S.crono||[]).filter(x=>x.id!==id); guardar(); toast(tx("Cronograma eliminado")); go("crono");
 }
 function guardarCrono(){
+  capturarFirmas();
   const d = P.draft;
   if(!d.filas.length) return toast(tx("Agregá al menos una actividad"));
   d.marcas = d.filas.reduce((a,f)=>a+f.m.filter(Boolean).length,0);
@@ -11876,6 +12058,38 @@ function cronoAgregarSel(){
   sel.forEach(cronoAdd);
   cerrarModal(); render(); toast(sel.length+" "+tx("agregadas"));
 }
+/* --- participantes previstos (solo cronograma de capacitaciones): no es
+   obligatorio, pero si se cargan quedan disponibles para precargar la
+   constancia de capacitación recibida cuando se dicte. --- */
+function abrirParticipantesCrono(){
+  const ya = (P.draft.participantes||[]).map(p=>p.id);
+  const lista = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||"","es"));
+  const ov = document.createElement("div");
+  ov.className = "modal";
+  ov.innerHTML = `<div class="mcard" style="text-align:left;max-height:84vh;overflow:auto">
+    <div class="grp" style="margin:0 0 4px">${tx("Personas que participarán")}</div>
+    <p class="small muted" style="margin:0 0 10px">${tx("Opcional. Tildá a quienes deberían asistir.")}</p>
+    ${!lista.length?`<p class="small muted">${tx("Todavía no cargaste la nómina de personal.")}</p>`:
+      `<div id="cplista">${lista.map(p=>`<label class="chk">
+        <input type="checkbox" value="${p.id}" ${ya.indexOf(p.id)>=0?"checked":""}><span>${esc(p.nombre)}${p.area?" · "+esc(p.area):""}</span></label>`).join("")}</div>
+       <button class="btn" style="margin-top:10px" onclick="cronoGuardarParticipantes()">${tx("Listo")}</button>`}
+    <button class="btn ghost" style="margin-top:8px" onclick="cerrarModal()">${tx("Cancelar")}</button>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function cronoGuardarParticipantes(){
+  const sel = Array.from(document.querySelectorAll("#cplista input:checked")).map(i=>i.value);
+  P.draft.participantes = sel.map(id=>({id, nombre: nomTrab(id)}));
+  cerrarModal(); render();
+}
+function quitarParticipanteCrono(i){ P.draft.participantes.splice(i,1); render(); }
+/* qué personas participarán de la próxima capacitación programada, para
+   precargar la constancia de capacitación recibida cuando se la dicta */
+function participantesDeCronoCap(){
+  const cronos = (S.crono||[]).filter(r=>r.clase==="cap" && (r.participantes||[]).length)
+    .slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  return cronos.length ? cronos[0].participantes : [];
+}
 /* --- pantallas --- */
 function vCrono(){
   const lista = (S.crono||[]).slice().sort((a,b)=>(b.cerrada||"").localeCompare(a.cerrada||""));
@@ -11927,18 +12141,45 @@ function cronoGrilla(d, editable){
 function vCronoEdit(){
   if(!P.draft || P.draft.tipo!=="crono") nuevoCrono("ehs");
   const d = P.draft, e = S.empresa||{};
+  d.com = d.com || {};
+  const esCap = d.clase==="cap";
   return `
   <section class="block"><div class="card pad">
+    <div style="text-align:center">
     <span class="eyebrow">${tx(CRONO_TIT[d.clase])}</span>
     <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${esc(e.razon||tx("Empresa"))}</h2>
+    </div>
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Período (año)")}</span>
-        <input type="text" inputmode="numeric" value="${esc(d.anio)}" oninput="P.draft.anio=this.value"></label>
-      <label class="f"><span class="lb">${tx("Fecha")}</span>
-        <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
+        <select onchange="P.draft.anio=this.value">
+          ${aniosCrono().map(a=>`<option ${d.anio===a?"selected":""}>${a}</option>`).join("")}
+          ${d.anio && aniosCrono().indexOf(d.anio)<0?`<option selected>${esc(d.anio)}</option>`:""}
+        </select></label>
+      <label class="f"><span class="lb">${tx(esCap?"Fecha de la capacitación":"Fecha")}</span>
+        ${d.soloMes
+          ? `<input type="month" value="${esc((d.fecha||"").slice(0,7))}" oninput="P.draft.fecha=this.value">`
+          : `<input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value">`}
+      </label>
     </div>
-    <label class="f"><span class="lb">${tx("Responsable")}</span>
-      <input type="text" value="${esc(d.responsable)}" oninput="P.draft.responsable=this.value"></label>
+    <div class="opts" style="margin:-4px 0 10px">
+      <button class="opt" data-on="${d.soloMes?0:1}" data-k="${d.soloMes?"":"ok"}"
+        onclick="P.draft.soloMes=false;P.draft.fecha=(P.draft.fecha&&P.draft.fecha.length===7)?P.draft.fecha+'-01':(P.draft.fecha||hoy());render()">${tx("Día exacto")}</button>
+      <button class="opt" data-on="${d.soloMes?1:0}" data-k="${d.soloMes?"ok":""}"
+        onclick="P.draft.soloMes=true;P.draft.fecha=(P.draft.fecha||hoy()).slice(0,7);render()">${tx("Solo el mes")}</button>
+    </div>
+    ${campoPersonaIper("Responsable",d.responsable,"cronoRespOtro","v=>P.draft.responsable=v")}
+    ${esCap?`
+    <div class="grid2">
+      <label class="f"><span class="lb">${tx("Horario")}</span><input type="time" value="${esc(d.horario)}" oninput="P.draft.horario=this.value"></label>
+      <label class="f"><span class="lb">${tx("Sala / auditorio")}</span><input type="text" value="${esc(d.sala)}" oninput="P.draft.sala=this.value"></label>
+    </div>
+    <label class="f"><span class="lb">${tx("Dirección")}</span><input type="text" value="${esc(d.direccion)}" oninput="P.draft.direccion=this.value"></label>
+    <div class="grp">${tx("Personas que participarán")}</div>
+    ${(d.participantes&&d.participantes.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${d.participantes.map((p,i)=>
+        `<span class="pill" style="cursor:pointer" onclick="quitarParticipanteCrono(${i})">${esc(p.nombre)} ✕</span>`).join("")}</div>`
+      : `<p class="tiny muted" style="margin:0 0 8px">${tx("Opcional: si los cargás, quedan disponibles para precargar la constancia de capacitación recibida.")}</p>`}
+    <button class="btn soft sm" onclick="abrirParticipantesCrono()">${tx("+ Elegir participantes")}</button>
+    `:""}
   </div></section>
 
   <section class="block">
@@ -11965,6 +12206,8 @@ function vCronoEdit(){
       <div class="grp">${tx("Firma del responsable")}</div>
       <canvas class="sig" id="sig"></canvas>
       <button class="btn ghost sm" style="margin-top:8px" onclick="limpiarFirma('sig','firma')">${tx("Borrar firma")}</button>
+      ${d.com.pedidoFirmaResp?estadoPedidoFirma(d.com.pedidoFirmaResp,"Resp"):
+        `<button class="btn soft sm" style="margin-top:8px" onclick="pedirFirma('Resp','crono')">${tx("Pedir firma")}</button>`}
     </div>
   </section>`:""}
 
@@ -11979,15 +12222,23 @@ function vVerCrono(){
   if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró el cronograma.")}</div></section>`;
   const e = S.empresa||{};
   const notas = r.filas.filter(f=>(f.nota||"").trim());
+  const pResp = r.com && r.com.pedidoFirmaResp, faltaResp = pResp && !r.firma;
   return `
   <section class="block"><div class="card pad">
     ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin-bottom:8px">`:""}
     <span class="eyebrow">${esc(e.razon||"")}${e.obra?" · "+esc(e.obra):""}</span>
     <h2 style="font-size:20px;font-weight:700;margin:2px 0 2px">${tx(CRONO_TIT[r.clase])}</h2>
     <p class="small muted" style="margin:0">${tx("Período")} ${esc(r.anio||"")}${r.responsable?" · "+esc(r.responsable):""}</p>
+    ${r.clase==="cap" && (r.fecha||r.horario||r.direccion||r.sala)?`<p class="small muted" style="margin:4px 0 0">
+      ${r.fecha?fecha(r.fecha):""}${r.horario?" · "+esc(r.horario):""}${r.sala?" · "+esc(r.sala):""}${r.direccion?" · "+esc(r.direccion):""}</p>`:""}
   </div></section>
 
   <section class="block"><div class="card pad">${cronoGrilla(r, false)}</div></section>
+
+  ${r.clase==="cap" && (r.participantes||[]).length?`<section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Personas que participarán")}</div>
+    <div class="small">${r.participantes.map(p=>esc(p.nombre)).join(" · ")}</div>
+  </div></section>`:""}
 
   ${notas.length||r.obs?`<section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Observaciones")}</div>
@@ -12000,6 +12251,18 @@ function vVerCrono(){
     ${r.firma?`<img src="${r.firma}" style="max-height:70px">`:`<div style="height:46px;border-bottom:1px solid var(--line)"></div>`}
     <p class="tiny muted" style="margin:6px 0 0">${tx("Firma y aclaración")} · ${fecha(r.fecha)}</p>
   </div></section>
+
+  ${faltaResp?`<section class="block">
+    <div class="card pad" style="border:1.5px solid var(--primary)">
+      <div class="grp" style="margin-top:0">✍️ ${tx("Falta tu firma")}${pResp.para?" · "+esc(pResp.para):""}</div>
+      <p class="tiny muted" style="margin:0 0 8px">${tx("Te pidieron que firmes este cronograma como responsable. Firmá abajo y guardá.")}</p>
+      <canvas class="sig" id="sigFirmaCronoResp"></canvas>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ghost sm" onclick="limpiarFirmaVerInv('sigFirmaCronoResp','vfCronoResp')">${tx("Borrar")}</button>
+        <button class="btn sm" onclick="guardarFirmaVerCrono()">${tx("Guardar firma")}</button>
+      </div>
+    </div>
+  </section>`:""}
   ${barraCompartir("crono", r.id)}
   <div style="height:10px"></div>`;
 }
@@ -13891,6 +14154,29 @@ function swSoltar(){
 }
 document.addEventListener("pointerup", swSoltar, {passive:true});
 document.addEventListener("pointercancel", swSoltar, {passive:true});
+
+/* --- swipe de pantalla completa: deslizar a la derecha = atrás, a la
+   izquierda = adelante, como en una app nativa. Solo con el dedo (no con el
+   mouse) y no interfiere con el swipe de una fila, un modal, el recorte de
+   foto ni el scroll horizontal de algún gráfico. --- */
+let PAG_SW = null;
+document.addEventListener("pointerdown", e=>{
+  if(e.pointerType==="mouse"){ PAG_SW = null; return; }
+  if(SW_ACT){ PAG_SW = null; return; }
+  if(e.target.closest && e.target.closest('.modal,.swfront,.swb,.csel,.hnd,canvas,select,input,textarea,[style*="overflow-x:auto"]')){ PAG_SW = null; return; }
+  PAG_SW = {x:e.clientX, y:e.clientY, t:Date.now()};
+}, {passive:true});
+document.addEventListener("pointerup", e=>{
+  if(!PAG_SW) return;
+  const dx = e.clientX - PAG_SW.x, dy = e.clientY - PAG_SW.y, dt = Date.now() - PAG_SW.t;
+  PAG_SW = null;
+  if(dt > 700) return;
+  if(Math.abs(dx) < 80) return;
+  if(Math.abs(dy) > Math.abs(dx) * 0.6) return;
+  if(document.querySelector(".modal")) return;
+  if(P.page==="login" || P.page==="onboarding") return;
+  if(dx > 0) volver(); else avanzar();
+}, {passive:true});
 
 /* si arrastró o la fila está abierta, el toque no abre el registro */
 document.addEventListener("click", e=>{
