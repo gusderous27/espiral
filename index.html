@@ -10924,6 +10924,93 @@ function menuCompartirInsp(filtro){
   </section>`;
 }
 
+/* misma idea que menuCompartirInsp() pero genérico para cualquier otra
+   pestaña del Panel (resumen, auditorías, EPP, matriz de riesgos,
+   investigación, capacitación, permisos, iluminación, contratistas,
+   partes disciplinarios, ideas) */
+function panelColeccion(sec){ return sec==="ideas" ? (S.idea||[]) : (S[sec]||[]); }
+function textoPanel(sec){
+  const e = S.empresa||{};
+  const secs = panelSecciones();
+  const nombreSec = sec==="resumen" ? tx("Resumen") : esc(tx((secs.find(x=>x.k===sec)||{}).l||sec));
+  let x = (e.razon?e.razon+"\n":"") + nombreSec + "\n" + "-".repeat(28) + "\n";
+  if(sec==="resumen"){
+    secs.filter(s=>s.k!=="resumen").forEach(s=>{ x += esc(tx(s.l))+": "+panelColeccion(s.k).length+"\n"; });
+  } else {
+    x += tx("Registros")+": "+panelColeccion(sec).length+"\n";
+  }
+  const link = (typeof location!=="undefined" && location.origin && location.origin.indexOf("http")===0)
+    ? location.origin + location.pathname : "https://proyectohs.com";
+  x += "\n" + tx("Ver en Espiral") + ": " + link;
+  x += "\n\nGenerado con Proyecto HS";
+  return x;
+}
+function imprimirPanel(sec){
+  const original = document.title;
+  const secs = panelSecciones();
+  const nombreSec = sec==="resumen" ? "Resumen" : ((secs.find(x=>x.k===sec)||{}).l || sec);
+  const limpio = s => String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,50);
+  document.title = "Espiral_" + limpio(nombreSec) + "_" + hoy();
+  const restaurar = () => { document.title = original; window.removeEventListener("afterprint", restaurar); };
+  window.addEventListener("afterprint", restaurar);
+  setTimeout(()=>{ window.print(); setTimeout(restaurar, 1500); }, 60);
+}
+/* botón "Exportar a Excel" del menú: el resumen usa el libro completo de
+   la empresa (una hoja por módulo), cada otra pestaña descarga solo lo suyo */
+function excelPanel(sec){
+  if(sec==="resumen") exportarExcel(); else descargarSeccionPanel(sec);
+}
+/* paquete {nombre, bytes} para adjuntar por mail en cuentas Pro; el resumen
+   no arma paquete acá (ya tiene su propia descarga completa aparte) */
+function paquetePanel(sec){
+  if(sec==="resumen") return null;
+  const e = S.empresa || {};
+  const hojas = hojasSeccionPanel(sec);
+  if(!hojas.length) return null;
+  const bytes = construirLibroXlsx({ empresa:e, hojas });
+  const secs = panelSecciones();
+  const nombreSec = ((secs.find(x=>x.k===sec)||{}).l || sec).toString();
+  return { nombre:"espiral-"+(e.razon||"empresa").replace(/\W+/g,"-").toLowerCase()+"-"+nombreSec.replace(/\W+/g,"-").toLowerCase()+"-"+hoy()+".xlsx", bytes };
+}
+async function mailPanel(sec){
+  const t = textoPanel(sec); if(!t) return;
+  const e = S.empresa||{};
+  const secs = panelSecciones();
+  const nombreSec = sec==="resumen" ? tx("Resumen") : ((secs.find(x=>x.k===sec)||{}).l||sec);
+  const asunto = (e.razon?e.razon+" · ":"") + tx(nombreSec);
+  if(esPro() && await adjuntarYMailBytes(paquetePanel(sec), asunto, t)) return;
+  location.href = "mailto:?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(t);
+}
+function waPanel(sec){
+  const t = textoPanel(sec); if(!t) return;
+  window.open("https://wa.me/?text="+encodeURIComponent(t), "_blank");
+}
+function smsPanel(sec){
+  const t = textoPanel(sec); if(!t) return;
+  location.href = "sms:?body="+encodeURIComponent(t);
+}
+function menuCompartirPanel(sec){
+  const abierto = (P.compartirAbierto === ("panel|"+sec));
+  const menu = abierto ? shareModalHtml([
+    {ic:"📄", txt:tx("Guardar PDF"), fn:`imprimirPanel('${sec}')`},
+    {ic:"📊", txt:tx("Exportar a Excel"), fn:`excelPanel('${sec}')`},
+    {ic:"✉️", txt:tx("Enviar por mail"), fn:`mailPanel('${sec}')`},
+    {ic:"💬", txt:tx("Enviar por WhatsApp"), fn:`waPanel('${sec}')`},
+    {ic:"📱", txt:tx("Enviar por SMS"), fn:`smsPanel('${sec}')`}
+  ]) : "";
+  const secs = panelSecciones();
+  const desc = sec==="resumen"
+    ? tx("La planilla acumula todo lo cargado en esta empresa, con una hoja por módulo.")
+    : tx("Descarga solo los datos de")+" "+esc(tx((secs.find(x=>x.k===sec)||{}).l||""))+".";
+  return `<section class="block noprint">
+    <button class="btn" onclick="toggleCompartir('panel','${sec}')" style="display:flex;align-items:center;justify-content:center;gap:8px">
+      ${tx("Guardar / Compartir")}
+    </button>
+    ${menu}
+    <p class="tiny muted" style="text-align:center;margin-top:10px">${desc}</p>
+  </section>`;
+}
+
 function vPanel(){
   const secs = panelSecciones();
   if(S.mundo==="mc"){
@@ -10963,15 +11050,7 @@ function vPanel(){
 
   ${cuerpo()}
 
-  ${sec==="insp" ? "" : sec==="resumen" ? `
-  <section class="block noprint">
-    <button class="btn" onclick="exportarExcel()">${tx("Descargar planilla Excel de la empresa")}</button>
-    <p class="tiny muted" style="text-align:center;margin-top:10px">${tx("La planilla acumula todo lo cargado en esta empresa, con una hoja por módulo.")}</p>
-  </section>` : `
-  <section class="block noprint">
-    <button class="btn" onclick="descargarSeccionPanel('${sec}')">${tx("Descargar planilla Excel de esta sección")}</button>
-    <p class="tiny muted" style="text-align:center;margin-top:10px">${tx("Descarga solo los datos de")} ${esc(tx((secs.find(x=>x.k===sec)||{}).l||""))}.</p>
-  </section>`}
+  ${sec==="insp" ? "" : menuCompartirPanel(sec)}
   <div style="height:10px"></div>`;
 }
 
@@ -11664,11 +11743,14 @@ function bloqueEquipoBody(){
   const roles = e.roles||{};
   const owner = e.ownerEmail||"";
   const miembros = Object.keys(roles);
+  const pl = planActual();
+  const tope = pl ? pl.miembrosMax : 1;
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <p class="small muted" style="margin:0;flex:1">${tx("Quién puede entrar a esta empresa y con qué permisos.")}</p>
       <button onclick="invitarMiembro()" style="flex:none;background:var(--primary);color:#fff;border:none;border-radius:999px;padding:7px 16px;font-size:13.5px;font-weight:600;cursor:pointer">${tx("+ Invitar")}${esPro()?"":" 🔒"}</button>
     </div>
+    ${pl?`<p class="tiny muted" style="margin:0 0 8px">${miembrosActuales(e)}/${tope===Infinity?"∞":tope} ${tx("personas de tu nivel")} ${tx(pl.nombre)}</p>`:""}
     <div class="row">
       <span class="dot" style="background:var(--ok)"></span>
       <div style="flex:1;min-width:0">
@@ -11707,6 +11789,25 @@ function invitarMiembro(){
     </div>`;
     document.body.appendChild(ov);
     document.getElementById("dlgpro").onclick = () => { cerrarModal(); irPro("equipo"); };
+    return;
+  }
+  // Ya invitó al máximo de miembros que permite su nivel: mostramos el
+  // cartel de upgrade en vez del modal para agregar a alguien nuevo.
+  const pl = planActual();
+  const max = pl ? pl.miembrosMax : 1;
+  if(miembrosActuales(S.empresa) >= max){
+    cerrarModal();
+    const ov = document.createElement("div");
+    ov.className = "modal";
+    ov.innerHTML = `<div class="mcard" style="text-align:center">
+      <div style="font-size:32px;line-height:1">👥</div>
+      <h3 style="font-size:18px;font-weight:700;margin:8px 0 4px">${tx("Llegaste al máximo de tu plan")}</h3>
+      <p class="small muted" style="margin:0 0 14px;line-height:1.45">${tx("Tu plan")} ${tx(pl?pl.nombre:"")} ${tx("permite hasta")} ${max} ${tx("personas en el equipo (contándote a vos). Pasate a un nivel superior para sumar más.")}</p>
+      <button class="btn" id="dlgupg">${tx("Ver otros niveles")}</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="cerrarModal()">${tx("Ahora no")}</button>
+    </div>`;
+    document.body.appendChild(ov);
+    document.getElementById("dlgupg").onclick = () => { cerrarModal(); irPro("miembros"); };
     return;
   }
   cerrarModal();
@@ -11825,7 +11926,8 @@ function vAjustes(){
 
   // --- Mis empresas (todo lo de empresa junto, sin duplicar) ---
   const esAdm = puedeAdministrar();
-  const cuentaProActiva = esProCuenta();
+  const planEmpresas = planActual();
+  const cuentaProActiva = !!(planEmpresas && planEmpresas.empresasMax > 1);
   const empresasBody = `
     <p class="small muted" style="margin:0 0 10px">${t("aj.trabajando")} <b>${esc(e.razon||"—")}</b>. ${t("aj.trabajandoTxt")}</p>
     ${(S.empresas||[]).map(x=>`<div class="row" onclick="cambiarEmpresa('${x.id}')">
@@ -11885,7 +11987,9 @@ function vAjustes(){
         ? tx("Con tu cuenta podés crear o sumarte a las que necesités.")
         : (puedeEmpresa()
           ? tx("Creá o sumate a otra empresa para gestionarla por separado.")
-          : tx("Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias."))}</p>
+          : (planEmpresas
+            ? tx("Tu nivel")+" "+tx(planEmpresas.nombre)+" "+tx("permite una sola empresa. Pasate al nivel Consultora para gestionar varias.")
+            : tx("Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias.")))}</p>
       ${cuentaProActiva?`<button class="btn ghost sm" style="margin-top:4px" onclick="desactivarProCuenta()">${tx("Volver a una sola")}</button>`:""}
     </div>`;
 
@@ -14141,6 +14245,41 @@ const PRO_VENTAJAS = [
   {ic:"📄", n:"Informes sin marca",     d:"el PDF sale con tu logo y sin el pie de Espiral"}
 ];
 
+/* ============================================================
+   NIVELES DE ESPIRAL PRO · 3 planes, según cantidad de empresas
+   y de miembros del equipo. El precio base es el de "Individual";
+   "Equipo" sale 5 veces eso; "Consultora" se conversa a medida.
+   ============================================================ */
+const PLANES = [
+  { k:"ind", nombre:"Individual", precio:6.99, precioTxt:"US$ 6,99/mes",
+    empresasMax:1, miembrosMax:3,
+    resumen:"Para una persona que quiere sumar a algunos pocos más.",
+    d:["1 empresa", "Hasta 3 personas en el equipo (vos + 2)", "Todos los módulos Pro habilitados"] },
+  { k:"equipo", nombre:"Equipo", precio:34.95, precioTxt:"US$ 34,95/mes",
+    empresasMax:1, miembrosMax:10,
+    resumen:"Para una PyME con un equipo más grande.",
+    d:["1 empresa", "Hasta 10 personas en el equipo", "Todos los módulos Pro habilitados"] },
+  { k:"consultora", nombre:"Consultora", precio:null, precioTxt:"A consultar",
+    empresasMax:Infinity, miembrosMax:Infinity,
+    resumen:"Para consultoras o empresas con varias plantas o clientes.",
+    d:["Empresas ilimitadas", "Equipo a medida", "Todos los módulos Pro habilitados"] }
+];
+/* mail de contacto para el nivel Consultora, que no tiene precio fijo.
+   TODO: reemplazar por el mail comercial real de proyectohs.com */
+const CONTACTO_VENTAS = "gustavo.derose@gmail.com";
+function plan(k){ return PLANES.find(p=>p.k===k) || null; }
+/* nivel activo de la CUENTA. Si ya es Pro pero quedó de una versión
+   anterior sin nivel asignado (S.plan vacío), se lo trata como
+   "Equipo" para no sacarle nada de lo que ya tenía habilitado. */
+function planActual(){
+  if(S.plan){ const p = plan(S.plan); if(p) return p; }
+  return esPro() ? plan("equipo") : null;
+}
+/* cuántas personas hay hoy en el equipo de una empresa (dueño incluido) */
+function miembrosActuales(e){
+  e = e || S.empresa || {};
+  return 1 + Object.keys(e.roles||{}).length;
+}
 /* Pro de la CUENTA: habilita multiempresa, es personal */
 function esProCuenta(){ return !!S.proCuenta; }
 /* Pro: alcanza con que la empresa activa sea Pro o con que la CUENTA
@@ -14150,8 +14289,13 @@ function esPro(){ return !!(S.empresa && S.empresa.pro) || esProCuenta(); }
 function bloqueoPro(ruta){ return !!(PRO_RUTAS[ruta] && !esPro()); }
 /* candado para los tiles */
 function lk(ruta){ return bloqueoPro(ruta) ? ` <span class="lock">🔒</span>` : ""; }
-/* ¿puede crear o sumarse a otra empresa? función de la CUENTA, no de la empresa activa */
-function puedeEmpresa(){ return esProCuenta() || (S.empresas||[]).length < 1; }
+/* ¿puede crear o sumarse a otra empresa? función de la CUENTA, no de la
+   empresa activa. Depende del tope de empresas del nivel contratado. */
+function puedeEmpresa(){
+  const pl = planActual();
+  const max = pl ? pl.empresasMax : 1;
+  return (S.empresas||[]).length < max;
+}
 
 function irPro(motivo){ P.proDe = motivo||""; go("pro"); }
 /* 3.1 · pantalla intermedia suave antes de mandar a la venta.
@@ -14173,12 +14317,16 @@ function muroExcel(){
   document.getElementById("dlgpro").onclick = () => { cerrarModal(); irPro("excel"); };
   return false;
 }
-function activarPro(){
+function activarPro(tier){
   // Pro es único por CUENTA: se activa desde cualquier motivo (aud, iper,
-  // ptt, lux, docs, panel, acciones, crono, agua, excel, equipo, multiempresa
-  // o el botón genérico "Ver Pro") y queda habilitado para todas las
-  // empresas que esa cuenta cargue, no solo la que estaba activa al pagar.
+  // ptt, lux, docs, panel, acciones, crono, agua, excel, equipo, miembros,
+  // multiempresa o el botón genérico "Ver Pro") y queda habilitado para
+  // todas las empresas que esa cuenta cargue, no solo la que estaba
+  // activa al pagar. El nivel (Individual / Equipo) define los topes de
+  // empresas y de miembros del equipo.
+  const pl = plan(tier) || plan("ind");
   const paraCuenta = P.proDe === "empresa";
+  S.plan = pl.k;
   S.proCuenta = true;
   if(S.empresa && S.empresa.id) S.empresa.pro = true;
   guardar(); pintarShell();
@@ -14190,13 +14338,13 @@ function activarPro(){
   ov.innerHTML = `<div class="mcard" style="text-align:center">
     <div style="font-size:38px;line-height:1">🎉</div>
     <h3 style="font-size:19px;font-weight:700;margin:8px 0 4px">${tx("¡Ahora sos Pro!")}</h3>
-    <p class="small muted" style="margin:0 0 14px;line-height:1.45">${tx("Tenés acceso ilimitado a todos los registros y funciones, en esta y en cualquier otra empresa que cargues con tu cuenta.")}</p>
+    <p class="small muted" style="margin:0 0 14px;line-height:1.45">${tx("Tenés el nivel")} ${tx(pl.nombre)}: ${tx("acceso a todos los módulos, en esta y en cualquier otra empresa que cargues con tu cuenta.")}</p>
     <button class="btn" id="dlgpro">${tx("Empezar")}</button>
   </div>`;
   document.body.appendChild(ov);
   document.getElementById("dlgpro").onclick = () => {
     cerrarModal();
-    const volver = P.proDe==="excel" ? "panel" : (paraCuenta || P.proDe==="equipo" || !P.proDe) ? "ajustes" : destino;
+    const volver = P.proDe==="excel" ? "panel" : (paraCuenta || P.proDe==="equipo" || P.proDe==="miembros" || !P.proDe) ? "ajustes" : destino;
     P.proDe = "";
     go(volver);
   };
@@ -14208,34 +14356,66 @@ function desactivarPro(){
   if(!gate(tx("¿Volver a la versión gratuita? No se borra ningún dato."), ()=>desactivarPro())) return;
   if(S.empresa && S.empresa.id) S.empresa.pro = false;
   S.proCuenta = false;
+  S.plan = "";
   guardar(); pintarShell(); toast(tx("Volviste a la versión gratuita")); render();
 }
 function desactivarProCuenta(){
+  // este botón es "volver a trabajar con una sola empresa": baja del
+  // nivel Consultora (multiempresa) al nivel Equipo, sin perder Pro.
   if(!gate(tx("¿Volver a poder trabajar con una sola empresa? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
-  S.proCuenta = false; guardar(); pintarShell(); toast(tx("Tu cuenta volvió a la versión gratuita")); render();
+  if(S.plan === "consultora") S.plan = "equipo";
+  guardar(); pintarShell(); toast(tx("Tu cuenta volvió a un solo nivel de una empresa")); render();
 }
 
+function contactarConsultora(){
+  const asunto = tx("Quiero el nivel Consultora de Espiral");
+  const cuerpo = tx("Hola, quiero más información sobre el nivel Consultora (varias empresas, equipo a medida).")
+    + "\n\n" + tx("Correo de mi cuenta:") + " " + ((S.sesion&&S.sesion.email)||"");
+  location.href = "mailto:"+encodeURIComponent(CONTACTO_VENTAS)+"?subject="+encodeURIComponent(asunto)+"&body="+encodeURIComponent(cuerpo);
+}
 function vPro(){
-  const paraCuenta = P.proDe === "empresa";
   const motivo = {
     aud:"la auditoría mensual", iper:"la matriz de riesgos", ptt:"el permiso de trabajo",
     lux:"los protocolos de higiene", docs:"la documentación de contratistas",
     panel:"el panel", acciones:"el plan de acción", empresa:"varias empresas",
-    excel:"exportar a Excel", equipo:"invitar a tu equipo"
+    excel:"exportar a Excel", equipo:"invitar a tu equipo", miembros:"sumar más personas a tu equipo"
   }[P.proDe] || "";
+  const activo = planActual();
   return `
   <section class="block">
     <div class="card pad" style="text-align:center">
       <div style="font-size:34px;line-height:1">🔒</div>
       <h2 style="font-size:22px;font-weight:700;margin:6px 0 2px">${tx("Espiral Pro")}</h2>
       <p class="small muted" style="margin:0">${motivo
-        ? tx("Para usar")+" "+tx(motivo)+" "+tx("necesitás la versión Pro.")
-        : tx("La versión completa de Espiral.")}</p>
+        ? tx("Para usar")+" "+tx(motivo)+" "+tx("necesitás alguno de estos niveles.")
+        : tx("Elegí el nivel según cuántas empresas y personas necesitás.")}</p>
     </div>
   </section>
 
   <section class="block">
-    <div class="section-title"><h2>${tx("Qué incluye")}</h2></div>
+    <div class="section-title"><h2>${tx("Niveles")}</h2></div>
+    ${PLANES.map(pl=>{
+      const esElActivo = activo && activo.k===pl.k;
+      const boton = pl.k==="consultora"
+        ? `<button class="btn soft" onclick="contactarConsultora()">${tx("Hablemos")}</button>`
+        : (esElActivo
+          ? `<button class="btn ghost" disabled>${tx("Tu plan actual")}</button>`
+          : `<button class="btn" onclick="activarPro('${pl.k}')">${tx("Activar")} ${tx(pl.nombre)}</button>`);
+      return `<div class="card pad" style="margin-bottom:10px;${esElActivo?"border-color:var(--ok)":""}">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+          <h3 style="font-size:17px;font-weight:700;margin:0">${tx(pl.nombre)}</h3>
+          <span style="font-weight:700;color:var(--primary)">${pl.precio!=null?pl.precioTxt:tx(pl.precioTxt)}</span>
+        </div>
+        <p class="tiny muted" style="margin:2px 0 8px">${tx(pl.resumen)}</p>
+        <div class="tiny" style="line-height:1.8">${pl.d.map(x=>"✅ "+tx(x)).join("<br>")}</div>
+        <div style="margin-top:10px">${boton}</div>
+        ${esElActivo?`<div class="tiny" style="color:var(--ok);margin-top:6px;font-weight:600">${tx("✓ Nivel activo")}</div>`:""}
+      </div>`;
+    }).join("")}
+  </section>
+
+  <section class="block">
+    <div class="section-title"><h2>${tx("Qué incluye cada nivel")}</h2></div>
     <div class="card pad">
       ${PRO_VENTAJAS.map(v=>`<div class="row" style="cursor:default">
         <span class="ic" style="font-size:19px;width:28px;text-align:center">${v.ic}</span>
@@ -14265,11 +14445,7 @@ function vPro(){
 
   <section class="block">
     <div class="card pad">
-      <button class="btn" onclick="activarPro()">${tx("Activar Espiral Pro")}</button>
-      <p class="tiny muted" style="margin:8px 2px 0;text-align:center">
-        ${paraCuenta
-          ? tx("Versión de prueba: activa tu cuenta en este dispositivo, para crear o sumarte a otra empresa. El pago real llega con proyectohs.com.")
-          : tx("Versión de prueba: activa esta empresa en este dispositivo, para todo tu equipo. El pago real llega con proyectohs.com.")}</p>
+      <p class="tiny muted" style="margin:0 2px 0;text-align:center">${tx("Versión de prueba: activa el nivel en este dispositivo. El pago real llega con proyectohs.com.")}</p>
       <button class="btn ghost" style="margin-top:12px" onclick="volver()">${tx("Ahora no")}</button>
     </div>
   </section>
@@ -14278,33 +14454,36 @@ function vPro(){
 /* bloque para la pantalla de Ajustes */
 function proBloqueBody(){
   const admin = puedeAdministrar();
-  const proEmp = esPro();
+  const pl = planActual();
   return `
     <div class="grp" style="margin-top:0">${esc(S.empresa.razon||tx("Esta empresa"))}</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-      <div><b>${proEmp?tx("Espiral Pro"):tx("Espiral gratis")}</b>
-        <div class="tiny muted">${proEmp
-          ? tx("Todos los módulos habilitados, para todo tu equipo en esta empresa")
+      <div><b>${pl?tx("Espiral")+" "+tx(pl.nombre):tx("Espiral gratis")}</b>
+        <div class="tiny muted">${pl
+          ? tx("Todos los módulos habilitados")+", "+(pl.miembrosMax===Infinity?tx("equipo sin límite de personas"):tx("hasta")+" "+pl.miembrosMax+" "+tx("personas en el equipo"))
           : tx("Auditoría, IPER, permisos, protocolos, contratistas, panel e invitar equipo están bloqueados")}</div></div>
-      ${proEmp
+      ${pl
         ? (admin ? `<button class="btn ghost sm" onclick="desactivarPro()">${tx("Volver a gratis")}</button>` : "")
         : `<button class="btn sm" onclick="irPro('')">${tx("Ver Pro")}</button>`}
-    </div>`;
+    </div>
+    ${pl?`<button class="btn ghost sm" style="margin-top:8px" onclick="irPro('')">${tx("Cambiar de nivel")}</button>`:""}`;
 }
 function proBloque(){
+  const pl = planActual();
   return `
   <section class="block">
     <div class="section-title"><h2>${tx("Tu versión")}</h2></div>
     <div class="card pad">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <div><b>${esPro()?tx("Espiral Pro"):tx("Espiral gratis")}</b>
-          <div class="tiny muted">${esPro()
+        <div><b>${pl?tx("Espiral")+" "+tx(pl.nombre):tx("Espiral gratis")}</b>
+          <div class="tiny muted">${pl
             ? tx("Todos los módulos habilitados")
             : tx("Auditoría, IPER, permisos, protocolos, contratistas y panel están bloqueados")}</div></div>
-        ${esPro()
+        ${pl
           ? `<button class="btn ghost sm" onclick="desactivarPro()">${tx("Volver a gratis")}</button>`
           : `<button class="btn sm" onclick="irPro('')">${tx("Ver Pro")}</button>`}
       </div>
+      ${pl?`<button class="btn ghost sm" style="margin-top:8px" onclick="irPro('')">${tx("Cambiar de nivel")}</button>`:""}
     </div>
   </section>
 `;
