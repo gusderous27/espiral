@@ -1285,6 +1285,7 @@ function vInicio(){
         <button class="kpi" onclick="go('historial','mes')"><b>${mes+audMes}</b><span class="tiny muted">${t("home.mes")}</span></button>
         <button class="kpi" style="border-color:${nc?"var(--no)":"var(--line)"}" onclick="go('acciones')"><b style="color:${nc?"var(--no)":"inherit"}">${nc}</b><span class="tiny muted">${t("home.desvios")}</span></button>
       </div>
+      ${nc?`<p class="tiny muted" style="margin:8px 2px 0;text-align:center">${tx("Desvíos suma todo lo marcado \"No cumple\" en cualquier inspección. El Plan de acción solo muestra los que tienen seguimiento propio: investigaciones, matriz de riesgos y auditorías.")}</p>`:""}
     </div>
   </section>
 
@@ -4102,7 +4103,7 @@ function vAcciones(){
   const vencidas = todas.filter(a=>!a.hecha && a.vence && a.vence < hoy()).length;
   if(!todas.length) return `<section class="block"><div class="card empty"><span class="ic">🗂</span>
     ${tx("Todavía no hay acciones correctivas cargadas.")}<br>
-    <span class="small">${tx("Salen de las investigaciones y de la auditoría diaria.")}</span></div></section>`;
+    <span class="small">${tx("Salen de las investigaciones, la matriz de riesgos y las auditorías (diaria y mensual). Los desvíos de otras inspecciones no generan acción por sí solos.")}</span></div></section>`;
   const porMod = {};
   lista.forEach(a=>{ (porMod[a.mod]=porMod[a.mod]||[]).push(a); });
   const tiposConDatos = tiposConDatosAcciones();
@@ -6105,6 +6106,12 @@ const DIC = {
 "Hojas de datos de seguridad (SDS)":["Safety Data Sheets (SDS)","Fichas de Dados de Segurança (SDS)"],
 "Formulario W-9 / habilitación comercial":["W-9 / business license","Formulário W-9 / licença comercial"],
 "Nómina de personal en el sitio":["Crew roster on site","Lista de pessoal no local"],
+"Salen de las investigaciones, la matriz de riesgos y las auditorías (diaria y mensual). Los desvíos de otras inspecciones no generan acción por sí solos.":
+  ["They come from investigations, the risk matrix and the audits (daily and monthly). Findings from other inspections don't create an action on their own.",
+   "Vêm das investigações, da matriz de riscos e das auditorias (diária e mensal). Os desvios de outras inspeções não geram ação por conta própria."],
+"Desvíos suma todo lo marcado \"No cumple\" en cualquier inspección. El Plan de acción solo muestra los que tienen seguimiento propio: investigaciones, matriz de riesgos y auditorías.":
+  ["Deviations adds up everything marked \"Non-compliant\" in any inspection. The action plan only shows the ones with their own follow-up: investigations, the risk matrix and audits.",
+   "Desvios soma tudo o que foi marcado \"Não cumpre\" em qualquer inspeção. O plano de ação só mostra os que têm acompanhamento próprio: investigações, matriz de riscos e auditorias."],
 "Persona agregada. El correo no salió":["Person added. The email didn't go out","Pessoa adicionada. O e-mail não saiu"],
 "Podés pasarle el código directamente.":["You can share the code directly.","Você pode passar o código diretamente."],
 "Documento de identidad":["Social Security Number (SSN)","Documento de identidade"],
