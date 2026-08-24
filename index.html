@@ -11927,7 +11927,6 @@ function vAjustes(){
   // --- Mis empresas (todo lo de empresa junto, sin duplicar) ---
   const esAdm = puedeAdministrar();
   const planEmpresas = planActual();
-  const cuentaProActiva = !!(planEmpresas && planEmpresas.empresasMax > 1);
   const empresasBody = `
     <p class="small muted" style="margin:0 0 10px">${t("aj.trabajando")} <b>${esc(e.razon||"—")}</b>. ${t("aj.trabajandoTxt")}</p>
     ${(S.empresas||[]).map(x=>`<div class="row" onclick="cambiarEmpresa('${x.id}')">
@@ -11983,14 +11982,16 @@ function vAjustes(){
     <div class="acc-sub">
       <div class="grp" style="margin-top:0">${tx("Otras empresas")}</div>
       <button class="btn soft sm" onclick="crearEmpresaPrompt()">${tx("+ Nueva empresa")}${puedeEmpresa()?"":" 🔒"}</button>
-      <p class="tiny muted" style="margin:6px 2px 0">${cuentaProActiva
-        ? tx("Con tu cuenta podés crear o sumarte a las que necesités.")
+      <p class="tiny muted" style="margin:6px 2px 0">${planEmpresas && planEmpresas.empresasMax===Infinity
+        ? tx("Con tu nivel Consultora podés crear o sumarte a las que necesités.")
         : (puedeEmpresa()
-          ? tx("Creá o sumate a otra empresa para gestionarla por separado.")
+          ? (planEmpresas
+            ? tx("Tu nivel")+" "+tx(planEmpresas.nombre)+" "+tx("permite hasta")+" "+planEmpresas.empresasMax+" "+tx("empresas. Podés crear o sumarte a otra.")
+            : tx("Creá o sumate a otra empresa para gestionarla por separado."))
           : (planEmpresas
-            ? tx("Tu nivel")+" "+tx(planEmpresas.nombre)+" "+tx("permite una sola empresa. Pasate al nivel Consultora para gestionar varias.")
+            ? tx("Ya llegaste al tope de empresas de tu nivel")+" "+tx(planEmpresas.nombre)+" ("+planEmpresas.empresasMax+"). "+tx("Pasate al nivel Consultora para gestionar más.")
             : tx("Con Espiral gratis podés tener una empresa. Pasate a Pro para gestionar varias.")))}</p>
-      ${cuentaProActiva?`<button class="btn ghost sm" style="margin-top:4px" onclick="desactivarProCuenta()">${tx("Volver a una sola")}</button>`:""}
+      ${planEmpresas && planEmpresas.k==="consultora"?`<button class="btn ghost sm" style="margin-top:4px" onclick="desactivarProCuenta()">${tx("Bajar al nivel Equipo")}</button>`:""}
     </div>`;
 
   // --- Preferencias ---
@@ -14256,9 +14257,9 @@ const PLANES = [
     resumen:"Para una persona que quiere sumar a algunos pocos más.",
     d:["1 empresa", "Hasta 3 personas en el equipo (vos + 2)", "Todos los módulos Pro habilitados"] },
   { k:"equipo", nombre:"Equipo", precio:34.95, precioTxt:"US$ 34,95/mes",
-    empresasMax:1, miembrosMax:10,
-    resumen:"Para una PyME con un equipo más grande.",
-    d:["1 empresa", "Hasta 10 personas en el equipo", "Todos los módulos Pro habilitados"] },
+    empresasMax:2, miembrosMax:10,
+    resumen:"Para una PyME con un equipo más grande, hasta 2 empresas.",
+    d:["Hasta 2 empresas", "Hasta 10 personas en el equipo", "Todos los módulos Pro habilitados"] },
   { k:"consultora", nombre:"Consultora", precio:null, precioTxt:"A consultar",
     empresasMax:Infinity, miembrosMax:Infinity,
     resumen:"Para consultoras o empresas con varias plantas o clientes.",
@@ -14270,10 +14271,14 @@ const CONTACTO_VENTAS = "gustavo.derose@gmail.com";
 function plan(k){ return PLANES.find(p=>p.k===k) || null; }
 /* nivel activo de la CUENTA. Si ya es Pro pero quedó de una versión
    anterior sin nivel asignado (S.plan vacío), se lo trata como
-   "Equipo" para no sacarle nada de lo que ya tenía habilitado. */
+   "Equipo" para no sacarle nada de lo que ya tenía habilitado — salvo
+   que ya tenga cargadas más empresas de las que Equipo permite, en
+   cuyo caso se la trata como "Consultora" para no bloquearla. */
 function planActual(){
   if(S.plan){ const p = plan(S.plan); if(p) return p; }
-  return esPro() ? plan("equipo") : null;
+  if(!esPro()) return null;
+  const equipoP = plan("equipo");
+  return ((S.empresas||[]).length > equipoP.empresasMax) ? plan("consultora") : equipoP;
 }
 /* cuántas personas hay hoy en el equipo de una empresa (dueño incluido) */
 function miembrosActuales(e){
@@ -14360,11 +14365,11 @@ function desactivarPro(){
   guardar(); pintarShell(); toast(tx("Volviste a la versión gratuita")); render();
 }
 function desactivarProCuenta(){
-  // este botón es "volver a trabajar con una sola empresa": baja del
-  // nivel Consultora (multiempresa) al nivel Equipo, sin perder Pro.
-  if(!gate(tx("¿Volver a poder trabajar con una sola empresa? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
+  // este botón baja del nivel Consultora (empresas ilimitadas) al nivel
+  // Equipo (hasta 2 empresas), sin perder Pro.
+  if(!gate(tx("¿Bajar al nivel Equipo (hasta 2 empresas)? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
   if(S.plan === "consultora") S.plan = "equipo";
-  guardar(); pintarShell(); toast(tx("Tu cuenta volvió a un solo nivel de una empresa")); render();
+  guardar(); pintarShell(); toast(tx("Tu cuenta bajó al nivel Equipo")); render();
 }
 
 function contactarConsultora(){
