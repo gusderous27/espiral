@@ -1130,6 +1130,14 @@ function fecha(d){ if(!d) return "—"; const p=String(d).slice(0,10).split("-")
 function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),1900); }
 let AVISO_GUARDA = false;
 async function guardar(){
+  // se marca "sucia" ANTES de guardar: si en el medio (por ejemplo, se
+  // recarga la página y se vuelve a loguear) corre sincronizarDesdeServidor()
+  // antes de que este envío llegue a confirmarse, esa sincronización tiene
+  // que respetar lo recién cargado acá en vez de pisarlo con una copia
+  // vieja del servidor (era la causa de que un hallazgo recién creado
+  // apareciera en la lista pero diera "no encontrado" al abrirlo desde
+  // la notificación: la sincronización lo hacía desaparecer de nuevo).
+  if(S.empresa) S.empresa._sucio = true;
   const ok = await DB.set("insp_hs_v1", S);
   if(!ok && !AVISO_GUARDA){
     AVISO_GUARDA = true;
@@ -3965,7 +3973,23 @@ function accionesTodas(){
         ref:{t:"auditp", id:r.id, k:bi, i:ii}});
     }));
   });
-  return out.sort((a,b)=>(a.vence||"9999").localeCompare(b.vence||"9999"));
+  /* hallazgos de mantenimiento derivados a EHS: se cargaron como un hallazgo
+     de la planilla de mantenimiento, pero se detectó que en realidad le
+     corresponde gestionarlos acá */
+  (S.mtto||[]).filter(r=>r.mundo==="ehs").forEach(r=>{
+    out.push({origen:"🔧 "+(r.sector||tx("Mantenimiento")), fuente:fecha(r.fecha),
+      mod:"Derivado de mantenimiento", donde:r.sector||"", detecta:fecha(r.fecha),
+      texto:r.hallazgo||tx("Hallazgo de mantenimiento"), resp:r.responsable||"",
+      vence:r.fechaProp||"", hecha:r.estado==="Finalizado", cierre:r.fechaCump||"",
+      ref:{t:"mtto", id:r.id}});
+  });
+  /* si una acción se derivó a mantenimiento, ya se está gestionando como un
+     hallazgo nuevo allá: se saca de acá para no verla duplicada */
+  const visible = out.filter(a=>{
+    const c = S.accSeguimiento && S.accSeguimiento[accClave(a.ref)];
+    return !(c && c.derivadoMtto);
+  });
+  return visible.sort((a,b)=>(a.vence||"9999").localeCompare(b.vence||"9999"));
 }
 function cerrarAccion(t,id,k,i){
   if(t==="auditp"){
@@ -3977,6 +4001,12 @@ function cerrarAccion(t,id,k,i){
   if(t==="iper"){
     const r=(S.iper||[]).find(x=>x.id===id); if(!r) return;
     const x = r.tareas[k].riesgos[i]; x.hecho = !x.hecho;
+    guardar(); render(); return;
+  }
+  if(t==="mtto"){
+    const r=(S.mtto||[]).find(x=>x.id===id); if(!r) return;
+    r.estado = r.estado==="Finalizado" ? "Reportado" : "Finalizado";
+    r.fechaCump = r.estado==="Finalizado" ? hoy() : "";
     guardar(); render(); return;
   }
   if(t==="inv"){
@@ -4042,6 +4072,16 @@ function vAccionGestion(){
     ${seg.estado==="Finalizado" && seg.cerradoFecha?`<p class="tiny muted" style="margin:10px 2px 0">✓ ${tx("Cerrada el")} ${fecha(seg.cerradoFecha)}${seg.cerradoPor?" · "+esc(seg.cerradoPor):""}</p>`:""}
   </div></section>
 
+  ${!esIperEval?`
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Derivar a otra área")}</div>
+    <p class="tiny muted" style="margin:0 0 8px">${tx("Si en realidad le corresponde al otro módulo, derivala y va a aparecer ahí para que la gestionen.")}</p>
+    <select onchange="derivarAccion(this.value)">
+      <option value="ehs" selected>${tx("Seguridad e Higiene")}</option>
+      <option value="mtto">${tx("Mantenimiento")}</option>
+    </select>
+  </div></section>`:""}
+
   <section class="block"><div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Historial de tareas")}</div>
     ${(seg.bitacora||[]).length? seg.bitacora.map((b,bi)=>`<div class="item">
@@ -4074,6 +4114,33 @@ function gestionarAccion(clave){
   if(!a){ toast(tx("No se encontró la acción.")); return; }
   P.accGest = a; go("accionGestion");
 }
+/* deriva la acción que se está gestionando en EHS hacia Mantenimiento (o
+   viceversa, si ya había sido derivada desde ahí). Cuando la acción vive
+   directamente en la planilla de mantenimiento (ref.t "mtto") solo se
+   cambia a qué mundo pertenece; si en cambio nació en investigación, matriz
+   de riesgos o auditorías, se crea un hallazgo nuevo en mantenimiento y la
+   acción original se marca como derivada para que no quede duplicada. */
+function derivarAccion(destino){
+  const a = P.accGest; if(!a) return;
+  if(a.ref.t==="mtto"){
+    const r = (S.mtto||[]).find(x=>x.id===a.ref.id); if(!r) return;
+    r.mundo = destino==="mtto" ? "" : "ehs";
+    guardar();
+    if(destino==="mtto"){ P.accGest=null; toast(tx("Derivado a Mantenimiento")); go("gestionMtto"); }
+    else render();
+    return;
+  }
+  if(destino!=="mtto") return; // ya está en Seguridad e Higiene, no hay nada que hacer
+  const nuevo = { id:uid(), tipo:"mtto", fecha:hoy(), sector:a.donde||"", mtipo:"Derivado de "+tx(a.mod),
+    hallazgo:a.texto||"", mejora:"", reporta:(S.sesion && (S.sesion.nombre||S.sesion.email))||"",
+    estado:"Reportado", responsable:a.resp||"", fotos:[] };
+  S.mtto = S.mtto||[]; S.mtto.push(nuevo);
+  const seg = accSeg(a.ref);
+  seg.derivadoMtto = true; seg.derivadoMttoId = nuevo.id;
+  guardar(); P.accGest = null;
+  toast(tx("Se creó un hallazgo en Mantenimiento"));
+  go("gestionMtto");
+}
 function setAccEstado(est){
   const seg = accSeg(P.accGest.ref);
   seg.estado = est;
@@ -4102,6 +4169,7 @@ function marcarAccionOrigen(ref, cerrada){
       r.ok = r.hallazgos.length - r.nc;
       r.pct = r.hallazgos.length ? Math.round(r.ok/r.hallazgos.length*100) : 100;
     } }
+    else if(ref.t==="mtto"){ const r=(S.mtto||[]).find(x=>x.id===ref.id); if(r){ r.estado = cerrada?"Finalizado":"Reportado"; r.fechaCump = cerrada?hoy():""; } }
   }catch(e){}
 }
 function agregarBitacora(){
@@ -4149,7 +4217,8 @@ const ACC_MOD_ORDEN = [
   {mod:"Investigación de accidentes", icono:"🔎"},
   {mod:"Matriz de riesgos", icono:"📊"},
   {mod:"Auditoría diaria", icono:"🔍"},
-  {mod:"Auditoría mensual", icono:"📋"}
+  {mod:"Auditoría mensual", icono:"📋"},
+  {mod:"Derivado de mantenimiento", icono:"🔧"}
 ];
 function bloqueAccionesMod(key, icono, nombre, items){
   if(!items.length) return "";
@@ -4431,6 +4500,18 @@ function campoAreaIper(valor){
     </select></label>
     ${otro?`<label class="f"><span class="lb">${tx("Especificá el área o local")}</span>
       <input type="text" value="${esc(valor)}" oninput="P.draft.area=this.value" autofocus></label>`:""}`;
+}
+/* todas las áreas/sectores ya usados en la empresa: nómina de personal +
+   registros ya cargados (IPER, auditorías, mantenimiento, mejora continua).
+   A medida que se cargan más personas o registros con un área nueva, esa
+   área se suma sola a este listado la próxima vez que se abra un desplegable,
+   así se evita tipear siempre lo mismo a mano. */
+function areasEmpresa(){
+  const s = new Set(areasIper());
+  (S.aud||[]).forEach(r=>{ if(r.area) s.add(r.area); });
+  (S.mtto||[]).forEach(r=>{ if(r.sector) s.add(r.sector); });
+  (S.idea||[]).forEach(r=>{ if(r.sector) s.add(r.sector); });
+  return Array.from(s).sort((a,b)=>a.localeCompare(b,"es"));
 }
 /* desplegable genérico de personal (con "Otro") reutilizable en cualquier campo de responsable */
 function campoPersonaIper(label, valor, otroKey, setterFn){
@@ -9937,8 +10018,7 @@ function vAudEdit(){
     <div class="card pad">
       <label class="f"><span class="lb">${tx("Fecha")}</span>
         <input type="date" value="${d.fecha}" onchange="setAud('fecha',this.value)"></label>
-      <label class="f"><span class="lb">${tx("Área auditada")}</span>
-        <input type="text" value="${esc(d.area)}" oninput="setAud('area',this.value)"></label>
+      ${campoOtro("Área auditada", areasEmpresa(), d.area, "audAreaOtro", "v=>setAud('area',v)", "Escribí el área auditada")}
       <div class="g2">
         <label class="f"><span class="lb">${tx("Trabajadores en el área")}</span>
           <input type="number" value="${esc(d.trabArea)}" oninput="setAud('trabArea',this.value)"></label>
@@ -14269,8 +14349,7 @@ function vIdeaEdit(){
       </select></label>
     <button class="btn soft sm" style="margin-bottom:10px" onclick="ideaAltaRapida()">${tx("+ No está en la lista")}</button>
     <div class="grid2">
-      <label class="f"><span class="lb">${tx("Sector / área")}</span>
-        <input type="text" value="${esc(d.sector)}" oninput="P.draft.sector=this.value"></label>
+      ${campoOtro("Sector / área", areasEmpresa(), d.sector, "ideaSectorOtro", "v=>P.draft.sector=v", "Escribí el sector o área")}
       <label class="f"><span class="lb">${tx("Fecha")}</span>
         <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
     </div>
@@ -14611,8 +14690,7 @@ function vMttoEdit(){
       </select></label>
     <button class="btn soft sm" style="margin-bottom:10px" onclick="mttoAltaRapida()">${tx("+ No está en la lista")}</button>
     <div class="grid2">
-      <label class="f"><span class="lb">${tx("Sector / área")}</span>
-        <input type="text" value="${esc(d.sector)}" oninput="P.draft.sector=this.value"></label>
+      ${campoOtro("Sector / área", areasEmpresa(), d.sector, "mttoSectorOtro", "v=>P.draft.sector=v", "Escribí el sector o área")}
       <label class="f"><span class="lb">${tx("Fecha de registro")}</span>
         <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
     </div>
@@ -14645,7 +14723,7 @@ function vMttoEdit(){
 /* --- gestión del hallazgo, solo administrador --- */
 function vGestionMtto(){
   if(!puedeAdministrar()) return `<section class="block"><div class="card empty">🔒 ${tx("Solo el administrador puede gestionar los hallazgos.")}</div></section>`;
-  const hallazgos = (S.mtto||[]).slice();
+  const hallazgos = (S.mtto||[]).filter(r=>r.mundo!=="ehs");
   if(!hallazgos.length){
     return `${bandaMundo()}
     <section class="block"><div class="section-title"><h2>${tx("Gestionar hallazgos")}</h2></div>
@@ -14716,10 +14794,13 @@ function guardarGestionMtto(){
   S.mtto[i].comentarios = g.comentarios;
   S.mtto[i].tercerizado = !!g.tercerizado;
   S.mtto[i].empresaTercero = g.tercerizado ? (g.empresaTercero||"") : "";
+  S.mtto[i].mundo = g.mundo==="ehs" ? "ehs" : "";
   S.mtto[i].gestionada = new Date().toISOString();
+  const derivadoAEhs = S.mtto[i].mundo==="ehs";
   guardar(); const idg=g.id; const desde=P.gestMttoDesde; P.gestMtto=null; P.gestMttoDesde=null;
-  toast(tx("Gestión guardada"));
-  if(desde==="gestionMtto") go("gestionMtto"); else go("verMtto", idg);
+  toast(derivadoAEhs ? tx("Derivado a Seguridad e Higiene") : tx("Gestión guardada"));
+  if(derivadoAEhs) go("acciones");
+  else if(desde==="gestionMtto") go("gestionMtto"); else go("verMtto", idg);
 }
 function vMttoGestion(){
   const g = P.gestMtto;
@@ -14744,8 +14825,16 @@ function vMttoGestion(){
       <select onchange="P.gestMtto.estado=this.value;render()">
         ${MTTO_ESTADOS.map(x=>`<option ${g.estado===x?"selected":""}>${tx(x)}</option>`).join("")}
       </select></label>
-    <label class="f"><span class="lb">${tx("Responsable")}</span>
-      <input type="text" value="${esc(g.responsable||"")}" oninput="P.gestMtto.responsable=this.value"></label>
+    <div class="grid2">
+      <label class="f"><span class="lb">${tx("Responsable")}</span>
+        <input type="text" value="${esc(g.responsable||"")}" oninput="P.gestMtto.responsable=this.value"></label>
+      <label class="f"><span class="lb">${tx("Derivar a")}</span>
+        <select onchange="P.gestMtto.mundo=this.value;render()">
+          <option value="mtto" ${g.mundo!=="ehs"?"selected":""}>${tx("Mantenimiento")}</option>
+          <option value="ehs" ${g.mundo==="ehs"?"selected":""}>${tx("Seguridad e Higiene")}</option>
+        </select></label>
+    </div>
+    ${g.mundo==="ehs"?`<p class="tiny muted" style="margin:-6px 0 10px">${tx("Al guardar, este hallazgo deja de aparecer acá y pasa a gestionarse desde el Plan de acción de Seguridad e Higiene.")}</p>`:""}
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Fecha propuesta de solución")}</span>
         <input type="date" value="${esc(g.fechaProp||"")}" oninput="P.gestMtto.fechaProp=this.value"></label>
