@@ -200,6 +200,20 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .catitems{display:flex;flex-direction:column;padding:2px 0 6px 24px}
 .catitem{background:none;border:none;text-align:left;padding:7px 6px;font-size:13.5px;color:var(--primary);cursor:pointer}
 .catitem:active{opacity:.6}
+/* ---------- cronograma: grilla del mes completo ---------- */
+.agcal{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);
+  border-radius:8px;overflow:hidden}
+.agcalh{background:var(--soft);text-align:center;font-size:10px;font-weight:700;color:var(--muted);
+  padding:5px 1px;text-transform:uppercase}
+.agcald{background:var(--card);min-height:60px;padding:3px 2px;display:flex;flex-direction:column;gap:2px}
+.agcald.fuera{opacity:.4}
+.agcald .agn{font-size:11px;font-weight:600;color:var(--ink);align-self:flex-start;cursor:pointer;
+  width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+.agcald .agn.hoy{background:var(--primary);color:#fff}
+.agchip{border-radius:4px;padding:1px 3px;font-size:8.5px;font-weight:600;color:#fff;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;cursor:pointer;line-height:1.5}
+.agmas{font-size:8.5px;color:var(--muted);padding:0 2px;cursor:pointer}
+@media(max-width:360px){.agcald{min-height:52px}.agchip,.agmas{font-size:8px}}
 .modal{position:fixed;inset:0;background:rgba(8,14,22,.82);z-index:100000;display:grid;place-items:center;padding:16px;overflow:auto}
 .mcard{background:var(--card);border-radius:var(--r);padding:16px;max-width:560px;width:100%;text-align:center}
 .cwrap{position:relative;display:inline-block;line-height:0;max-width:100%;touch-action:none}
@@ -1048,6 +1062,16 @@ auditoria:{
 
 };
 const ORDEN = ["extintores","autoelevador_diario","autoelevador_trimestral","escaleras","arnes","auditoria"];
+/* qué es y para qué sirve cada relevamiento, mostrado debajo del título del
+   formulario para que quede clara la finalidad antes de empezar a cargarlo */
+const TPL_EXPLICACION = {
+  extintores: "Controlá que cada matafuego esté listo para usarse: carga vigente, señalización, acceso libre y sin daños visibles.",
+  autoelevador_diario: "Chequeo obligatorio antes de empezar el turno, para asegurar que el autoelevador esté en condiciones seguras para operar.",
+  autoelevador_trimestral: "Revisión más completa y periódica del autoelevador, además del control diario de inicio de turno.",
+  escaleras: "Verificá que las escaleras de mano estén en buen estado antes de usarlas, para prevenir caídas.",
+  arnes: "Controlá el arnés y sus componentes antes de un trabajo en altura: un solo defecto detectado lo retira de servicio.",
+  auditoria: "Recorrida por la planta para detectar y registrar actos y condiciones inseguras del día a día."
+};
 const TILES = [
   {k:"extintores"},
   {g:"auto", nombre:"Autoelevadores", ic:"🚜", color:"var(--c2)", desc:"control diario o revisión trimestral",
@@ -1531,7 +1555,8 @@ function vForm(){
   <section class="block">
     <div class="card pad">
       <span class="eyebrow">${esc(t.desc)}</span>
-      <h2 style="font-size:25px;font-weight:700;margin:2px 0 0">${t.ic} ${esc(t.nombre)}</h2>
+      <h2 style="font-size:25px;font-weight:700;margin:2px 0 4px">${t.ic} ${esc(t.nombre)}</h2>
+      ${TPL_EXPLICACION[P.tpl]?`<p class="small muted" style="margin:0 0 6px">${tx(TPL_EXPLICACION[P.tpl])}</p>`:""}
       <div class="prog"><i style="width:${total?Math.round(hechos/total*100):0}%"></i></div>
       <div class="tiny muted" style="margin-top:6px">${hechos} de ${total} ítems verificados</div>
     </div>
@@ -1987,7 +2012,8 @@ function vAuditoria(){
   <section class="block">
     <div class="card pad">
       <span class="eyebrow">${esc(t.desc)}</span>
-      <h2 style="font-size:25px;font-weight:700;margin:2px 0 0">${t.ic} ${esc(t.nombre)}</h2>
+      <h2 style="font-size:25px;font-weight:700;margin:2px 0 4px">${t.ic} ${esc(t.nombre)}</h2>
+      <p class="small muted" style="margin:0">${tx(TPL_EXPLICACION.auditoria)}</p>
       <div class="tiny muted" style="margin-top:6px">${d.hallazgos.length} hallazgo${d.hallazgos.length===1?"":"s"} cargado${d.hallazgos.length===1?"":"s"}</div>
     </div>
   </section>
@@ -2683,7 +2709,8 @@ function vEntrega(){
     <div class="card pad">
       <div style="text-align:center">
       <span class="eyebrow">${tx("Resolución SRT 299/11 · Anexo I")}</span>
-      <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">${tx("📋 Entrega de ropa de trabajo y EPP")}</h2>
+      <h2 style="font-size:23px;font-weight:700;margin:2px 0 4px">${tx("📋 Entrega de ropa de trabajo y EPP")}</h2>
+      <p class="small muted" style="margin:0">${tx("Deja constancia firmada de qué EPP y ropa de trabajo se le entregó a cada empleado, y cuándo.")}</p>
       </div>
     </div>
   </section>
@@ -2835,7 +2862,8 @@ function vUso(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx("verificación diaria")}</span>
-    <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">${tx("✅ Uso de elementos de protección personal")}</h2>
+    <h2 style="font-size:23px;font-weight:700;margin:2px 0 4px">${tx("✅ Uso de elementos de protección personal")}</h2>
+    <p class="small muted" style="margin:0">${tx("Verificá que cada persona esté usando, hoy, los EPP que le corresponden por su puesto.")}</p>
     </div>
     <div class="tiny muted" style="margin-top:6px">${d.filas.length} personas · ${faltas} falta${faltas===1?"":"s"} detectada${faltas===1?"":"s"}</div>
   </div></section>
@@ -2904,7 +2932,8 @@ function vRopa(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx("relevamiento y entrega")}</span>
-    <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">${tx("👕 Ropa de trabajo")}</h2>
+    <h2 style="font-size:23px;font-weight:700;margin:2px 0 4px">${tx("👕 Ropa de trabajo")}</h2>
+    <p class="small muted" style="margin:0">${tx("Registrá qué prendas y en qué talle se le entregaron a cada trabajador.")}</p>
     </div>
   </div></section>
 
@@ -3687,7 +3716,8 @@ function vInv(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx("Paso")} ${n} ${tx("de")} 6</span>
-    <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">🔎 ${esc(tx(PASOS_INV[n-1]))}</h2>
+    <h2 style="font-size:23px;font-weight:700;margin:2px 0 4px">🔎 ${esc(tx(PASOS_INV[n-1]))}</h2>
+    ${n===1?`<p class="small muted" style="margin:0 0 6px">${tx("Investigá un accidente o incidente para encontrar sus causas y evitar que se repita.")}</p>`:""}
     </div>
     <div class="prog"><i style="width:${Math.round(n/6*100)}%"></i></div>
     <div class="opts" style="margin-top:10px">
@@ -5440,7 +5470,8 @@ function vDocEdit(c){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx("Empresa contratista")}</span>
-    <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${c.nuevo?tx("Nueva empresa"):esc(c.empresa||tx("Editar empresa"))}</h2>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 4px">${c.nuevo?tx("Nueva empresa"):esc(c.empresa||tx("Editar empresa"))}</h2>
+    ${c.nuevo?`<p class="small muted" style="margin:0 0 6px">${tx("Cargá los datos de una empresa contratista para poder asociarla después a permisos de trabajo y otros registros.")}</p>`:""}
     </div>
       <label class="f"><span class="lb">${tx("Empresa / contratista")}</span>
         <input type="text" value="${esc(c.empresa)}" oninput="setC('empresa',this.value)"></label>
@@ -5651,7 +5682,8 @@ function vCap(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx("constancia de capacitación recibida")}</span>
-    <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">${tx("🎓 Capacitación")}</h2>
+    <h2 style="font-size:23px;font-weight:700;margin:2px 0 4px">${tx("🎓 Capacitación")}</h2>
+    <p class="small muted" style="margin:0">${tx("Dejá constancia de una capacitación dictada: temario, participantes y firmas de asistencia.")}</p>
     </div>
     <div class="tiny muted" style="margin-top:6px">${d.temas.length+d.otros.filter(x=>x.trim()).length} temas · ${d.asistentes.length} participantes · ${firmados} firmaron</div>
   </div></section>
@@ -9020,7 +9052,8 @@ function vLuxEdit(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx("protocolo para medición de iluminación")}</span>
-    <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">💡 Hoja ${hoja} de 3</h2>
+    <h2 style="font-size:23px;font-weight:700;margin:2px 0 4px">💡 Hoja ${hoja} de 3</h2>
+    ${hoja===1?`<p class="small muted" style="margin:0 0 6px">${tx("Medí los niveles de iluminación del establecimiento y comparalos con los mínimos exigidos por puesto de trabajo.")}</p>`:""}
     </div>
     <div class="opts" style="margin-top:10px">
       ${hojas.map((h,i)=>`<button class="opt" data-on="${hoja===i+1?1:0}" data-k="${hoja===i+1?"ok":""}" onclick="hojaLux(${i+1})">${esc(tx(h))}</button>`).join("")}
@@ -12682,7 +12715,8 @@ function vCronoEdit(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${tx(CRONO_TIT[d.clase])}</span>
-    <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${esc(e.razon||tx("Empresa"))}</h2>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 4px">${esc(e.razon||tx("Empresa"))}</h2>
+    <p class="small muted" style="margin:0 0 6px">${tx(esCap?"Plan del año, mes a mes, de las capacitaciones a dictar: temas y responsables.":"Plan del año, mes a mes, de los estudios, mediciones y mantenimientos de seguridad e higiene.")}</p>
     </div>
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Período (año)")}</span>
@@ -12978,7 +13012,8 @@ function vParteEdit(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${esc(e.razon||tx("Empresa"))}${e.obra?" · "+esc(e.obra):""}</span>
-    <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${tx("Parte de acción disciplinaria")}</h2>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 4px">${tx("Parte de acción disciplinaria")}</h2>
+    <p class="small muted" style="margin:0 0 6px">${tx("Acta de una medida disciplinaria aplicada a un trabajador, firmada por ambas partes.")}</p>
     </div>
     <div class="grid2">${f("fecha","Fecha","date")}${f("hora","Hora","time")}</div>
 
@@ -13288,7 +13323,8 @@ function vAguaEdit(){
   <section class="block"><div class="card pad">
     <div style="text-align:center">
     <span class="eyebrow">${esc(e.razon||tx("Empresa"))}${e.obra?" · "+esc(e.obra):""}</span>
-    <h2 style="font-size:20px;font-weight:700;margin:2px 0 10px">${tx(AGUA_TIT[d.clase])}</h2>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 4px">${tx(AGUA_TIT[d.clase])}</h2>
+    <p class="small muted" style="margin:0 0 6px">${tx(d.clase==="disp"?"Controlá la higiene y el estado de los dispensers de agua para consumo.":"Registrá la toma de una muestra de agua para analizar su potabilidad.")}</p>
     </div>
     <label class="f"><span class="lb">${tx("Fecha")}</span>
       <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
@@ -14928,6 +14964,43 @@ function agendaFila(e){
     </div>
   </div>`;
 }
+/* fecha local (sin pasar por toISOString/UTC, que puede correr el día
+   según el huso horario): usa directamente año/mes/día del Date local. */
+function agendaYmd(d){
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+/* arma la grilla del mes (semanas de lunes a domingo, con los días de los
+   meses vecinos que hacen falta para completar la primera y la última
+   semana), como un calendario de verdad en vez de una lista de fechas. */
+function agendaMesGrid(ref){
+  const y = parseInt(ref.slice(0,4),10), m = parseInt(ref.slice(5,7),10);
+  const primero = new Date(y, m-1, 1);
+  const dow = primero.getDay();
+  const offset = dow===0 ? 6 : dow-1;
+  const inicio = new Date(y, m-1, 1-offset);
+  const dias = [];
+  for(let i=0;i<42;i++){
+    const d = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate()+i);
+    dias.push({ f:agendaYmd(d), enMes: d.getMonth()===(m-1) });
+  }
+  const semanas = [];
+  for(let i=0;i<dias.length;i+=7) semanas.push(dias.slice(i,i+7));
+  while(semanas.length>4 && !semanas[semanas.length-1].some(x=>x.enMes)) semanas.pop();
+  return semanas;
+}
+const DIAS_SEMANA_CORTAS = ["L","M","M","J","V","S","D"];
+function agendaCeldaMes(dia, porFecha){
+  const evs = porFecha[dia.f] || [];
+  const esHoy = dia.f === hoy();
+  const MAX = 3;
+  const visibles = evs.slice(0, MAX);
+  const resto = evs.length - visibles.length;
+  return `<div class="agcald${dia.enMes?"":" fuera"}">
+    <span class="agn${esHoy?" hoy":""}" onclick="P.agendaVista='semana';P.agendaRef='${dia.f}';render()">${parseInt(dia.f.slice(8,10),10)}</span>
+    ${visibles.map(e=>`<div class="agchip" style="background:${e.color}" onclick="agendaIr('${e.tipo}','${e.refId||""}')" title="${esc(e.titulo)}">${esc(e.titulo)}</div>`).join("")}
+    ${resto>0?`<div class="agmas" onclick="P.agendaVista='semana';P.agendaRef='${dia.f}';render()">+${resto} más</div>`:""}
+  </div>`;
+}
 function vAgenda(){
   const vista = P.agendaVista || "mes";
   const ref = P.agendaRef || hoy();
@@ -14947,15 +15020,18 @@ function vAgenda(){
           <div style="flex:1;min-width:0"><b>${labelMes(mk)}</b></div>
           <span class="pill">${porMes[mk].length}</span>
         </div>`).join("");
+  }else if(vista==="mes"){
+    etiqueta = labelMes(ref.slice(0,7));
+    const porFecha = {};
+    eventos.forEach(e=>{ (porFecha[e.fecha] = porFecha[e.fecha]||[]).push(e); });
+    const semanas = agendaMesGrid(ref);
+    cuerpo = `<div class="agcal">
+      ${DIAS_SEMANA_CORTAS.map(d=>`<div class="agcalh">${d}</div>`).join("")}
+      ${semanas.map(sem=>sem.map(dia=>agendaCeldaMes(dia,porFecha)).join("")).join("")}
+    </div>`;
   }else{
-    let rango;
-    if(vista==="semana"){ rango = agendaDiasSemana(ref); etiqueta = labelSemana(rango[0]); }
-    else{
-      const y = ref.slice(0,4), m = ref.slice(5,7);
-      const dias = new Date(parseInt(y,10), parseInt(m,10), 0).getDate();
-      rango = Array.from({length:dias}, (_,i)=>`${y}-${m}-${String(i+1).padStart(2,"0")}`);
-      etiqueta = labelMes(ref.slice(0,7));
-    }
+    const rango = agendaDiasSemana(ref);
+    etiqueta = labelSemana(rango[0]);
     const porFecha = {}; rango.forEach(f=>{ porFecha[f] = eventos.filter(e=>e.fecha===f); });
     const conAlgo = rango.filter(f=>porFecha[f].length);
     cuerpo = !conAlgo.length ? `<div class="card empty"><span class="ic">🗓️</span>${tx("No hay nada programado en este período.")}</div>`
@@ -14978,7 +15054,7 @@ function vAgenda(){
     <div class="card pad">${navBtns}</div>
   </section>
   <section class="block">
-    <div class="card pad">${cuerpo}</div>
+    <div class="card${vista==="mes"?"":" pad"}" style="${vista==="mes"?"padding:6px":""}">${cuerpo}</div>
   </section>
   <section class="block noprint">
     <button class="btn" onclick="nuevaAgenda();go('agendaEdit')">${tx("+ Agendar una acción")}</button>
