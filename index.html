@@ -4841,7 +4841,9 @@ function vIperResumenGestion(id){
 }
 function borrarIper(id){
   if(!gate("¿Eliminar esta evaluación de riesgos?", ()=>borrarIper(id))) return;
-  S.iper = (S.iper||[]).filter(x=>x.id!==id); guardar(); toast(tx("Evaluación eliminada")); go("iper");
+  S.iper = (S.iper||[]).filter(x=>x.id!==id);
+  S.notifEventos = (S.notifEventos||[]).filter(e=>!(e.tipo==="iperNueva" && e.iperId===id));
+  guardar(); toast(tx("Evaluación eliminada")); go("iper");
 }
 function bloqueIper(){
   const ev = S.iper||[];
@@ -5140,7 +5142,10 @@ function notificaciones(){
   out.sort((a,b)=>(a.dias===null?9999:a.dias)-(b.dias===null?9999:b.dias));
   // 4.4 · eventos de ideas nuevas (para el admin), arriba de todo
   if(typeof puedeAdministrar==="function" && puedeAdministrar()){
-    const ev = (S.notifEventos||[]).filter(e=>e.tipo==="idea" && (!e.emp || e.emp===S.activa));
+    // el .some(...) descarta notificaciones "colgadas": si la idea que
+    // avisaban ya no existe (se borró), no tiene sentido mostrar un aviso
+    // que al tocarlo lleva a una pantalla de "no encontrado"
+    const ev = (S.notifEventos||[]).filter(e=>e.tipo==="idea" && (!e.emp || e.emp===S.activa) && (S.idea||[]).some(x=>x.id===e.ideaId));
     const evNoti = ev.map(e=>({
       tipo:"eventoIdea", icono:"💡",
       titulo: e.quien+" "+tx("cargó una nueva idea."),
@@ -5152,7 +5157,7 @@ function notificaciones(){
     out.unshift(...evNoti.filter(n=>!n.leida));
     evNoti.filter(n=>n.leida).forEach(n=>out.push(n));
     // 4.5 · eventos de equipos/registros que quedaron fuera de servicio
-    const evFs = (S.notifEventos||[]).filter(e=>e.tipo==="fueraServicio" && (!e.emp || e.emp===S.activa));
+    const evFs = (S.notifEventos||[]).filter(e=>e.tipo==="fueraServicio" && (!e.emp || e.emp===S.activa) && (S.insp||[]).some(x=>x.id===e.insId));
     const evFsNoti = evFs.map(e=>({
       tipo:"eventoFs", icono:"⛔",
       titulo: esc(e.tituloReg||tx("Inspección")) + " · " + esc(e.verdictoTx||tx("Fuera de servicio")),
@@ -5165,7 +5170,7 @@ function notificaciones(){
     evFsNoti.filter(n=>n.leida).forEach(n=>out.push(n));
     // 4.4 · una evaluación de riesgos (IPER) completada, sin el detalle
     // de cada medida de control (eso queda para el plan de acción)
-    const evIper = (S.notifEventos||[]).filter(e=>e.tipo==="iperNueva" && (!e.emp || e.emp===S.activa));
+    const evIper = (S.notifEventos||[]).filter(e=>e.tipo==="iperNueva" && (!e.emp || e.emp===S.activa) && (S.iper||[]).some(x=>x.id===e.iperId));
     const evIperNoti = evIper.map(e=>({
       tipo:"eventoIper", icono:"📊",
       titulo: tx("Se completó una evaluación de riesgos") + (e.puesto?" · "+e.puesto:""),
@@ -5177,7 +5182,7 @@ function notificaciones(){
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
     // 4.4 · hallazgo de mantenimiento nuevo (para el admin)
-    const evMtto = (S.notifEventos||[]).filter(e=>e.tipo==="hallazgoMtto" && (!e.emp || e.emp===S.activa));
+    const evMtto = (S.notifEventos||[]).filter(e=>e.tipo==="hallazgoMtto" && (!e.emp || e.emp===S.activa) && (S.mtto||[]).some(x=>x.id===e.mttoId));
     const evMttoNoti = evMtto.map(e=>({
       tipo:"eventoMtto", icono:"🔧",
       titulo: e.quien+" "+tx("cargó un nuevo hallazgo."),
@@ -14225,7 +14230,9 @@ function editarIdea(id){
 }
 function borrarIdea(id){
   if(!gate(tx("¿Eliminar esta idea?"), ()=>borrarIdea(id))) return;
-  S.idea = (S.idea||[]).filter(x=>x.id!==id); guardar(); toast(tx("Idea eliminada")); go("inicioMC");
+  S.idea = (S.idea||[]).filter(x=>x.id!==id);
+  S.notifEventos = (S.notifEventos||[]).filter(e=>!(e.tipo==="idea" && e.ideaId===id));
+  guardar(); toast(tx("Idea eliminada")); go("inicioMC");
 }
 function guardarIdea(){
   capturarFirmas();
@@ -14576,7 +14583,11 @@ function editarMtto(id){
 }
 function borrarMtto(id){
   if(!gate(tx("¿Eliminar este hallazgo?"), ()=>borrarMtto(id))) return;
-  S.mtto = (S.mtto||[]).filter(x=>x.id!==id); guardar(); toast(tx("Hallazgo eliminado")); go("inicioMtto");
+  S.mtto = (S.mtto||[]).filter(x=>x.id!==id);
+  // se limpia también la notificación de la campanita, si la había: si no
+  // se hace esto, queda un aviso apuntando a un hallazgo que ya no existe
+  S.notifEventos = (S.notifEventos||[]).filter(e=>!(e.tipo==="hallazgoMtto" && e.mttoId===id));
+  guardar(); toast(tx("Hallazgo eliminado")); go("inicioMtto");
 }
 function guardarMtto(){
   const d = P.draft;
