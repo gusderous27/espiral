@@ -179,6 +179,15 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:var(--ink);color:var(--bg);
   padding:11px 18px;border-radius:11px;font-size:14px;z-index:99;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
+/* ---------- botón flotante de cronograma (toda la app) ---------- */
+.fab{position:fixed;right:16px;bottom:calc(86px + env(safe-area-inset-bottom));z-index:60;
+  width:56px;height:56px;border-radius:50%;background:var(--primary);color:#fff;border:none;
+  font-size:24px;line-height:1;box-shadow:0 4px 14px rgba(0,0,0,.28);cursor:pointer;display:grid;place-items:center}
+.fabmenu{position:fixed;right:16px;bottom:calc(150px + env(safe-area-inset-bottom));z-index:60;
+  display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.fabopt{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:999px;
+  padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.18);
+  white-space:nowrap}
 .modal{position:fixed;inset:0;background:rgba(8,14,22,.82);z-index:100000;display:grid;place-items:center;padding:16px;overflow:auto}
 .mcard{background:var(--card);border-radius:var(--r);padding:16px;max-width:560px;width:100%;text-align:center}
 .cwrap{position:relative;display:inline-block;line-height:0;max-width:100%;touch-action:none}
@@ -383,6 +392,14 @@ html[data-tema="oscuro"] #splash{background:#0E1621}
   </div>
 </nav>
 
+<div id="fabWrap">
+  <div class="fabmenu" id="fabMenu" style="display:none">
+    <button class="fabopt" onclick="cerrarFab();nuevaAgenda();go('agendaEdit')">➕ Agendar una acción</button>
+    <button class="fabopt" onclick="cerrarFab();go('agenda')">🗓️ Ver cronograma</button>
+  </div>
+  <button class="fab" id="fabBtn" onclick="toggleFab()" title="Cronograma">🗓️</button>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -576,7 +593,7 @@ async function sbUnirsePorCodigo(codigo){
     return data;
   }catch(e){ return { ok:false, error:"servidor" }; }
 }
-const COLECCIONES = ["insp","personal","epp","inv","iper","docs","cap","ptt","lux","aud","crono","parte","agua","idea"];
+const COLECCIONES = ["insp","personal","epp","inv","iper","docs","cap","ptt","lux","aud","crono","parte","agua","idea","mtto","agenda"];
 /* ============================================================
    IDIOMAS · español · english · português
    t("clave") devuelve el texto en el idioma activo.
@@ -1224,13 +1241,18 @@ function render(){
     crono:vCrono, cronoEdit:vCronoEdit, verCrono:vVerCrono,
     agua:vAgua, aguaEdit:vAguaEdit, verAgua:vVerAgua,
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
-    verAud:()=>vVerAud(P.verId), pro:vPro, desvios:vDesvios}[P.page] || vInicio;
+    verAud:()=>vVerAud(P.verId), pro:vPro, desvios:vDesvios,
+    inicioMtto:vInicioMtto, mttoEdit:vMttoEdit, verMtto:vVerMtto, gestionMtto:vGestionMtto, mttoGestion:vMttoGestion,
+    agenda:vAgenda, agendaEdit:vAgendaEdit}[P.page] || vInicio;
   const enAuth = (P.page==="login" || P.page==="onboarding");
   // el splash tiene pointer-events:none, así que no hace falta matarlo acá;
   // se desvanece solo con su animación desde arrancarSesion.
   const hdr=document.querySelector("header"), nv=document.querySelector("nav");
   if(hdr) hdr.style.display = enAuth ? "none" : "";
   if(nv) nv.style.display = enAuth ? "none" : "";
+  const fw = document.getElementById("fabWrap");
+  if(fw) fw.style.display = enAuth ? "none" : "";
+  cerrarFab();
   $("#app").innerHTML = v();
   if(!enAuth) pintarEmpresa();
   if(["form","entrega","uso","ropa","inv","cap","luxEdit","audEdit","cronoEdit","parteEdit","aguaEdit","ideaEdit"].indexOf(P.page)>=0){ montarFirma("sig","firma"); montarFirma("sig2","firma2"); }
@@ -1579,6 +1601,7 @@ function tomarArchivo(inp, destino){
     }
     if(P.fotoDestino==="logo"){ S.empresa.logo = b64; guardar(); render(); toast(tx("Logo cargado")); return; }
     if(P.fotoDestino==="hallazgo"){ leerFormHallazgo(); P.hFoto = b64; render(); }
+    else if(P.fotoDestino==="mttoFoto"){ P.draft.foto = b64; render(); }
     else { P.draft.fotos.push(b64); const y=window.scrollY; render(); window.scrollTo(0,y); }
     toast(tx("Foto agregada"));
   });
@@ -2104,6 +2127,18 @@ function vHistorialMC(){
   </section>
   <div style="height:10px"></div>`;
 }
+function vHistorialMtto(){
+  const hallazgos = (S.mtto||[]).slice().sort((a,b)=>(b.cerrada||"").localeCompare(a.cerrada||""));
+  return bandaMundo()+`
+  <section class="block">
+    <div class="section-title"><h2>${tx("Historial")}</h2></div>
+    <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Deslizá una fila hacia la izquierda para ver, editar o eliminar.")}</p>
+    ${!hallazgos.length ? `<div class="card empty"><span class="ic">🔧</span>${tx("Todavía no hay hallazgos cargados.")}</div>`
+      : `<div class="card pad"><div class="grp" style="margin-top:0">${tx("🔧 Hallazgos de mantenimiento")}</div>
+         ${hallazgos.map(filaMttoHist).join("")}</div>`}
+  </section>
+  <div style="height:10px"></div>`;
+}
 /* ---------- historial: agrupado por tipo, y dentro por mes/semana ---------- */
 const MESES_NOMBRE = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 function labelMes(mesKey){
@@ -2194,6 +2229,7 @@ function bloqueHistTipo(key, icono, nombre, rows, filaFn){
 }
 function vHistorial(){
   if(S.mundo==="mc") return vHistorialMC();
+  if(S.mundo==="mtto") return vHistorialMtto();
   if(!S.insp.length && !(S.epp||[]).length && !(S.inv||[]).length && !(S.cap||[]).length && !(S.ptt||[]).length && !(S.lux||[]).length && !(S.aud||[]).length && !(S.crono||[]).length && !(S.parte||[]).length && !(S.agua||[]).length) return `<section class="block"><div class="card empty">
     <span class="ic">≡</span>${tx("Todavía no hay inspecciones cerradas.")}<br><span class="small">${tx("Empezá por una plantilla en Nueva.")}</span></div></section>`;
   const filtroMes = P.histFiltro === "mes";
@@ -5017,6 +5053,18 @@ function notificaciones(){
     }));
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+    // 4.4 · hallazgo de mantenimiento nuevo (para el admin)
+    const evMtto = (S.notifEventos||[]).filter(e=>e.tipo==="hallazgoMtto" && (!e.emp || e.emp===S.activa));
+    const evMttoNoti = evMtto.map(e=>({
+      tipo:"eventoMtto", icono:"🔧",
+      titulo: e.quien+" "+tx("cargó un nuevo hallazgo."),
+      sub: e.titulo ? "“"+e.titulo+"”" : tx("Ingresá aquí para gestionarlo."),
+      cuando: null, dias: e.leida ? 9998 : -9999,
+      leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
+      ir:()=>{ marcarNotifLeida(e.id); go("verMtto", e.mttoId); }
+    }));
+    out.unshift(...evMttoNoti.filter(n=>!n.leida));
+    evMttoNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   }
   // 4.7 · pedidos de firma: van dirigidos a una persona puntual, no a
   // cualquier administrador, así que no dependen de puedeAdministrar() sino
@@ -5067,6 +5115,21 @@ function notificaciones(){
   }));
   out.unshift(...evFirmadaNoti.filter(n=>!n.leida));
   evFirmadaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
+  // 4.9 · invitación a una acción agendada (cronograma global, botón
+  // flotante): va dirigida a la persona invitada puntual, igual que un
+  // pedido de firma.
+  const evAgenda = (S.notifEventos||[]).filter(e=>
+    e.tipo==="agendaInvitacion" && (!e.emp || e.emp===S.activa) && esParaMi(e.email));
+  const evAgendaNoti = evAgenda.map(e=>({
+    tipo:"eventoAgenda", icono:"🗓️",
+    titulo: (e.quien?e.quien+" ":"")+tx("te invitó a una acción agendada")+(e.titulo?": "+e.titulo:""),
+    sub: e.fechaEv ? (fecha(e.fechaEv)+(e.horaEv?" · "+e.horaEv:"")) : tx("Ingresá aquí para verla."),
+    cuando: null, dias: e.leida ? 9998 : -9999,
+    leida: e.leida, eventoId: e.id, clave: "evento|"+e.id,
+    ir:()=>{ marcarNotifLeida(e.id); P.agendaVista="mes"; P.agendaRef=e.fechaEv||hoy(); go("agenda"); }
+  }));
+  out.unshift(...evAgendaNoti.filter(n=>!n.leida));
+  evAgendaNoti.filter(n=>n.leida).forEach(n=>out.push(n));
   // 4.8 · capacitación programada con fecha exacta a menos de 7 días: le
   // avisa a TODA la empresa (no solo a quien la cargó), porque conviene que
   // todos sepan que se acerca. Si el cronograma solo tiene el mes cargado
@@ -5116,7 +5179,7 @@ function abrirNoti(){
   cont.id = "notipop";
   cont.className = "notipop";
   const fila = (n, idx) => {
-    const eventoPropio = n.tipo==="eventoIdea" || n.tipo==="eventoIper" || n.tipo==="eventoFirma" || n.tipo==="eventoFirmada";
+    const eventoPropio = n.tipo==="eventoIdea" || n.tipo==="eventoIper" || n.tipo==="eventoMtto" || n.tipo==="eventoAgenda" || n.tipo==="eventoFirma" || n.tipo==="eventoFirmada";
     const rojo = n.dias<0 && !eventoPropio;
     const nuevo = eventoPropio && !n.leida;
     let etq = "";
@@ -9248,6 +9311,20 @@ function regPorTipo(tipo, id){
     filas=(S.docs||[]).map(c=>[c.empresa,c.tarea||"",c.cuit||"",c.art||"",c.ingreso?fecha(c.ingreso):""]
       .concat(docsStd().map(x=>estadoDoc((c.docs||{})[x.k]).t)));
   }
+  else if(tipo==="mtto"){
+    const r=(S.mtto||[]).find(x=>x.id===id); if(!r) return null;
+    t = (r.hallazgo||tx("Hallazgo de mantenimiento")).slice(0,60); f=r.fecha;
+    M.push(["Fecha de registro",fecha(r.fecha)],["Reporta",r.reporta||"—"],["Tipo",r.mtipo||"—"]);
+    M.push(["Hallazgo",r.hallazgo||"—"],["Oportunidad de mejora",r.mejora||"—"]);
+    M.push(["Estado",r.estado||"Reportado"]);
+    if(r.responsable) M.push(["Responsable",r.responsable]);
+    if(r.relevancia) M.push(["Relevancia",r.relevancia]);
+    if(r.fechaProp) M.push(["Fecha propuesta de solución",fecha(r.fechaProp)]);
+    if(r.fechaCump) M.push(["Fecha de cumplimiento",fecha(r.fechaCump)]);
+    if(r.tercerizado) M.push(["Tercerizado",r.empresaTercero?("Sí · "+r.empresaTercero):"Sí"]);
+    if(r.comentarios) M.push(["Comentarios / acciones",r.comentarios]);
+    if(r.foto) M.push(["Foto",`IMG:${r.foto}`]);
+  }
   return {t, f, meta:M, cols, filas, empresa:e};
 }
 
@@ -10154,6 +10231,9 @@ function xlsxEsc(s){
 }
 function xlsxCelda(ref, valor, styleIdx){
   const s = styleIdx?` s="${styleIdx}"`:"";
+  // {img:dataUri}: la celda queda vacía, la foto se dibuja aparte como un anclaje
+  // (ver xlsxHojaCuerpo/xlsxFotoAnchorXml/construirLibroXlsx)
+  if(valor && typeof valor==="object" && valor.img) return `<c r="${ref}"${s}/>`;
   if(typeof valor==="string" && valor.indexOf("IMG:")===0) valor = tx("Firmado");
   if(typeof valor === "number" && isFinite(valor)) return `<c r="${ref}"${s}><v>${valor}</v></c>`;
   const txt = valor==null ? "" : String(valor);
@@ -10215,7 +10295,7 @@ function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo, colsGrafic
   const textoColNum = logoInfo ? Math.min(3, numCols) : 1;
   const textoCol = xlsxColLetra(textoColNum);
 
-  let rows = "", merges = [], rowNum = 1;
+  let rows = "", merges = [], rowNum = 1, fotos = [];
 
   const fechaTxt = tx("Fecha")+": "+fecha(fechaVal||hoy());
   rows += `<row r="${rowNum}" ht="24" customHeight="1">`;
@@ -10259,8 +10339,15 @@ function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo, colsGrafic
       cols.forEach((c,i)=>{ rows += xlsxCelda(`${xlsxColLetra(i+1)}${rowNum}`, c, 5); });
       rows += `</row>`; rowNum++;
       (b.filas||[]).forEach(f=>{
-        rows += `<row r="${rowNum}">`;
-        for(let i=0;i<cols.length;i++) rows += xlsxCelda(`${xlsxColLetra(i+1)}${rowNum}`, f[i]==null?"":f[i], 6);
+        // si alguna celda de la fila trae {img:dataUri}, la fila queda más alta
+        // para que la miniatura entre, y se anota su posición en "fotos"
+        const filaConFoto = f.some(v=>v && typeof v==="object" && v.img);
+        rows += filaConFoto ? `<row r="${rowNum}" ht="60" customHeight="1">` : `<row r="${rowNum}">`;
+        for(let i=0;i<cols.length;i++){
+          const v = f[i]==null?"":f[i];
+          if(v && typeof v==="object" && v.img) fotos.push({col:i+1, row:rowNum, dataUri:v.img});
+          rows += xlsxCelda(`${xlsxColLetra(i+1)}${rowNum}`, v, 6);
+        }
         rows += `</row>`; rowNum++;
       });
       rowNum++;
@@ -10272,7 +10359,7 @@ function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo, colsGrafic
   const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
   const anchoCol = colsGraficos ? 10.5 : 22;
   const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="${anchoCol}" customWidth="1"/>`).join("")}</cols>`;
-  return { rowsXml: rows, mergeXml, dim, colsXml, lastRow };
+  return { rowsXml: rows, mergeXml, dim, colsXml, lastRow, fotos };
 }
 /* El logo se ancla siempre igual (arriba a la izquierda, filas 1-2); el XML
    del dibujo es idéntico en cada solapa, solo cambia el nombre del archivo. */
@@ -10283,6 +10370,21 @@ function xlsxLogoAnchorXml(){
 <xdr:pic>
 <xdr:nvPicPr><xdr:cNvPr id="2" name="Logo"/><xdr:cNvPicPr/></xdr:nvPicPr>
 <xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
+<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
+</xdr:pic>
+<xdr:clientData/>
+</xdr:twoCellAnchor>`;
+}
+/* Una foto de fila de tabla (p.ej. el hallazgo de mantenimiento), anclada como
+   una miniatura del tamaño de su celda. col/fila son índices base-0 (los de
+   xdr:from/xdr:to) de la celda donde se dibuja. */
+function xlsxFotoAnchorXml(col, fila, relId, idNum){
+  return `<xdr:twoCellAnchor editAs="oneCell">
+<xdr:from><xdr:col>${col}</xdr:col><xdr:colOff>19050</xdr:colOff><xdr:row>${fila}</xdr:row><xdr:rowOff>19050</xdr:rowOff></xdr:from>
+<xdr:to><xdr:col>${col+1}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${fila+1}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+<xdr:pic>
+<xdr:nvPicPr><xdr:cNvPr id="${idNum}" name="Foto ${idNum}"/><xdr:cNvPicPr/></xdr:nvPicPr>
+<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
 <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
 </xdr:pic>
 <xdr:clientData/>
@@ -10394,7 +10496,8 @@ function construirLibroXlsx(o){
 
   const sheetEntries = [], workbookRelsEntries = [], contentOverrides = [];
   const sheetFiles = [];
-  let rId = 1, chartCounter = 0;
+  let rId = 1, chartCounter = 0, fotoCounter = 0;
+  const extsUsados = new Set(); if(logoInfo) extsUsados.add(logoInfo.ext);
 
   hojas.forEach((h, idx)=>{
     const n = idx+1;
@@ -10402,7 +10505,8 @@ function construirLibroXlsx(o){
     // grilla de 2 gráficos por fila: 6 columnas cada uno + 1 de separación
     const ANCHO_GRAF = 6, GAP_GRAF = 1, ALTO_GRAF = 16;
     const cuerpo = xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo, graficos.length ? (ANCHO_GRAF*2+GAP_GRAF) : 0);
-    const hayDrawing = !!logoInfo || graficos.length>0;
+    const fotos = cuerpo.fotos || [];
+    const hayDrawing = !!logoInfo || graficos.length>0 || fotos.length>0;
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <dimension ref="${cuerpo.dim}"/>
@@ -10443,6 +10547,19 @@ ${hayDrawing?`<drawing r:id="rIdDrawing"/>`:""}
         sheetFiles.push({nombre:`xl/charts/chart${chartN}.xml`, datos:strToU8(xlsxChartXml(g))});
         contentOverrides.push(`<Override PartName="/xl/charts/chart${chartN}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
       });
+      // fotos incrustadas por fila (p.ej. columna "Foto" de una tabla de hallazgos):
+      // cada una es su propia imagen anclada a la celda donde iba el {img:...}
+      fotos.forEach(foto=>{
+        const info = dataUriABytes(foto.dataUri);
+        if(!info) return;
+        fotoCounter++;
+        const relId = "rIdFoto"+fotoCounter;
+        const mediaName = `foto${n}_${fotoCounter}.${info.ext}`;
+        anchors += xlsxFotoAnchorXml(foto.col-1, foto.row-1, relId, idNum++);
+        drawingRels += `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${mediaName}"/>`;
+        sheetFiles.push({nombre:`xl/media/${mediaName}`, datos:info.bytes});
+        extsUsados.add(info.ext);
+      });
       sheetFiles.push({nombre:`xl/worksheets/_rels/sheet${n}.xml.rels`, datos:strToU8(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${n}.xml"/>
@@ -10463,7 +10580,7 @@ ${drawingRels}
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>
-${logoInfo?`<Default Extension="${logoInfo.ext}" ContentType="image/${logoInfo.ext==="jpeg"?"jpeg":logoInfo.ext}"/>`:""}
+${Array.from(extsUsados).map(ext=>`<Default Extension="${ext}" ContentType="image/${ext==="jpeg"?"jpeg":ext}"/>`).join("\n")}
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 ${contentOverrides.join("\n")}
@@ -10657,6 +10774,26 @@ function excelUno(tipo,id){
   const bytes = construirXlsx(p);
   const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
   bajarBlob((p.nombreBase||"espiral")+".xlsx", blob, true);
+}
+/* Exporta TODOS los hallazgos de mantenimiento a una sola solapa, con una
+   columna "Foto" que incrusta la imagen de cada fila (no un texto "Firmado"
+   como el resto de las firmas: acá se ve la foto real). */
+function excelMtto(){
+  if(!muroExcel()) return;
+  const hallazgos = (S.mtto||[]).slice().sort((a,b)=>(b.cerrada||"").localeCompare(a.cerrada||""));
+  if(!hallazgos.length) return toast(tx("No hay hallazgos para exportar"));
+  const cols = ["Fecha","Reporta","Sector","Tipo","Hallazgo","Oportunidad de mejora","Estado",
+    "Responsable","Fecha propuesta","Fecha cumplimiento","Relevancia","Tercerizado","Empresa","Comentarios","Foto"];
+  const filas = hallazgos.map(r=>[
+    fecha(r.fecha), r.reporta||"", r.sector||"", r.mtipo||"", r.hallazgo||"", r.mejora||"", r.estado||"Reportado",
+    r.responsable||"", r.fechaProp?fecha(r.fechaProp):"", r.fechaCump?fecha(r.fechaCump):"", r.relevancia||"",
+    r.tercerizado?"Sí":"No", r.empresaTercero||"", r.comentarios||"", r.foto?{img:r.foto}:""
+  ]);
+  const e = S.empresa||{};
+  const bytes = construirXlsx({ empresa:e, titulo:tx("Hallazgos de mantenimiento"), fecha:hoy(), hoja:tx("Hallazgos"),
+    bloques:[{tipo:"tabla", cols, filas}] });
+  const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  bajarBlob("espiral-hallazgos-mantenimiento-"+hoy()+".xlsx", blob, true);
 }
 function textoUno(tipo,id){
   const d = regPorTipo(tipo,id); if(!d) return "";
@@ -13724,7 +13861,9 @@ const MUNDOS = {
   mc: { ic:"⚙️", nombre:"Mejora Continua", desc:"ideas del personal, sugerencias y reconocimiento",
         color:"var(--c6)", inicio:"inicioMC" },
   rh: { ic:"👥", nombre:"Recursos Humanos", desc:"nómina, legajos, exámenes médicos y licencias",
-        color:"var(--c8)", inicio:"inicioRH" }
+        color:"var(--c8)", inicio:"inicioRH" },
+  mtto: { ic:"🔧", nombre:"Mantenimiento", desc:"hallazgos de mantenimiento y su gestión",
+        color:"var(--c2)", inicio:"inicioMtto" }
 };
 function irInicio(){
   // la casita vuelve al selector de mundos: "¿Dónde querés trabajar hoy?"
@@ -14289,6 +14428,603 @@ function vVerIdea(){
 }
 
 /* ============================================================
+   MANTENIMIENTO  ·  planilla de hallazgos + gestión (admin)
+   ============================================================ */
+const MTTO_TIPOS = [
+  "Mantenimiento general", "Eléctrico", "Pintura", "Plomería",
+  "Carpintería", "Herrería / metalúrgica", "Climatización", "Estructural / civil"
+];
+const MTTO_ESTADOS = ["Reportado", "En proceso", "Finalizado", "Rechazado"];
+const MTTO_RELEVANCIA = ["Importante", "Muy importante", "Urgente"];
+
+function nuevoMtto(){
+  P.draft = { id:uid(), tipo:"mtto", fecha:hoy(), reportaId:"", reporta:"", sector:"",
+    mtipo:"", hallazgo:"", mejora:"", foto:null,
+    estado:"Reportado", responsable:"", fechaProp:"", fechaCump:"", relevancia:"",
+    comentarios:"", tercerizado:false, empresaTercero:"" };
+}
+function editarMtto(id){
+  const r = (S.mtto||[]).find(x=>x.id===id);
+  if(r){ P.draft = JSON.parse(JSON.stringify(r)); P.editando = true; go("mttoEdit"); }
+}
+function borrarMtto(id){
+  if(!gate(tx("¿Eliminar este hallazgo?"), ()=>borrarMtto(id))) return;
+  S.mtto = (S.mtto||[]).filter(x=>x.id!==id); guardar(); toast(tx("Hallazgo eliminado")); go("inicioMtto");
+}
+function guardarMtto(){
+  const d = P.draft;
+  if(!(d.hallazgo||"").trim()) return toast(tx("Describí el hallazgo encontrado"));
+  if(!(d.mtipo||"").trim()) return toast(tx("Elegí el tipo de hallazgo"));
+  d.cerrada = new Date().toISOString(); d.emp = S.activa;
+  const ed = upsert("mtto", d);
+  if(!ed) notifHallazgoNuevo(d);   // avisar al admin del hallazgo nuevo
+  guardar(); P.draft = null;
+  toast(ed ? tx("Registro actualizado") : tx("Hallazgo guardado"));
+  go("verMtto", d.id);
+}
+/* registra un evento de "hallazgo nuevo" para que lo vea el admin */
+function notifHallazgoNuevo(d){
+  const quien = (S.sesion && (S.sesion.nombre||S.sesion.email)) || d.reporta || tx("Alguien");
+  S.notifEventos = S.notifEventos || [];
+  S.notifEventos.unshift({
+    id: uid(), tipo: "hallazgoMtto", emp: S.activa,
+    quien, mttoId: d.id, titulo: (d.hallazgo||"").slice(0,60),
+    ts: new Date().toISOString(), leida: false
+  });
+  if(S.notifEventos.length>50) S.notifEventos = S.notifEventos.slice(0,50);
+}
+function mttoReporta(id){
+  const p = trab(id);
+  P.draft.reportaId = id; P.draft.reporta = p.nombre||"";
+  P.draft.sector = p.area||P.draft.sector;
+  render();
+}
+function mttoAltaRapida(){
+  modalCampos(tx("Agregar persona"), [{l:tx("Nombre y apellido")},{l:tx("Sector")}], v=>{
+    const nuevo = {id:uid(), nombre:v[0], dni:"", legajo:"", puesto:"", area:v[1]||"", empresa:"", talles:{}};
+    (S.personal=S.personal||[]).push(nuevo); guardar();
+    P.draft.reportaId = nuevo.id; P.draft.reporta = nuevo.nombre; P.draft.sector = nuevo.area;
+    render(); toast(tx("Persona agregada"));
+  });
+}
+function mttoColor(estado){
+  return estado==="Finalizado"?"var(--ok)": estado==="Rechazado"?"var(--no)":
+    estado==="En proceso"?"var(--c4)":"var(--c2)";
+}
+function filaMttoHist(r){
+  const c = mttoColor(r.estado);
+  return swFila("mtto", r.id, `<div class="row" onclick="go('verMtto','${r.id}')">
+    <span class="dot" style="background:${c}"></span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:14.5px">🔧 ${esc((r.hallazgo||tx("Sin descripción")).slice(0,60))}</div>
+      <div class="tiny muted">${fecha(r.fecha)}${r.mtipo?" · "+esc(r.mtipo):""}${r.reporta?" · "+esc(r.reporta):""}</div>
+    </div>
+    <span class="pill" style="border-color:${c};color:${c}">${tx(r.estado||"")}</span>
+  </div>`);
+}
+function vInicioMtto(){
+  const e = S.empresa||{};
+  const hallazgos = (S.mtto||[]).slice().sort((a,b)=>(b.cerrada||"").localeCompare(a.cerrada||""));
+  const enProceso = hallazgos.filter(h=>h.estado==="En proceso").length;
+  const finalizados = hallazgos.filter(h=>h.estado==="Finalizado").length;
+  const mttoDestino = puedeAdministrar() ? "gestionMtto" : "historial";
+  return `
+  ${bandaMundo()}
+  <section class="block">
+    <div class="card pad">
+      ${e.logo
+        ? `<div style="text-align:center;padding:6px 0"><img src="${e.logo}" style="max-height:64px;max-width:190px;object-fit:contain"></div>`
+        : `<div style="text-align:center;padding:2px 0 6px"><span class="eyebrow">${tx("Mantenimiento")}</span>
+           <h2 style="font-size:22px;font-weight:700;margin:2px 0 0">${esc(e.razon||tx("Empresa"))}</h2></div>`}
+      <div class="kpis">
+        <button class="kpi" onclick="go('${mttoDestino}')"><b>${hallazgos.length}</b><span class="tiny muted">${tx("hallazgos")}</span></button>
+        <button class="kpi" onclick="go('${mttoDestino}')"><b>${enProceso}</b><span class="tiny muted">${tx("en proceso")}</span></button>
+        <button class="kpi" style="border-color:var(--ok)" onclick="go('${mttoDestino}')"><b style="color:var(--ok)">${finalizados}</b><span class="tiny muted">${tx("finalizados")}</span></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="section-title"><h2>${tx("Planilla de hallazgos")}</h2></div>
+    <div class="tiles">
+      <button class="tile" style="--tc:var(--c2)" onclick="nuevoMtto();go('mttoEdit')">
+        <span class="ic">🔧</span><span class="nm">${tx("Nuevo hallazgo")}</span>
+        <span class="de">(${tx("mantenimiento, eléctrico, pintura, etc.")})</span></button>
+      ${puedeAdministrar()?`<button class="tile" style="--tc:var(--c4)" onclick="go('gestionMtto')">
+        <span class="ic">⚙️</span><span class="nm">${tx("Gestionar hallazgos")}</span>
+        <span class="de">(${tx("asignar responsable y hacer seguimiento")})</span></button>`:""}
+    </div>
+  </section>
+
+  ${!hallazgos.length ? `<section class="block"><div class="card empty">
+      <span class="ic">🔧</span>${tx("Todavía no hay hallazgos cargados.")}</div></section>` :
+    `<section class="block">
+      <div class="section-title"><h2>${tx("Últimos hallazgos")}</h2></div>
+      <div class="card pad">${hallazgos.slice(0,8).map(filaMttoHist).join("")}</div>
+    </section>`}
+  <div style="height:10px"></div>`;
+}
+function vMttoEdit(){
+  if(!P.draft || P.draft.tipo!=="mtto") nuevoMtto();
+  const d = P.draft, e = S.empresa||{};
+  const nomina = (S.personal||[]).slice().sort((a,b)=>(a.nombre||"").localeCompare(b.nombre||""));
+  return `
+  <section class="block"><div class="card pad">
+    <span class="eyebrow">${esc(e.razon||tx("Empresa"))}</span>
+    <h2 style="font-size:21px;font-weight:700;margin:2px 0 4px">${tx("🔧 Planilla de hallazgos")}</h2>
+    <p class="small muted" style="margin:0">${tx("Registrá un hallazgo de mantenimiento: qué encontraste, de qué tipo es y cómo se podría mejorar o arreglar.")}</p>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <label class="f"><span class="lb">${tx("Quién reporta")}</span>
+      <select onchange="if(this.value)mttoReporta(this.value)">
+        <option value="">${tx("Seleccionar…")}</option>
+        ${nomina.map(p=>`<option value="${p.id}" ${d.reportaId===p.id?"selected":""}>${esc(p.nombre)}${p.area?" · "+esc(p.area):""}</option>`).join("")}
+      </select></label>
+    <button class="btn soft sm" style="margin-bottom:10px" onclick="mttoAltaRapida()">${tx("+ No está en la lista")}</button>
+    <div class="grid2">
+      <label class="f"><span class="lb">${tx("Sector / área")}</span>
+        <input type="text" value="${esc(d.sector)}" oninput="P.draft.sector=this.value"></label>
+      <label class="f"><span class="lb">${tx("Fecha de registro")}</span>
+        <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
+    </div>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    ${campoOtro(tx("Tipo de hallazgo"), MTTO_TIPOS, d.mtipo, "mttoTipoOtro", "v=>P.draft.mtipo=v", tx("Especificá el tipo"))}
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <label class="f" style="margin-top:0"><span class="lb">${tx("Hallazgo encontrado")}</span>
+      <textarea oninput="P.draft.hallazgo=this.value" placeholder="${tx("Describí qué encontraste…")}">${esc(d.hallazgo)}</textarea></label>
+    <label class="f"><span class="lb">${tx("Oportunidad de mejora")}</span>
+      <textarea oninput="P.draft.mejora=this.value" placeholder="${tx("Cómo se podría mejorar o arreglar…")}">${esc(d.mejora)}</textarea></label>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Foto del hallazgo")}</div>
+    ${d.foto?`<div style="margin-bottom:8px"><img src="${d.foto}" style="max-width:100%;border-radius:10px"></div>
+      <button class="btn ghost sm" onclick="P.draft.foto=null;render()">${tx("Quitar foto")}</button>`
+      : fotoBtns("mttoFoto")}
+  </div></section>
+
+  <section class="block noprint">
+    <button class="btn" onclick="guardarMtto()">${txGuardar("mtto","Guardar hallazgo")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="P.draft=null;go('inicioMtto')">${tx("Salir sin guardar")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
+/* --- gestión del hallazgo, solo administrador --- */
+function vGestionMtto(){
+  if(!puedeAdministrar()) return `<section class="block"><div class="card empty">🔒 ${tx("Solo el administrador puede gestionar los hallazgos.")}</div></section>`;
+  const hallazgos = (S.mtto||[]).slice();
+  if(!hallazgos.length){
+    return `${bandaMundo()}
+    <section class="block"><div class="section-title"><h2>${tx("Gestionar hallazgos")}</h2></div>
+      <div class="card empty"><span class="ic">🔧</span>${tx("Todavía no hay hallazgos para gestionar.")}</div></section>`;
+  }
+  const porEstado = {}; MTTO_ESTADOS.forEach(x=>porEstado[x]=[]);
+  hallazgos.forEach(h=>{ const est = h.estado||"Reportado"; (porEstado[est]=porEstado[est]||[]).push(h); });
+
+  const tarjeta = (r)=>{
+    const c = mttoColor(r.estado);
+    const pend = !r.gestionada;
+    return `<div class="gidea" onclick="gestionarMtto('${r.id}')">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14.5px">🔧 ${esc((r.hallazgo||tx("Sin descripción")).slice(0,60))}</div>
+        <div class="tiny muted">${fecha(r.fecha)}${r.mtipo?" · "+esc(r.mtipo):""}${r.reporta?" · "+tx("reporta")+" "+esc(r.reporta):""}</div>
+        ${r.relevancia?`<div class="tiny" style="margin-top:4px;color:var(--c2)">▸ ${tx(r.relevancia)}</div>`:""}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none">
+        ${pend?`<span class="pill" style="border-color:var(--c2);color:var(--c2);font-size:11px">${tx("sin gestionar")}</span>`:""}
+        <span style="color:var(--muted);font-size:18px">⚙️</span>
+      </div>
+    </div>`;
+  };
+
+  const cols = MTTO_ESTADOS.filter(est=>porEstado[est] && porEstado[est].length).map(est=>{
+    const c = mttoColor(est);
+    return `<section class="block">
+      <div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px">
+        <span class="dot" style="background:${c}"></span>
+        <h3 style="font-size:15px;font-weight:700;margin:0">${tx(est)}</h3>
+        <span class="pill" style="border-color:${c};color:${c};margin-left:auto">${porEstado[est].length}</span>
+      </div>
+      <div class="card pad" style="display:flex;flex-direction:column;gap:2px">
+        ${porEstado[est].map(tarjeta).join("")}
+      </div>
+    </section>`;
+  }).join("");
+
+  const pendientes = hallazgos.filter(h=>!h.gestionada).length;
+  return `${bandaMundo()}
+  <section class="block">
+    <div class="section-title"><h2>${tx("Gestionar hallazgos")}</h2></div>
+    <div class="card pad">
+      <p class="small muted" style="margin:0">${tx("Tocá cualquier hallazgo para asignar responsable, fechas, estado y si se terceriza.")}</p>
+      ${pendientes?`<p class="small" style="margin:8px 0 0;color:var(--c2)"><b>${pendientes}</b> ${pendientes===1?tx("hallazgo sin gestionar todavía."):tx("hallazgos sin gestionar todavía.")}</p>`:`<p class="small" style="margin:8px 0 0;color:var(--ok)">${tx("Todos los hallazgos están gestionados. 👏")}</p>`}
+    </div>
+  </section>
+  ${cols}
+  <section class="block noprint">
+    <button class="btn soft" onclick="excelMtto()">${tx("📊 Exportar todos a Excel (con fotos)")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
+function gestionarMtto(id){
+  const r = (S.mtto||[]).find(x=>x.id===id); if(!r) return;
+  P.gestMttoDesde = (P.page==="gestionMtto") ? "gestionMtto" : "verMtto";
+  P.gestMtto = JSON.parse(JSON.stringify(r)); go("mttoGestion");
+}
+function guardarGestionMtto(){
+  const g = P.gestMtto;
+  const i = (S.mtto||[]).findIndex(x=>x.id===g.id);
+  if(i<0){ P.gestMtto=null; return go("inicioMtto"); }
+  S.mtto[i].estado = g.estado;
+  S.mtto[i].responsable = g.responsable;
+  S.mtto[i].fechaProp = g.fechaProp;
+  S.mtto[i].fechaCump = g.fechaCump;
+  S.mtto[i].relevancia = g.relevancia;
+  S.mtto[i].comentarios = g.comentarios;
+  S.mtto[i].tercerizado = !!g.tercerizado;
+  S.mtto[i].empresaTercero = g.tercerizado ? (g.empresaTercero||"") : "";
+  S.mtto[i].gestionada = new Date().toISOString();
+  guardar(); const idg=g.id; const desde=P.gestMttoDesde; P.gestMtto=null; P.gestMttoDesde=null;
+  toast(tx("Gestión guardada"));
+  if(desde==="gestionMtto") go("gestionMtto"); else go("verMtto", idg);
+}
+function vMttoGestion(){
+  const g = P.gestMtto;
+  if(!g) return `<section class="block"><div class="card empty">${tx("No se encontró el hallazgo.")}</div></section>`;
+  const e = S.empresa||{};
+  return `
+  <section class="block"><div class="card pad">
+    <span class="eyebrow">${tx("Gestión del hallazgo")} · ${esc(e.razon||"")}</span>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 4px">${esc((g.hallazgo||tx("Sin descripción")).slice(0,80))}</h2>
+    <p class="small muted" style="margin:0">${fecha(g.fecha)}${g.mtipo?" · "+esc(g.mtipo):""}${g.reporta?" · "+tx("reporta")+" "+esc(g.reporta):""}</p>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("El hallazgo")}</div>
+    <p class="small" style="margin:0 0 8px;white-space:pre-wrap">${esc(g.hallazgo||"—")}</p>
+    ${g.mejora?`<p class="small" style="margin:0"><b>${tx("Oportunidad de mejora")}:</b> ${esc(g.mejora)}</p>`:""}
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Gestión")}</div>
+    <label class="f"><span class="lb">${tx("Estado")}</span>
+      <select onchange="P.gestMtto.estado=this.value;render()">
+        ${MTTO_ESTADOS.map(x=>`<option ${g.estado===x?"selected":""}>${tx(x)}</option>`).join("")}
+      </select></label>
+    <label class="f"><span class="lb">${tx("Responsable")}</span>
+      <input type="text" value="${esc(g.responsable||"")}" oninput="P.gestMtto.responsable=this.value"></label>
+    <div class="grid2">
+      <label class="f"><span class="lb">${tx("Fecha propuesta de solución")}</span>
+        <input type="date" value="${esc(g.fechaProp||"")}" oninput="P.gestMtto.fechaProp=this.value"></label>
+      <label class="f"><span class="lb">${tx("Fecha de cumplimiento efectiva")}</span>
+        <input type="date" value="${esc(g.fechaCump||"")}" oninput="P.gestMtto.fechaCump=this.value"></label>
+    </div>
+    <label class="f"><span class="lb">${tx("Relevancia del hallazgo")}</span>
+      <select onchange="P.gestMtto.relevancia=this.value;render()">
+        <option value="">${tx("Seleccionar…")}</option>
+        ${MTTO_RELEVANCIA.map(x=>`<option ${g.relevancia===x?"selected":""}>${tx(x)}</option>`).join("")}
+      </select></label>
+    <label class="f"><span class="lb">${tx("Comentarios / acciones")}</span>
+      <textarea oninput="P.gestMtto.comentarios=this.value" placeholder="${tx("Seguimiento, acciones tomadas…")}">${esc(g.comentarios||"")}</textarea></label>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("¿Se terceriza la acción?")}</div>
+    <label class="chk"><input type="checkbox" ${g.tercerizado?"checked":""} onchange="P.gestMtto.tercerizado=this.checked;render()"><span>${tx("Sí, se terceriza")}</span></label>
+    ${g.tercerizado?`<label class="f"><span class="lb">${tx("Empresa que lo va a hacer")}</span>
+      <input type="text" value="${esc(g.empresaTercero||"")}" oninput="P.gestMtto.empresaTercero=this.value"></label>`:""}
+  </div></section>
+
+  <section class="block noprint">
+    <button class="btn" onclick="guardarGestionMtto()">${tx("Guardar gestión")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="P.gestMtto=null;(P.gestMttoDesde==='gestionMtto'?go('gestionMtto'):go('verMtto','${g.id}'));P.gestMttoDesde=null">${tx("Cancelar")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
+function vVerMtto(){
+  const r = (S.mtto||[]).find(x=>x.id===P.verId);
+  if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró el hallazgo.")}</div></section>`;
+  const e = S.empresa||{}, c = mttoColor(r.estado);
+  return `
+  <section class="block"><div class="card pad" style="text-align:center">
+    ${e.logo?`<img src="${e.logo}" style="max-height:52px;max-width:150px;object-fit:contain;margin:0 auto 8px;display:block">`:""}
+    <span class="eyebrow">${e.logo?"":esc(e.razon||"")+" · "}${tx("Mantenimiento")}</span>
+    <h2 style="font-size:21px;font-weight:700;margin:2px 0 4px">${esc((r.hallazgo||tx("Sin descripción")).slice(0,80))}</h2>
+    <p class="small muted" style="margin:0">${fecha(r.fecha)}${r.mtipo?" · "+esc(r.mtipo):""}${r.reporta?" · "+esc(r.reporta):""}</p>
+    <div style="margin-top:10px"><span class="pill" style="border-color:${c};color:${c}">${tx(r.estado||"")}</span></div>
+  </div></section>
+
+  ${r.foto?`<section class="block"><div class="card pad"><img src="${r.foto}" style="max-width:100%;border-radius:10px"></div></section>`:""}
+
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Hallazgo encontrado")}</div>
+    <p class="small" style="margin:0 0 10px;white-space:pre-wrap">${esc(r.hallazgo||"—")}</p>
+    ${r.mejora?`<div class="grp">${tx("Oportunidad de mejora")}</div><p class="small" style="margin:0;white-space:pre-wrap">${esc(r.mejora)}</p>`:""}
+  </div></section>
+
+  ${(r.responsable||r.fechaProp||r.fechaCump||r.comentarios||r.relevancia||r.tercerizado)?`<section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Gestión")}</div>
+    ${r.responsable?`<p class="small" style="margin:0 0 4px"><b>${tx("Responsable")}:</b> ${esc(r.responsable)}</p>`:""}
+    ${r.relevancia?`<p class="small" style="margin:0 0 4px"><b>${tx("Relevancia")}:</b> ${tx(r.relevancia)}</p>`:""}
+    ${r.fechaProp?`<p class="small" style="margin:0 0 4px"><b>${tx("Fecha propuesta de solución")}:</b> ${fecha(r.fechaProp)}</p>`:""}
+    ${r.fechaCump?`<p class="small" style="margin:0 0 4px"><b>${tx("Fecha de cumplimiento")}:</b> ${fecha(r.fechaCump)}</p>`:""}
+    ${r.tercerizado?`<p class="small" style="margin:0 0 4px"><b>${tx("Tercerizado")}:</b> ${tx("Sí")}${r.empresaTercero?" · "+esc(r.empresaTercero):""}</p>`:""}
+    ${r.comentarios?`<p class="small" style="margin:0;white-space:pre-wrap"><b>${tx("Comentarios / acciones")}:</b> ${esc(r.comentarios)}</p>`:""}
+  </div></section>`:""}
+
+  ${puedeAdministrar()?`<section class="block noprint"><div class="card pad">
+    <button class="btn soft" onclick="gestionarMtto('${r.id}')">${tx("⚙️ Gestionar este hallazgo")}</button>
+    ${r.gestionada?`<p class="tiny muted" style="margin:8px 2px 0">${tx("Última gestión")}: ${fecha(r.gestionada)}</p>`:""}
+  </div></section>`:`<section class="block noprint"><div class="card pad">
+    <button class="btn" onclick="nuevoMtto();go('mttoEdit')">${tx("🔧 Agregar otro hallazgo")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="go('inicioMtto')">${tx("Finalizar")}</button>
+  </div></section>`}
+  ${barraCompartir("mtto", r.id)}
+  <section class="block noprint">
+    <button class="btn ghost" onclick="volver()">${tx("Volver")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
+
+/* ============================================================
+   CRONOGRAMA GLOBAL  ·  botón flotante, para toda la app
+   No es el "cronograma anual" de capacitaciones/estudios (S.crono):
+   este es más general, agrupa por semana/mes/año y permite agendar
+   cualquier acción e invitar a otros miembros del equipo. También
+   muestra, junto con lo agendado acá, lo que ya está programado en
+   los otros cronogramas de la app (capacitaciones/estudios con
+   fecha exacta y el plan de acción con vencimiento).
+   ============================================================ */
+function nuevaAgenda(){
+  P.draft = { id:uid(), tipo:"agenda", fecha:hoy(), hora:"", titulo:"", descripcion:"", invitados:[] };
+}
+function editarAgenda(id){
+  const r = (S.agenda||[]).find(x=>x.id===id);
+  if(r){ P.draft = JSON.parse(JSON.stringify(r)); go("agendaEdit"); }
+}
+function borrarAgenda(id){
+  if(!gate(tx("¿Eliminar esto del cronograma?"), ()=>borrarAgenda(id))) return;
+  S.agenda = (S.agenda||[]).filter(x=>x.id!==id); guardar(); toast(tx("Eliminado")); P.draft=null; go("agenda");
+}
+function guardarAgenda(){
+  const d = P.draft;
+  if(!(d.titulo||"").trim()) return toast(tx("Poné un título"));
+  if(!d.fecha) return toast(tx("Elegí una fecha"));
+  d.cerrada = new Date().toISOString(); d.emp = S.activa;
+  d.creadorEmail = (S.sesion && S.sesion.email) || "";
+  d.creadorNombre = (S.sesion && S.sesion.nombre) || "";
+  const ed = upsert("agenda", d);
+  if(!ed) notifAgendaInvitados(d);   // avisar a cada invitado nuevo
+  guardar();
+  P.draft = null; P.agendaVista = P.agendaVista||"mes"; P.agendaRef = d.fecha;
+  toast(tx("Se agendó"));
+  go("agenda");
+}
+/* registra un evento de invitación por cada invitado, dirigido a su mail */
+function notifAgendaInvitados(d){
+  if(!d.invitados || !d.invitados.length) return;
+  S.notifEventos = S.notifEventos || [];
+  d.invitados.forEach(inv=>{
+    if(!inv || !inv.email) return;
+    S.notifEventos.unshift({
+      id: uid(), tipo:"agendaInvitacion", emp: S.activa,
+      agendaId: d.id, titulo: d.titulo||"", fechaEv: d.fecha, horaEv: d.hora||"",
+      email: inv.email, deEmail: d.creadorEmail||"", quien: d.creadorNombre||d.creadorEmail||tx("Alguien"),
+      ts: new Date().toISOString(), leida: false
+    });
+  });
+  if(S.notifEventos.length>50) S.notifEventos = S.notifEventos.slice(0,50);
+}
+/* modal para elegir a quién invitar: administrador + miembros del equipo
+   de esta empresa (S.empresa.roles), igual que en Ajustes → Equipo */
+function abrirInvitadosAgenda(){
+  const e = S.empresa||{};
+  const ya = (P.draft.invitados||[]).map(i=>i.email);
+  const candidatos = [];
+  if(e.ownerEmail) candidatos.push(e.ownerEmail);
+  Object.keys(e.roles||{}).forEach(m=>{ if(candidatos.indexOf(m)<0) candidatos.push(m); });
+  const miEmail = ((S.sesion && S.sesion.email) || "").toLowerCase();
+  const lista = candidatos.filter(m=>m && m.toLowerCase()!==miEmail);
+  const ov = document.createElement("div");
+  ov.className = "modal";
+  ov.innerHTML = `<div class="mcard" style="text-align:left;max-height:84vh;overflow:auto">
+    <div class="grp" style="margin:0 0 4px">${tx("A quién invitar")}</div>
+    <p class="small muted" style="margin:0 0 10px">${tx("Le va a llegar una notificación dentro de la app.")}</p>
+    ${!lista.length?`<p class="small muted">${tx("Todavía no invitaste a nadie a esta empresa.")}</p>`:
+      `<div id="aglista">${lista.map(m=>`<label class="chk">
+        <input type="checkbox" value="${esc(m)}" ${ya.indexOf(m)>=0?"checked":""}><span>${esc(m)}</span></label>`).join("")}</div>
+       <button class="btn" style="margin-top:10px" onclick="agendaGuardarInvitados()">${tx("Listo")}</button>`}
+    <button class="btn ghost" style="margin-top:8px" onclick="cerrarModal()">${tx("Cancelar")}</button>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function agendaGuardarInvitados(){
+  const sel = Array.from(document.querySelectorAll("#aglista input:checked")).map(i=>i.value);
+  P.draft.invitados = sel.map(email=>({email}));
+  cerrarModal(); render();
+}
+/* junta lo agendado (S.agenda) con lo que ya está programado en otros
+   cronogramas: capacitaciones/estudios con fecha exacta (S.crono) y el
+   plan de acción con vencimiento (accionesTodas). Sin ventana de días:
+   a diferencia de la campanita, acá se ve TODO lo programado. */
+function agendaEventos(){
+  const out = [];
+  (S.agenda||[]).forEach(r=>{
+    if(!r.fecha) return;
+    out.push({ fecha:r.fecha, hora:r.hora||"", tipo:"agenda", refId:r.id,
+      ic:"🗓️", color:"var(--c2)", titulo:(r.titulo||tx("Acción agendada")),
+      sub:(r.invitados&&r.invitados.length)?tx("Invitados")+": "+r.invitados.length:(r.descripcion||"") });
+  });
+  (S.crono||[]).forEach(r=>{
+    if(r.soloMes || !/^\d{4}-\d{2}-\d{2}$/.test(r.fecha||"")) return;
+    out.push({ fecha:r.fecha, hora:r.horario||"", tipo:"crono", refId:r.id,
+      ic:r.clase==="cap"?"🎓":"📅", color:r.clase==="cap"?"var(--c3)":"var(--c6)",
+      titulo: tx(CRONO_TIT[r.clase]||"Cronograma"), sub: r.sala||r.direccion||"" });
+  });
+  if(typeof accionesTodas==="function"){
+    accionesTodas().forEach(a=>{
+      if(a.hecha || !a.vence) return;
+      out.push({ fecha:a.vence, hora:"", tipo:"accion", refId:"",
+        ic:"◔", color:"var(--no)", titulo:(a.texto||tx("Acción")).slice(0,70), sub:a.mod||"" });
+    });
+  }
+  return out.sort((a,b)=>(a.fecha+(a.hora||"").padStart(5,"0")).localeCompare(b.fecha+(b.hora||"").padStart(5,"0")));
+}
+function agendaIr(tipo, id){
+  cerrarFab();
+  if(tipo==="agenda") editarAgenda(id);
+  else if(tipo==="crono") go("verCrono", id);
+  else go("acciones");
+}
+/* fecha base normalizada al inicio de la unidad que se está navegando,
+   para que sumar/restar semana, mes o año no arrastre desvíos de día
+   (por ej. 31 de agosto + 1 mes no debe terminar cayendo en octubre) */
+function agendaSumar(refFecha, vista, dir){
+  let base = refFecha || hoy();
+  if(vista==="mes") base = base.slice(0,7)+"-01";
+  else if(vista==="año") base = base.slice(0,4)+"-01-01";
+  const d = new Date(base+"T00:00:00");
+  if(vista==="semana") d.setDate(d.getDate()+7*dir);
+  else if(vista==="mes") d.setMonth(d.getMonth()+dir);
+  else d.setFullYear(d.getFullYear()+dir);
+  return d.toISOString().slice(0,10);
+}
+function agendaDiasSemana(refFecha){
+  const d = new Date((refFecha||hoy())+"T00:00:00");
+  const dow = d.getDay(); const diff = dow===0?-6:1-dow;
+  d.setDate(d.getDate()+diff);
+  const out = [];
+  for(let i=0;i<7;i++){ out.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
+  return out;
+}
+function agendaNav(dir){
+  const vista = P.agendaVista || "mes";
+  P.agendaRef = agendaSumar(P.agendaRef||hoy(), vista, dir);
+  render();
+}
+function agendaFila(e){
+  return `<div class="row" onclick="agendaIr('${e.tipo}','${e.refId||""}')">
+    <span class="dot" style="background:${e.color}"></span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:14.5px">${e.ic} ${esc(e.titulo)}</div>
+      <div class="tiny muted">${e.hora?e.hora+" · ":""}${esc(e.sub||"")}</div>
+    </div>
+  </div>`;
+}
+function vAgenda(){
+  const vista = P.agendaVista || "mes";
+  const ref = P.agendaRef || hoy();
+  const eventos = agendaEventos();
+  let etiqueta, cuerpo;
+  if(vista==="año"){
+    const anio = ref.slice(0,4);
+    etiqueta = anio;
+    const porMes = {};
+    eventos.filter(e=>e.fecha.slice(0,4)===anio).forEach(e=>{
+      const mk = e.fecha.slice(0,7);
+      (porMes[mk] = porMes[mk]||[]).push(e);
+    });
+    const meses = Object.keys(porMes).sort();
+    cuerpo = !meses.length ? `<div class="card empty"><span class="ic">🗓️</span>${tx("No hay nada programado en")} ${anio}.</div>`
+      : meses.map(mk=>`<div class="row" style="cursor:pointer" onclick="P.agendaVista='mes';P.agendaRef='${mk}-01';render()">
+          <div style="flex:1;min-width:0"><b>${labelMes(mk)}</b></div>
+          <span class="pill">${porMes[mk].length}</span>
+        </div>`).join("");
+  }else{
+    let rango;
+    if(vista==="semana"){ rango = agendaDiasSemana(ref); etiqueta = labelSemana(rango[0]); }
+    else{
+      const y = ref.slice(0,4), m = ref.slice(5,7);
+      const dias = new Date(parseInt(y,10), parseInt(m,10), 0).getDate();
+      rango = Array.from({length:dias}, (_,i)=>`${y}-${m}-${String(i+1).padStart(2,"0")}`);
+      etiqueta = labelMes(ref.slice(0,7));
+    }
+    const porFecha = {}; rango.forEach(f=>{ porFecha[f] = eventos.filter(e=>e.fecha===f); });
+    const conAlgo = rango.filter(f=>porFecha[f].length);
+    cuerpo = !conAlgo.length ? `<div class="card empty"><span class="ic">🗓️</span>${tx("No hay nada programado en este período.")}</div>`
+      : conAlgo.map(f=>`<div class="grp" style="margin-top:10px">${fecha(f)}</div>${porFecha[f].map(agendaFila).join("")}`).join("");
+  }
+  const navBtns = `
+    <div style="display:flex;align-items:center;gap:8px;margin:2px 0 10px">
+      <button class="btn ghost sm" style="width:auto;padding:6px 12px" onclick="agendaNav(-1)">‹</button>
+      <div style="flex:1;text-align:center;font-weight:700">${esc(etiqueta)}</div>
+      <button class="btn ghost sm" style="width:auto;padding:6px 12px" onclick="agendaNav(1)">›</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      ${["semana","mes","año"].map(v=>`<button class="btn ${vista===v?"":"ghost"} sm" style="flex:1" onclick="P.agendaVista='${v}';render()">${tx(v.charAt(0).toUpperCase()+v.slice(1))}</button>`).join("")}
+    </div>
+    <button class="btn ghost sm" onclick="P.agendaRef=hoy();render()">${tx("Hoy")}</button>`;
+  return `
+  <section class="block">
+    <div class="section-title"><h2>${tx("Cronograma")}</h2></div>
+    <p class="small muted" style="margin:-4px 0 10px">${tx("Todo lo programado: lo que agendaste acá y lo que ya está en los otros cronogramas de la app.")}</p>
+    <div class="card pad">${navBtns}</div>
+  </section>
+  <section class="block">
+    <div class="card pad">${cuerpo}</div>
+  </section>
+  <section class="block noprint">
+    <button class="btn" onclick="nuevaAgenda();go('agendaEdit')">${tx("+ Agendar una acción")}</button>
+  </section>
+  <div style="height:70px"></div>`;
+}
+function vAgendaEdit(){
+  if(!P.draft || P.draft.tipo!=="agenda") nuevaAgenda();
+  const d = P.draft, e = S.empresa||{};
+  const esExistente = (S.agenda||[]).some(x=>x.id===d.id);
+  return `
+  <section class="block"><div class="card pad">
+    <span class="eyebrow">${esc(e.razon||tx("Empresa"))}</span>
+    <h2 style="font-size:21px;font-weight:700;margin:2px 0 4px">${tx("🗓️ Agendar una acción")}</h2>
+    <p class="small muted" style="margin:0">${tx("Programá lo que quieras: una acción, un registro, una auditoría… Si hace falta, invitá a otros miembros del equipo.")}</p>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <label class="f" style="margin-top:0"><span class="lb">${tx("Título")}</span>
+      <input type="text" value="${esc(d.titulo)}" oninput="P.draft.titulo=this.value" placeholder="${tx("Qué hay que hacer")}"></label>
+    <div class="grid2">
+      <label class="f"><span class="lb">${tx("Fecha")}</span>
+        <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
+      <label class="f"><span class="lb">${tx("Hora")} (${tx("opcional")})</span>
+        <input type="time" value="${esc(d.hora)}" oninput="P.draft.hora=this.value"></label>
+    </div>
+    <label class="f"><span class="lb">${tx("Descripción")}</span>
+      <textarea oninput="P.draft.descripcion=this.value" placeholder="${tx("Opcional")}">${esc(d.descripcion)}</textarea></label>
+  </div></section>
+
+  <section class="block"><div class="card pad">
+    <div class="grp" style="margin-top:0">${tx("Invitar miembros del equipo")}</div>
+    ${(d.invitados&&d.invitados.length)?d.invitados.map((inv,i)=>`<div class="row">
+        <div style="flex:1;min-width:0">${esc(inv.email)}</div>
+        <button class="btn ghost sm" style="width:auto;padding:4px 10px" onclick="P.draft.invitados.splice(${i},1);render()">✕</button>
+      </div>`).join(""):`<p class="tiny muted" style="margin:0 0 8px">${tx("Nadie invitado todavía.")}</p>`}
+    <button class="btn soft sm" onclick="abrirInvitadosAgenda()">${tx("+ Invitar")}</button>
+  </div></section>
+
+  <section class="block noprint">
+    <button class="btn" onclick="guardarAgenda()">${txGuardar("agenda","Guardar en el cronograma")}</button>
+    ${esExistente?`<button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarAgenda('${d.id}')">${tx("Eliminar")}</button>`:""}
+    <button class="btn ghost" style="margin-top:8px" onclick="P.draft=null;go('agenda')">${tx("Salir sin guardar")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
+/* --- botón flotante: en toda la app, siempre visible salvo login/onboarding --- */
+function toggleFab(){
+  const m = document.getElementById("fabMenu");
+  if(!m) return;
+  m.style.display = (m.style.display==="none"||!m.style.display) ? "flex" : "none";
+}
+function cerrarFab(){
+  const m = document.getElementById("fabMenu");
+  if(m) m.style.display = "none";
+}
+
+/* ============================================================
    ESPIRAL PRO  ·  el muro
    Pro es de la EMPRESA: la paga quien la administra y la usan todos
    los que trabajan ahí (dueño y miembros invitados) mientras están
@@ -14309,7 +15045,8 @@ const PRO_RUTAS = {
   docs:1, equiv:1,
   panel:1, acciones:1,
   crono:1, cronoEdit:1, verCrono:1,
-  agua:1, aguaEdit:1, verAgua:1
+  agua:1, aguaEdit:1, verAgua:1,
+  mttoEdit:1, verMtto:1, gestionMtto:1, mttoGestion:1
 };
 /* qué es Pro, en el orden en que se lo mostramos al usuario */
 const PRO_VENTAJAS = [
@@ -14320,6 +15057,7 @@ const PRO_VENTAJAS = [
   {ic:"💡", n:"Protocolos de higiene",  d:"iluminación con grilla automática, ruido y ventilación en camino"},
   {ic:"🗂", n:"Contratistas por país",  d:"qué documentación exigir en 8 países, con vencimientos"},
   {ic:"◔",  n:"Panel y plan de acción", d:"todo lo pendiente junto, con gráficos por módulo"},
+  {ic:"🔧", n:"Mantenimiento", d:"planilla de hallazgos y gestión con responsable, fechas y tercerización"},
   {ic:"📊", n:"Exportar a Excel",       d:"tus registros afuera, para cruzarlos con lo que quieras"},
   {ic:"📄", n:"Informes sin marca",     d:"el PDF sale con tu logo y sin el pie de Espiral"}
 ];
@@ -14641,7 +15379,8 @@ const SW_ACC = {
   crono:{ver:id=>go("verCrono",id), edit:editarCrono, del:borrarCrono },
   parte:{ver:id=>go("verParte",id), edit:editarParte, del:borrarParte },
   agua:{ ver:id=>go("verAgua",id),  edit:editarAgua,  del:borrarAgua },
-  idea:{ ver:id=>go("verIdea",id),  edit:editarIdea,  del:borrarIdea }
+  idea:{ ver:id=>go("verIdea",id),  edit:editarIdea,  del:borrarIdea },
+  mtto:{ ver:id=>go("verMtto",id),  edit:editarMtto,  del:borrarMtto }
 };
 function swAcc(col, id, que){
   swCerrar();
