@@ -1224,7 +1224,7 @@ function render(){
     crono:vCrono, cronoEdit:vCronoEdit, verCrono:vVerCrono,
     agua:vAgua, aguaEdit:vAguaEdit, verAgua:vVerAgua,
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
-    verAud:()=>vVerAud(P.verId), pro:vPro}[P.page] || vInicio;
+    verAud:()=>vVerAud(P.verId), pro:vPro, desvios:vDesvios}[P.page] || vInicio;
   const enAuth = (P.page==="login" || P.page==="onboarding");
   // el splash tiene pointer-events:none, así que no hace falta matarlo acá;
   // se desvanece solo con su animación desde arrancarSesion.
@@ -1283,7 +1283,7 @@ function vInicio(){
       <div class="kpis">
         <button class="kpi" onclick="go('historial')"><b>${S.insp.length+eppR.length+audR.length}</b><span class="tiny muted">${t("home.registros")}</span></button>
         <button class="kpi" onclick="go('historial','mes')"><b>${mes+audMes}</b><span class="tiny muted">${t("home.mes")}</span></button>
-        <button class="kpi" style="border-color:${nc?"var(--no)":"var(--line)"}" onclick="go('acciones')"><b style="color:${nc?"var(--no)":"inherit"}">${nc}</b><span class="tiny muted">${t("home.desvios")}</span></button>
+        <button class="kpi" style="border-color:${nc?"var(--no)":"var(--line)"}" onclick="go('desvios')"><b style="color:${nc?"var(--no)":"inherit"}">${nc}</b><span class="tiny muted">${t("home.desvios")}</span></button>
       </div>
       ${nc?`<p class="tiny muted" style="margin:8px 2px 0;text-align:center">${tx("Desvíos suma todo lo marcado \"No cumple\" en cualquier inspección. El Plan de acción solo muestra los que tienen seguimiento propio: investigaciones, matriz de riesgos y auditorías.")}</p>`:""}
     </div>
@@ -4127,6 +4127,79 @@ function vAcciones(){
 }
 
 /* ============================================================
+   DESVÍOS · detalle del KPI "Desvíos" del inicio. Agrupa TODO lo
+   marcado "No cumple" en cualquier inspección (no solo lo que tiene
+   seguimiento propio en el Plan de acción), calculado exactamente
+   igual que el número que se muestra en el inicio, para que acá
+   siempre coincidan.
+   ============================================================ */
+function desviosGrupos(){
+  const gInsp = (S.insp||[]).filter(r=>(r.nc||0)>0).map(r=>{
+    const t = TPL[r.tpl]||{ic:"📋", nombre:tx("Inspección")};
+    const ref = r.cab && (r.cab.nro||r.cab.interno||r.cab.ubic||r.cab.sector||r.cab.marca) || "";
+    return { n:r.nc, ic:t.ic||"📋", titulo:esc(t.nombre)+(ref?" · "+esc(ref):""),
+      sub:fecha(r.fecha)+(r.inspector?" · "+esc(r.inspector):""), page:"ver", id:r.id };
+  });
+  const gEpp = (S.epp||[]).filter(r=>(r.faltas||0)>0).map(r=>({
+    n:r.faltas, ic:ICONO_EPP[r.tipo]||"🦺", titulo:esc(tx(TITULO_EPP[r.tipo]||"EPP")),
+    sub:fecha(r.fecha)+(r.nombreTrab?" · "+esc(r.nombreTrab):""), page:"verEpp", id:r.id
+  }));
+  const gInv = (S.inv||[]).filter(r=>(r.faltas||0)>0).map(r=>({
+    n:r.faltas, ic:"🔎", titulo:tx("Investigación de accidentes"), sub:fecha(r.fecha), page:"verInv", id:r.id
+  }));
+  const gAud = (S.aud||[]).map(r=>{
+    const n = (r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0);
+    return n>0 ? { n, ic:"📋", titulo:esc(tx(r.nombre||"Auditoría mensual"))+(r.area?" · "+esc(r.area):""),
+      sub:fecha(r.fecha)+(r.auditor?" · "+esc(r.auditor):""), page:"verAud", id:r.id } : null;
+  }).filter(Boolean);
+  return [
+    { k:"insp", label:tx("Inspecciones"), items:gInsp },
+    { k:"epp",  label:tx("EPP"), items:gEpp },
+    { k:"inv",  label:tx("Investigación de accidentes"), items:gInv },
+    { k:"aud",  label:tx("Auditoría mensual"), items:gAud }
+  ].filter(g=>g.items.length);
+}
+function filaDesvioItem(it){
+  return `<div class="row" onclick="go('${it.page}','${it.id}')">
+    <span style="font-size:17px;flex:none">${it.ic}</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:14.5px">${it.titulo}</div>
+      <div class="tiny muted">${it.sub}</div>
+    </div>
+    <span class="pill" style="border-color:var(--no);color:var(--no);flex:none">${it.n}</span>
+  </div>`;
+}
+function bloqueDesviosMod(g){
+  const key = "desv:"+g.k;
+  const abierto = histAbierto(key, false);
+  return `<div class="acc" data-open="${abierto?1:0}" style="margin-bottom:12px">
+    <div class="acc-h" onclick="toggleHist('${key}', ${abierto})">
+      <span class="acc-t">${esc(g.label)}</span>
+      <span class="tiny muted" style="flex:none;margin-right:2px">${g.items.reduce((a,it)=>a+it.n,0)}</span>
+      <span class="acc-ch">›</span>
+    </div>
+    <div class="acc-body">${g.items.map(filaDesvioItem).join("")}</div>
+  </div>`;
+}
+function vDesvios(){
+  const grupos = desviosGrupos();
+  const total = grupos.reduce((a,g)=>a+g.items.reduce((x,it)=>x+it.n,0),0);
+  if(!total) return `<section class="block"><div class="card empty"><span class="ic">✅</span>${tx("No hay desvíos cargados.")}</div></section>`;
+  const todoAbierto = grupos.length>0 && grupos.every(g=>histAbierto("desv:"+g.k,false));
+  return `
+  <section class="block">
+    <div class="section-title"><h2>${tx("Desvíos")}</h2></div>
+    <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Todo lo marcado \"No cumple\" en cualquier inspección, agrupado por módulo.")}</p>
+    <div class="kpis">
+      <div class="kpi" style="border-color:var(--no)"><b style="color:var(--no)">${total}</b><span class="tiny muted">${tx("Desvíos")}</span></div>
+    </div>
+    <button class="btn soft sm" style="margin:12px 0 10px" onclick="toggleTodosHist(desviosGrupos().map(g=>'desv:'+g.k), ${!todoAbierto})">${todoAbierto?tx("Colapsar todo"):tx("Desplegar todo")}</button>
+    ${grupos.map(bloqueDesviosMod).join("")}
+  </section>
+  <div style="height:10px"></div>`;
+}
+
+/* ============================================================
    MÓDULO MATRIZ DE RIESGOS · IPER
    ============================================================ */
 const PELIGROS = {
@@ -5011,21 +5084,25 @@ function notificaciones(){
       ir:()=>go("verCrono", r.id)
     });
   });
-  // 4.6 · notificaciones que el usuario ya cerró con la crucecita hoy: es
-  // un "ya la vi, listo", no un "no me lo muestres nunca más" — si mañana
-  // sigue pendiente (el documento sigue vencido, la idea sigue sin leer),
-  // vuelve a aparecer solo
+  // 4.6 · notificaciones que el usuario ya cerró con la ✕: quedan
+  // descartadas para siempre (no vuelven a aparecer aunque pasen varios
+  // días), salvo que el dato que las generó cambie — por ejemplo se
+  // reprogramó el vencimiento — en cuyo caso sí es una novedad distinta
+  // y vuelve a avisar.
   const desc = S.notifDescartadas || {};
-  return out.filter(n=>desc[n.clave]!==hoy());
+  return out.filter(n=>{
+    const d = desc[n.clave];
+    if(!d) return true;
+    return d.cuando !== (n.cuando||null);
+  });
 }
-/* 4.6 · cierra una notificación puntual por hoy (no borra el dato de
-   origen ni la bloquea para siempre, solo la saca de la lista por hoy) */
-function descartarNoti(clave){
+/* 4.6 · descarta una notificación puntual para siempre. Si el dato que
+   la generó cambia más adelante (se reprograma la fecha, por ejemplo),
+   vuelve a aparecer porque ya es una novedad distinta. */
+function descartarNoti(clave, cuando){
   if(!clave) return;
   S.notifDescartadas = S.notifDescartadas || {};
-  // limpiar descartes de otros días: ya no sirven, evita que esto crezca sin límite
-  Object.keys(S.notifDescartadas).forEach(k=>{ if(S.notifDescartadas[k]!==hoy()) delete S.notifDescartadas[k]; });
-  S.notifDescartadas[clave] = hoy();
+  S.notifDescartadas[clave] = { cuando: cuando||null };
   guardar();
 }
 function notiCount(){ return notificaciones().length; }
@@ -5088,7 +5165,7 @@ function abrirNoti(){
 /* 4.6 · descartar una notificación desde la campanita, sin cerrar el popover */
 function descartarNotiPop(i){
   const ns = notificaciones();
-  if(ns[i]) descartarNoti(ns[i].clave);
+  if(ns[i]) descartarNoti(ns[i].clave, ns[i].cuando);
   pintarShell();
   const p = document.getElementById("notipop"); if(p) p.remove();
   abrirNoti();
@@ -5890,6 +5967,7 @@ function vPtt(){
     <div style="text-align:center">
     <span class="eyebrow">permiso de trabajo · paso ${n} de 5</span>
     <h2 style="font-size:23px;font-weight:700;margin:2px 0 0">📝 ${esc(tx(PASOS_PTT[n-1]))}</h2>
+    ${n===1?`<p class="small muted" style="margin:6px 2px 0;line-height:1.45">${tx("Autoriza y deja registrado un trabajo de riesgo (altura, caliente, espacios confinados, eléctrico, etc.) antes de empezarlo: quién lo hace, qué peligros tiene y qué medidas y firmas hacen falta para habilitarlo.")}</p>`:""}
     </div>
     <div class="prog"><i style="width:${Math.round(n/5*100)}%"></i></div>
     <div class="opts" style="margin-top:10px">
