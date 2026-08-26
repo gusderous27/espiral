@@ -188,6 +188,18 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .fabopt{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:999px;
   padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.18);
   white-space:nowrap}
+/* ---------- catálogo de formularios (agendar una acción) ---------- */
+.catbox{border:1px solid var(--line);border-radius:10px;padding:4px 6px;margin:-2px 0 12px;max-height:340px;overflow:auto}
+.catrow{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;background:none;border:none;
+  text-align:left;padding:9px 6px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink)}
+.catrow2{font-weight:500;font-size:13.5px;padding-left:12px;color:var(--muted)}
+.catchev{color:var(--muted);font-size:13px;flex:none}
+.cataccs{border-top:1px solid var(--line)}
+.cataccs:first-child{border-top:none}
+.catsub{padding:0 0 2px;margin:0 0 2px 6px;border-left:2px solid var(--line)}
+.catitems{display:flex;flex-direction:column;padding:2px 0 6px 24px}
+.catitem{background:none;border:none;text-align:left;padding:7px 6px;font-size:13.5px;color:var(--primary);cursor:pointer}
+.catitem:active{opacity:.6}
 .modal{position:fixed;inset:0;background:rgba(8,14,22,.82);z-index:100000;display:grid;place-items:center;padding:16px;overflow:auto}
 .mcard{background:var(--card);border-radius:var(--r);padding:16px;max-width:560px;width:100%;text-align:center}
 .cwrap{position:relative;display:inline-block;line-height:0;max-width:100%;touch-action:none}
@@ -14973,6 +14985,67 @@ function vAgenda(){
   </section>
   <div style="height:70px"></div>`;
 }
+/* catálogo de todos los formularios/registros de la app, agrupados por
+   mundo → sección → ítem (igual como se ven agrupados en cada Inicio), para
+   elegir rápido qué se va a agendar en vez de escribir el título a mano.
+   Se arma en base a listas que ya existen (p.ej. MTTO_TIPOS) para no
+   duplicar y no desincronizarse si esas listas cambian. */
+const AGENDA_CATALOGO = [
+  { grupo:"Seguridad e Higiene", ic:"🦺", secciones:[
+      { nombre:"Inspecciones", items:["Extintores","Autoelevador · Diario","Autoelevador · Trimestral","Escaleras de mano","Arnés de seguridad","Auditoría diaria"] },
+      { nombre:"Auditorías y seguimiento", items:["Auditoría mensual","Plan de acción"] },
+      { nombre:"EPP y ropa de trabajo", items:["Entrega de EPP","Uso diario de EPP","Ropa de trabajo"] },
+      { nombre:"Investigación y matriz de riesgos", items:["Investigación de accidentes","Matriz de riesgos (IPER)"] },
+      { nombre:"Capacitaciones", items:["Capacitación dictada","Cronograma anual"] },
+      { nombre:"Protocolos de higiene", items:["Iluminación","Agua potable"] },
+      { nombre:"Contratistas y disciplina", items:["Documentación de contratistas","Parte disciplinario"] },
+      { nombre:"Permiso de trabajo", items:["Permiso de trabajo"] }
+  ]},
+  { grupo:"Mejora Continua", ic:"⚙️", secciones:[
+      { nombre:"Buzón de ideas", items:["Nueva idea"] }
+  ]},
+  { grupo:"Mantenimiento", ic:"🔧", secciones:[
+      { nombre:"Planilla de hallazgos", items: MTTO_TIPOS.slice() }
+  ]}
+];
+function catToggleGrupo(g){
+  P.catAbierto = P.catAbierto || {g:null,s:null};
+  P.catAbierto.g = (P.catAbierto.g===g) ? null : g;
+  P.catAbierto.s = null;
+  render();
+}
+function catToggleSeccion(s){
+  P.catAbierto = P.catAbierto || {g:null,s:null};
+  P.catAbierto.s = (P.catAbierto.s===s) ? null : s;
+  render();
+}
+function catElegir(seccion, item){
+  P.draft.titulo = seccion + " · " + item;
+  P.catAbierto = {g:null, s:null};
+  P.catVisible = false;
+  render();
+}
+function toggleCatalogo(){ P.catVisible = !P.catVisible; if(!P.catVisible) P.catAbierto = {g:null,s:null}; render(); }
+function catalogoHtml(){
+  const ab = P.catAbierto || {g:null, s:null};
+  return AGENDA_CATALOGO.map(m=>{
+    const abierto = ab.g===m.grupo;
+    return `<div class="cataccg">
+      <button type="button" class="catrow" onclick="catToggleGrupo('${esc(m.grupo)}')">
+        <span>${m.ic} ${esc(tx(m.grupo))}</span><span class="catchev">${abierto?"⌄":"›"}</span>
+      </button>
+      ${abierto?`<div class="catsub">${m.secciones.map(s=>{
+        const sAbierto = ab.s===s.nombre;
+        return `<div class="cataccs">
+          <button type="button" class="catrow catrow2" onclick="catToggleSeccion('${esc(s.nombre)}')">
+            <span>${esc(tx(s.nombre))}</span><span class="catchev">${sAbierto?"⌄":"›"}</span>
+          </button>
+          ${sAbierto?`<div class="catitems">${s.items.map(it=>`<button type="button" class="catitem" onclick="catElegir('${esc(s.nombre).replace(/'/g,"\\'")}','${esc(String(it)).replace(/'/g,"\\'")}')">${esc(tx(it))}</button>`).join("")}</div>`:""}
+        </div>`;
+      }).join("")}</div>`:""}
+    </div>`;
+  }).join("");
+}
 function vAgendaEdit(){
   if(!P.draft || P.draft.tipo!=="agenda") nuevaAgenda();
   const d = P.draft, e = S.empresa||{};
@@ -14987,6 +15060,8 @@ function vAgendaEdit(){
   <section class="block"><div class="card pad">
     <label class="f" style="margin-top:0"><span class="lb">${tx("Título")}</span>
       <input type="text" value="${esc(d.titulo)}" oninput="P.draft.titulo=this.value" placeholder="${tx("Qué hay que hacer")}"></label>
+    <button type="button" class="btn ghost sm" style="margin:0 0 10px" onclick="toggleCatalogo()">${P.catVisible?tx("Ocultar la lista de formularios"):"📋 "+tx("Elegir de la lista de formularios")}</button>
+    ${P.catVisible?`<div class="catbox">${catalogoHtml()}</div>`:""}
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Fecha")}</span>
         <input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value"></label>
