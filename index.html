@@ -238,8 +238,12 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
 .mundoban .tiny{color:var(--primary);font-weight:600}
 label.btn.foto{display:inline-flex;align-items:center;justify-content:center;width:auto;cursor:pointer}
 input.fin{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0);border:0;padding:0;margin:-1px}
-/* --- grilla del cronograma --- */
-.cwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px}
+/* --- grilla del cronograma ---
+   clase aparte de .cwrap (que es del recorte de fotos y necesita
+   touch-action:none para su propio arrastre): esta sí tiene que dejar pasar
+   el gesto nativo de swipe/scroll horizontal para poder deslizar y ver el
+   resto de los meses en el celular. */
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;max-width:100%}
 table.crono{border-collapse:collapse;width:100%;font-size:11.5px}
 table.crono th,table.crono td{border:1px solid var(--line);padding:0;text-align:center}
 table.crono tr:first-child th{background:var(--primary);color:#fff;font-size:10.5px;padding:6px 3px;font-weight:600}
@@ -253,7 +257,7 @@ table.crono td{min-width:34px}
 .cmesv{min-height:26px;font-weight:700;color:var(--primary);padding:5px 0}
 .cdel,.cmov{float:right;margin-left:6px;opacity:.5;cursor:pointer;font-weight:400}
 .cdel{color:var(--no)}
-@media print{ .cwrap{overflow:visible} .cdel,.cmov{display:none} }
+@media print{ .tblwrap{overflow:visible} .cdel,.cmov{display:none} }
 label.chk{display:flex;align-items:flex-start;gap:9px;padding:7px 2px;font-size:14px;cursor:pointer;line-height:1.3}
 label.chk input{margin-top:2px;flex:none;width:18px;height:18px}
 /* --- deslizar fila --- */
@@ -12613,6 +12617,16 @@ function nuevoCrono(clase){
     soloMes:false, fecha:hoy(), responsable:e.responsable||"", horario:"", direccion:e.direccion||"", sala:"",
     participantes:[], filas:[], obs:"", firma:null, com:{} };
 }
+/* al tocar "Seguridad e higiene" o "Capacitaciones" desde la pantalla
+   principal del cronograma: si ya hay uno de ese tipo para el año en curso,
+   lo sigue completando (así todos los temas del año quedan en el mismo
+   calendario) en vez de arrancar uno nuevo en blanco cada vez. */
+function abrirCronoAnio(clase){
+  const anio = String(new Date().getFullYear());
+  const existente = (S.crono||[]).find(r=>r.clase===clase && r.anio===anio);
+  if(existente){ editarCrono(existente.id); return; }
+  nuevoCrono(clase); go("cronoEdit");
+}
 function editarCrono(id){
   const r = (S.crono||[]).find(x=>x.id===id);
   if(r){
@@ -12739,10 +12753,10 @@ function vCrono(){
     <div class="section-title"><h2>${tx("Cronograma anual")}</h2></div>
     <p class="small muted" style="margin:-4px 0 12px">${tx("Qué se hace cada mes del año, en una grilla que podés imprimir y firmar.")}</p>
     <div class="tiles">
-      <button class="tile" style="--tc:var(--c6)" onclick="nuevoCrono('ehs');go('cronoEdit')">
+      <button class="tile" style="--tc:var(--c6)" onclick="abrirCronoAnio('ehs')">
         <span class="ic">📅</span><span class="nm">${tx("Seguridad e higiene")}</span>
         <span class="de">(${tx("estudios, mediciones y mantenimientos")})</span></button>
-      <button class="tile" style="--tc:var(--c3)" onclick="nuevoCrono('cap');go('cronoEdit')">
+      <button class="tile" style="--tc:var(--c3)" onclick="abrirCronoAnio('cap')">
         <span class="ic">🎓</span><span class="nm">${tx("Capacitaciones")}</span>
         <span class="de">(${tx("temario del año por mes")})</span></button>
     </div>
@@ -12786,7 +12800,7 @@ function cronoGrilla(d, editable){
       ? `<td><button class="cmes" id="cm${i}_${m}" data-on="${v?1:0}" onclick="cronoMes(${i},${m})">${v?"X":""}</button></td>`
       : `<td class="cmesv">${v?"X":""}</td>`).join("")}
   </tr>`).join("");
-  return `<div class="cwrap"><table class="crono">
+  return `<div class="tblwrap"><table class="crono">
     <tr><th class="cact">${tx("Actividades")}</th>${MESES_C.map(m=>`<th>${tx(m)}</th>`).join("")}</tr>
     ${filas}
   </table></div>`;
@@ -13523,7 +13537,7 @@ function vVerAgua(){
   if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró el registro.")}</div></section>`;
   const e = S.empresa||{};
   const cuerpo = r.clase==="muestra" ? `
-    <div class="cwrap"><table class="crono">
+    <div class="tblwrap"><table class="crono">
       <tr><th class="cact">${tx("Lugar de muestra")}</th><th>${tx("Tipo")}</th><th>${tx("Fecha")}</th>
         <th>${tx("Protocolo")}</th><th>${tx("Resultado")}</th></tr>
       ${r.muestras.map(m=>`<tr><th class="cact">${esc(m.lugar||"—")}</th>
