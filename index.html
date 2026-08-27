@@ -14874,9 +14874,35 @@ function vMttoGestion(){
   </section>
   <div style="height:10px"></div>`;
 }
+/* pantalla de diagnóstico temporal: si se llega acá es porque el id que se
+   está buscando (P.verId, viene del link o de la notificación) no coincide
+   con ningún hallazgo de la empresa activa. En vez de mostrar solo "no se
+   encontró", se agrega la info técnica necesaria para detectar la causa
+   exacta (id colgado de una notificación vieja, empresa equivocada, etc.)
+   con solo mandar una captura de esta pantalla — sin necesitar la consola
+   del navegador, que en el celular no es práctico de abrir. */
+function vMttoNoEncontradoDiag(){
+  const buscado = P.verId;
+  const evRel = (S.notifEventos||[]).find(e=>e.tipo==="hallazgoMtto" && e.mttoId===buscado);
+  const listado = (S.mtto||[]).map(x=>(x.id||"")+" — "+(x.hallazgo||"").slice(0,40)).join("\n")
+    || tx("(no hay ningún hallazgo cargado en esta empresa)");
+  const infoEv = evRel
+    ? tx("Notificación relacionada")+": mttoId="+(evRel.mttoId||"")+" emp="+(evRel.emp||"")+" título=\""+(evRel.titulo||"")+"\""
+    : tx("No hay ninguna notificación de mantenimiento apuntando a este id.");
+  const txt = tx("Buscando id")+": "+(buscado||"(vacío)")+"\n"
+    +tx("Empresa activa")+": "+(S.activa||"")+" ("+((S.empresa&&S.empresa.razon)||"")+")\n"
+    +tx("Hallazgos en esta empresa")+":\n"+listado+"\n\n"+infoEv;
+  return `<section class="block"><div class="card empty">
+    <p>${tx("No se encontró el hallazgo.")}</p>
+    <details style="margin-top:10px;text-align:left" open>
+      <summary class="tiny muted">${tx("Info técnica (mandá una captura de esto)")}</summary>
+      <p class="tiny muted" style="white-space:pre-wrap;word-break:break-all;margin:6px 0 0">${esc(txt)}</p>
+    </details>
+  </div></section>`;
+}
 function vVerMtto(){
   const r = (S.mtto||[]).find(x=>x.id===P.verId);
-  if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró el hallazgo.")}</div></section>`;
+  if(!r) return vMttoNoEncontradoDiag();
   const e = S.empresa||{}, c = mttoColor(r.estado);
   return `
   <section class="block"><div class="card pad" style="text-align:center">
