@@ -227,6 +227,12 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
   .card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
   #piemarca{display:flex!important}
   html[data-pro="1"] #piemarca{display:none!important}
+  /* las fotos de evidencia (hallazgos, inspecciones, etc.) se cargan a
+     resolución de cámara y sin límite de alto: en el reporte impreso una
+     sola ocupaba una hoja entera y desarmaba la paginación. Achicada así el
+     reporte entra en menos páginas. No afecta logo/firma/QR: esos ya traen
+     su propio max-height en línea, que siempre gana por especificidad. */
+  .card img{max-height:260px;width:auto;max-width:100%;object-fit:contain;display:block;margin:0 auto}
 }
 #piemarca{display:none;align-items:center;gap:8px;justify-content:center;
   padding:14px 0 4px;color:#5B6B7F;font-size:10.5px}
@@ -1054,6 +1060,38 @@ arnes:{
   nota:"Todo trabajo en altura será realizado exclusivamente por personal autorizado y capacitado. Un solo defecto detectado retira el equipo de servicio."
 },
 
+tableros_electricos:{
+  nombre:"Tableros eléctricos", ic:"⚡", color:"var(--c5)", modo:"ok",
+  desc:"verificación visual del estado y las condiciones de seguridad",
+  cab:[
+    {k:"nro",l:"Tablero N.º"},
+    {k:"sector",l:"Sector",t:"area"},
+    {k:"codigo",l:"Código de registro",v:"PHS-01"}
+  ],
+  secs:[
+   {t:"Gabinete",items:[
+    {x:"Señalización riesgo eléctrico"},
+    {x:"Identificación y/o numeración"},
+    {x:"Puerta con apertura de 120° con cierre 1/4 vuelta tipo monedero"},
+    {x:"Contratapa interna en condiciones"},
+    {x:"Descarga a tierra de la puerta de apertura"},
+    {x:"Riel DIN para sujeción de llaves diferenciales / electromagnéticas"},
+    {x:"Burlete puerta de apertura"},
+    {x:"Protección contra agentes climáticos", h:"Si corresponde"}
+   ]},
+   {t:"Dispositivos de seguridad",items:[
+    {x:"Interruptor diferencial"},
+    {x:"Interruptor electromagnético"},
+    {x:"Jabalina y borne de sujeción (TP o TS)"},
+    {x:"Tendido eléctrico acorde", h:"Aéreo, buen estado de los cables, con fichas, etc."},
+    {x:"Estabilidad del gabinete", h:"Si corresponde"},
+    {x:"Control manual de interruptores diferenciales y electromagnéticos"}
+   ]}
+  ],
+  firma2:"Firma y aclaración · N.º de matrícula (personal autorizado)",
+  nota:"Todo trabajo realizado en instalaciones eléctricas, con o sin energía, será llevado a cabo exclusivamente por personal autorizado y debidamente calificado para este tipo de trabajos. Ninguna otra persona participará en trabajos eléctricos. Tener presente los aspectos climáticos al momento de las tareas."
+},
+
 auditoria:{
   nombre:"Auditoría diaria", ic:"🔍", color:"var(--c8)", modo:"hallazgos",
   desc:"actos y condiciones inseguras",
@@ -1065,7 +1103,7 @@ auditoria:{
 },
 
 };
-const ORDEN = ["extintores","autoelevador_diario","autoelevador_trimestral","escaleras","arnes","auditoria"];
+const ORDEN = ["extintores","autoelevador_diario","autoelevador_trimestral","escaleras","arnes","tableros_electricos","auditoria"];
 /* qué es y para qué sirve cada relevamiento, mostrado debajo del título del
    formulario para que quede clara la finalidad antes de empezar a cargarlo */
 const TPL_EXPLICACION = {
@@ -1074,13 +1112,14 @@ const TPL_EXPLICACION = {
   autoelevador_trimestral: "Revisión más completa y periódica del autoelevador, además del control diario de inicio de turno.",
   escaleras: "Verificá que las escaleras de mano estén en buen estado antes de usarlas, para prevenir caídas.",
   arnes: "Controlá el arnés y sus componentes antes de un trabajo en altura: un solo defecto detectado lo retira de servicio.",
+  tableros_electricos: "Verificación visual del gabinete y los dispositivos de seguridad de un tablero eléctrico.",
   auditoria: "Recorrida por la planta para detectar y registrar actos y condiciones inseguras del día a día."
 };
 const TILES = [
   {k:"extintores"},
   {g:"auto", nombre:"Autoelevadores", ic:"🚜", color:"var(--c2)", desc:"control diario o revisión trimestral",
    ops:["autoelevador_diario","autoelevador_trimestral"]},
-  {k:"escaleras"},{k:"arnes"},
+  {k:"escaleras"},{k:"arnes"},{k:"tableros_electricos"},
   {ruta:"ptt", nombre:"Permiso de trabajo", ic:"📝", color:"var(--c1)", desc:"(altura, caliente, confinados, eléctrico)"},
   {ruta:"uso", nombre:"Uso diario de EPP", ic:"✅", color:"var(--c4)", desc:"verificación por área"}
 ];
@@ -1469,8 +1508,10 @@ function campoCabEmpleado(c){
 /* --- selector de área/sector ya usada por empleados de la empresa, con "Otro" --- */
 function campoCabArea(c){
   const v = P.draft.cab[c.k]||"";
-  const usadas = (S.personal||[]).map(p=>p.area).filter(Boolean);
-  const areas = Array.from(new Set(usadas.concat(TPL.auditoria.areas))).sort((a,b)=>a.localeCompare(b,"es"));
+  // mismo listado de áreas de la empresa que se usa en el resto de la app
+  // (nómina + IPER + auditorías + mantenimiento + mejora continua), más el
+  // catálogo típico de auditoría como base para una empresa recién armada
+  const areas = Array.from(new Set(areasEmpresa().concat(TPL.auditoria.areas))).sort((a,b)=>a.localeCompare(b,"es"));
   P.cabOtroManual = P.cabOtroManual || {};
   const otro = !!(P.cabOtroManual[c.k] || (v && !areas.includes(v)));
   return `<label class="f"><span class="lb">${esc(c.l)}</span>
@@ -5186,7 +5227,10 @@ function notificaciones(){
     out.unshift(...evIperNoti.filter(n=>!n.leida));
     evIperNoti.filter(n=>n.leida).forEach(n=>out.push(n));
     // 4.4 · hallazgo de mantenimiento nuevo (para el admin)
-    const evMtto = (S.notifEventos||[]).filter(e=>e.tipo==="hallazgoMtto" && (!e.emp || e.emp===S.activa) && (S.mtto||[]).some(x=>x.id===e.mttoId));
+    // además de existir, tiene que seguir sin gestionar: en cuanto se le
+    // asigna responsable/estado/etc. desde "Gestión del hallazgo" (se marca
+    // r.gestionada), ya cumplió su función de avisar y se saca de la campana
+    const evMtto = (S.notifEventos||[]).filter(e=>e.tipo==="hallazgoMtto" && (!e.emp || e.emp===S.activa) && (S.mtto||[]).some(x=>x.id===e.mttoId && !x.gestionada));
     const evMttoNoti = evMtto.map(e=>({
       tipo:"eventoMtto", icono:"🔧",
       titulo: e.quien+" "+tx("cargó un nuevo hallazgo."),
@@ -14822,10 +14866,12 @@ function guardarGestionMtto(){
   S.mtto[i].mundo = g.mundo==="ehs" ? "ehs" : "";
   S.mtto[i].gestionada = new Date().toISOString();
   const derivadoAEhs = S.mtto[i].mundo==="ehs";
-  guardar(); const idg=g.id; const desde=P.gestMttoDesde; P.gestMtto=null; P.gestMttoDesde=null;
+  guardar(); P.gestMtto=null; P.gestMttoDesde=null;
   toast(derivadoAEhs ? tx("Derivado a Seguridad e Higiene") : tx("Gestión guardada"));
-  if(derivadoAEhs) go("acciones");
-  else if(desde==="gestionMtto") go("gestionMtto"); else go("verMtto", idg);
+  // al guardar, vuelve directo a la pantalla principal de la sección (no al
+  // detalle ni a la lista de gestión) — así se puede seguir gestionando otro
+  // hallazgo sin tener que salir primero
+  if(derivadoAEhs) go("acciones"); else go("inicioMtto");
 }
 function vMttoGestion(){
   const g = P.gestMtto;
@@ -14850,15 +14896,12 @@ function vMttoGestion(){
       <select onchange="P.gestMtto.estado=this.value;render()">
         ${MTTO_ESTADOS.map(x=>`<option ${g.estado===x?"selected":""}>${tx(x)}</option>`).join("")}
       </select></label>
-    <div class="grid2">
-      <label class="f"><span class="lb">${tx("Responsable")}</span>
-        <input type="text" value="${esc(g.responsable||"")}" oninput="P.gestMtto.responsable=this.value"></label>
-      <label class="f"><span class="lb">${tx("Derivar a")}</span>
-        <select onchange="P.gestMtto.mundo=this.value;render()">
-          <option value="mtto" ${g.mundo!=="ehs"?"selected":""}>${tx("Mantenimiento")}</option>
-          <option value="ehs" ${g.mundo==="ehs"?"selected":""}>${tx("Seguridad e Higiene")}</option>
-        </select></label>
-    </div>
+    ${campoPersonaIper("Responsable", g.responsable, "mttoGestRespOtro", "v=>P.gestMtto.responsable=v")}
+    <label class="f"><span class="lb">${tx("Derivar a")}</span>
+      <select onchange="P.gestMtto.mundo=this.value;render()">
+        <option value="mtto" ${g.mundo!=="ehs"?"selected":""}>${tx("Mantenimiento")}</option>
+        <option value="ehs" ${g.mundo==="ehs"?"selected":""}>${tx("Seguridad e Higiene")}</option>
+      </select></label>
     ${g.mundo==="ehs"?`<p class="tiny muted" style="margin:-6px 0 10px">${tx("Al guardar, este hallazgo deja de aparecer acá y pasa a gestionarse desde el Plan de acción de Seguridad e Higiene.")}</p>`:""}
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Fecha propuesta de solución")}</span>
@@ -15208,7 +15251,7 @@ function vAgenda(){
    duplicar y no desincronizarse si esas listas cambian. */
 const AGENDA_CATALOGO = [
   { grupo:"Seguridad e Higiene", ic:"🦺", secciones:[
-      { nombre:"Inspecciones", items:["Extintores","Autoelevador · Diario","Autoelevador · Trimestral","Escaleras de mano","Arnés de seguridad","Auditoría diaria"] },
+      { nombre:"Inspecciones", items:["Extintores","Autoelevador · Diario","Autoelevador · Trimestral","Escaleras de mano","Arnés de seguridad","Tableros eléctricos","Auditoría diaria"] },
       { nombre:"Auditorías y seguimiento", items:["Auditoría mensual","Plan de acción"] },
       { nombre:"EPP y ropa de trabajo", items:["Entrega de EPP","Uso diario de EPP","Ropa de trabajo"] },
       { nombre:"Investigación y matriz de riesgos", items:["Investigación de accidentes","Matriz de riesgos (IPER)"] },
