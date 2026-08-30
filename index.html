@@ -1379,7 +1379,9 @@ function vInicio(){
   const audNC  = audR.reduce((a,r)=>a+(r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0),0);
   const mes = S.insp.filter(i=>i.fecha>=hoy().slice(0,7)+"-01").length
             + eppR.filter(i=>i.fecha>=hoy().slice(0,7)+"-01").length;
-  const nc  = S.insp.reduce((a,i)=>a+inspNcAbiertos(i),0) + eppR.reduce((a,i)=>a+(i.faltas||0),0)
+  // el no uso de EPP no suma acá: es un registro de cumplimiento, no un
+  // desvío para gestionar (ver desviosGrupos())
+  const nc  = S.insp.reduce((a,i)=>a+inspNcAbiertos(i),0) + (S.inv||[]).reduce((a,i)=>a+(i.faltas||0),0)
             + (S.aud||[]).reduce((a,r)=>a+(r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0),0);
   return `
   ${bandaMundo()}
@@ -4062,43 +4064,24 @@ function accionesTodas(){
   });
   return visible.sort((a,b)=>(a.vence||"9999").localeCompare(b.vence||"9999"));
 }
+/* botón rápido (✓/○) de cada ítem del plan de acción. Antes cada tipo de
+   origen tocaba solo su propio campo "hecho" en el registro de origen, sin
+   pasar por accSeguimiento: quedaba tildado como resuelto pero el estado
+   ("Abierto"/"Finalizado") y el responsable del cierre no se actualizaban,
+   como si nadie lo hubiera gestionado. Ahora un solo circuito hace las dos
+   cosas juntas: si se cierra, queda "Finalizado" con fecha y a nombre de
+   quien lo cerró (la cuenta con la que se está usando la app); si se
+   reabre, se limpia el cierre. accClave() ya normaliza k/i, así que no hace
+   falta armar el ref distinto para cada tipo. */
 function cerrarAccion(t,id,k,i){
-  if(t==="auditp"){
-    const r=(S.aud||[]).find(x=>x.id===id); if(!r) return;
-    const it = r.bloques[k].items[i];
-    it.hecho = !it.hecho; it.cierre = it.hecho ? hoy() : "";
-    guardar(); render(); return;
-  }
-  if(t==="iper"){
-    const r=(S.iper||[]).find(x=>x.id===id); if(!r) return;
-    const x = r.tareas[k].riesgos[i]; x.hecho = !x.hecho;
-    guardar(); render(); return;
-  }
-  if(t==="mtto"){
-    const r=(S.mtto||[]).find(x=>x.id===id); if(!r) return;
-    r.estado = r.estado==="Finalizado" ? "Reportado" : "Finalizado";
-    r.fechaCump = r.estado==="Finalizado" ? hoy() : "";
-    guardar(); render(); return;
-  }
-  if(t==="insp"){
-    // ítem "No cumple" de una inspección de checklist: el seguimiento vive
-    // solo en accSeguimiento, el registro de la inspección no se toca
-    const seg = accSeg({t:"insp", id:id, k:k});
-    seg.estado = seg.estado==="Finalizado" ? "Abierto" : "Finalizado";
-    if(seg.estado==="Finalizado"){ seg.cerradoFecha = hoy(); seg.cerradoPor = (S.sesion && (S.sesion.nombre||S.sesion.email))||""; }
-    else { seg.cerradoFecha = ""; seg.cerradoPor = ""; }
-    guardar(); render(); return;
-  }
-  if(t==="inv"){
-    const r=(S.inv||[]).find(x=>x.id===id); if(!r) return;
-    r[k][i].c = r[k][i].c ? "" : hoy();
-  }else{
-    const r=(S.insp||[]).find(x=>x.id===id); if(!r) return;
-    const h=r.hallazgos[i]; h.estado = h.estado==="Cerrado" ? "Abierto" : "Cerrado";
-    r.nc = r.hallazgos.filter(x=>x.estado!=="Cerrado").length;
-    r.ok = r.hallazgos.length - r.nc;
-    r.pct = Math.round(r.ok/r.hallazgos.length*100);
-  }
+  const ref = {t, id, k, i};
+  const actual = accionesTodas().find(a=>accClave(a.ref)===accClave(ref));
+  const cerrando = !(actual && actual.hecha);
+  const seg = accSeg(ref);
+  seg.estado = cerrando ? "Finalizado" : "Abierto";
+  if(cerrando){ seg.cerradoFecha = hoy(); seg.cerradoPor = (S.sesion && (S.sesion.nombre||S.sesion.email))||""; }
+  else { seg.cerradoFecha = ""; seg.cerradoPor = ""; }
+  marcarAccionOrigen(ref, cerrando);
   guardar(); render();
 }
 /* ============================================================
@@ -4287,6 +4270,7 @@ function filaAccionItem(a){
       </div>
       ${a.vence?`<div class="tiny" style="color:${venc?"var(--no)":"var(--muted)"};margin-top:3px">
         ${venc?tx("Vencida el "):tx("Compromiso: ")}${fecha(a.vence)}</div>`:""}
+      ${seg.estado==="Finalizado" && seg.cerradoFecha?`<div class="tiny muted" style="margin-top:3px">✓ ${tx("Cerrada el")} ${fecha(seg.cerradoFecha)}${seg.cerradoPor?" · "+esc(seg.cerradoPor):""}</div>`:""}
     </div>
   </div></div>`;
 }
@@ -4426,10 +4410,11 @@ function desviosGrupos(){
     return { n, ic:t.ic||"📋", titulo:esc(t.nombre)+(ref?" · "+esc(ref):""),
       sub:fecha(r.fecha)+(r.inspector?" · "+esc(r.inspector):""), page:"ver", id:r.id };
   });
-  const gEpp = (S.epp||[]).filter(r=>(r.faltas||0)>0).map(r=>({
-    n:r.faltas, ic:ICONO_EPP[r.tipo]||"🦺", titulo:esc(tx(TITULO_EPP[r.tipo]||"EPP")),
-    sub:fecha(r.fecha)+(r.nombreTrab?" · "+esc(r.nombreTrab):""), page:"verEpp", id:r.id
-  }));
+  /* el uso/no uso de EPP NO entra acá: es un registro de cumplimiento
+     (quién usó o no cada elemento), no algo que se gestione ítem por ítem
+     como una inspección o una auditoría. Sigue viéndose entero en su propio
+     historial y panel — solo se sacó de "Desvíos", que ahora muestra
+     únicamente lo que realmente tiene un circuito de gestión. */
   const gInv = (S.inv||[]).filter(r=>(r.faltas||0)>0).map(r=>({
     n:r.faltas, ic:"🔎", titulo:tx("Investigación de accidentes"), sub:fecha(r.fecha), page:"verInv", id:r.id
   }));
@@ -4440,7 +4425,6 @@ function desviosGrupos(){
   }).filter(Boolean);
   return [
     { k:"insp", label:tx("Inspecciones"), items:gInsp },
-    { k:"epp",  label:tx("EPP"), items:gEpp },
     { k:"inv",  label:tx("Investigación de accidentes"), items:gInv },
     { k:"aud",  label:tx("Auditoría mensual"), items:gAud }
   ].filter(g=>g.items.length);
