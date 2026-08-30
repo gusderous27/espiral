@@ -216,8 +216,10 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
   overflow:hidden;text-overflow:ellipsis;cursor:pointer;line-height:1.5}
 .agmas{font-size:8.5px;color:var(--muted);padding:0 2px;cursor:pointer}
 @media(max-width:360px){.agcald{min-height:52px}.agchip,.agmas{font-size:8px}}
-.modal{position:fixed;inset:0;background:rgba(8,14,22,.82);z-index:100000;display:grid;place-items:center;padding:16px;overflow:auto}
-.mcard{background:var(--card);border-radius:var(--r);padding:16px;max-width:560px;width:100%;text-align:center}
+.modal{position:fixed;inset:0;background:rgba(8,14,22,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:100000;display:grid;place-items:center;padding:16px;overflow:auto;animation:modalFondo .18s ease}
+.mcard{background:var(--card);border-radius:var(--r);padding:16px;max-width:560px;width:100%;text-align:center;animation:modalCard .18s ease}
+@keyframes modalFondo{from{opacity:0}to{opacity:1}}
+@keyframes modalCard{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .cwrap{position:relative;display:inline-block;line-height:0;max-width:100%;touch-action:none}
 #cimg{max-width:100%;max-height:52vh;display:block;border-radius:8px}
 .csel{position:absolute;border:2px solid #fff;box-shadow:0 0 0 4000px rgba(0,0,0,.45);cursor:move;touch-action:none}
@@ -1298,9 +1300,15 @@ document.addEventListener("visibilitychange", ()=>{
    no golpear el servidor si el usuario cambia de pestaña seguido. La
    fusión de sincronizarDesdeServidor() ya protege cualquier edición local
    sin guardar (flag _sucio), así que esto no pisa nada que el usuario
-   esté cargando en este mismo dispositivo. Evitamos volver a pintar la
-   pantalla si está en medio de cargar un formulario (PANT_EDIT), para no
-   interrumpirlo con un render de golpe. */
+   esté cargando en este mismo dispositivo — y esa misma función ya se
+   encarga de volver a subir lo que haya quedado _sucio, así que ACÁ NO
+   llamamos guardar(): hacerlo pisaría, con la copia local completa (que
+   puede estar vieja en algún otro campo), lo que el servidor acaba de
+   traer, y fue justo la causa de un bug real (30/08/2026: un desvío se
+   cerraba en un dispositivo, y una sincronización en OTRO dispositivo con
+   datos viejos en algo no relacionado terminaba revirtiéndolo). Evitamos
+   volver a pintar la pantalla si está en medio de cargar un formulario
+   (PANT_EDIT), para no interrumpirlo con un render de golpe. */
 let ULTIMO_SYNC_FOCO = 0;
 document.addEventListener("visibilitychange", async ()=>{
   if(document.visibilityState!=="visible" || !sbOn() || !sesionActiva()) return;
@@ -1308,7 +1316,6 @@ document.addEventListener("visibilitychange", async ()=>{
   if(ahora - ULTIMO_SYNC_FOCO < 20000) return;
   ULTIMO_SYNC_FOCO = ahora;
   await sincronizarDesdeServidor();
-  guardar();
   if(PANT_EDIT.indexOf(P.page) < 0) render();
 });
 
@@ -15792,11 +15799,27 @@ function agendaIr(tipo, id){
   cerrarFab();
   if(tipo==="agenda"){
     const r = (S.agenda||[]).find(x=>x.id===id);
-    if(r && r.destino && agendaDestinoIr(r.destino)) return;
+    if(r && agendaDestinoIr(agendaDestinoDe(r))) return;
     go("verAgenda", id);
   }
   else if(tipo==="crono") go("verCrono", id);
   else go("acciones");
+}
+/* a qué formulario real corresponde lo agendado. Si se guardó con destino
+   (agendado con esta versión, eligiéndolo de la lista) se usa directo; si
+   no —lo agendado ANTES de que existiera esto— se intenta reconocer del
+   título, que guarda "Sección · Ítem" tal cual lo arma catElegir. Así lo
+   ya agendado también empieza a llevar al formulario real, sin tener que
+   volver a cargarlo. */
+function agendaDestinoDe(r){
+  if(r.destino) return r.destino;
+  const t = r.titulo||"";
+  const i = t.indexOf(" · ");
+  if(i<0) return null;
+  const seccion = t.slice(0,i), item = t.slice(i+3);
+  if(AGENDA_DESTINOS[seccion+"|"+item]) return AGENDA_DESTINOS[seccion+"|"+item];
+  if(seccion==="Planilla de hallazgos") return {accion:"mtto", tipo:item};
+  return null;
 }
 /* navega al formulario real asociado a lo agendado (si se eligió de la
    lista de formularios al agendarlo). Devuelve true si pudo navegar. */
@@ -15810,7 +15833,7 @@ function agendaDestinoIr(destino){
 }
 function agendaDestinoIrPorId(id){
   const r = (S.agenda||[]).find(x=>x.id===id);
-  if(r) agendaDestinoIr(r.destino);
+  if(r) agendaDestinoIr(agendaDestinoDe(r));
 }
 /* menú de Ver/Editar/Eliminar para un chip del cronograma (mantener
    presionado, en la vista mes). En la vista semana/lista se usa el swipe
@@ -16079,7 +16102,7 @@ function vAgendaEdit(){
   <section class="block"><div class="card pad">
     <label class="f" style="margin-top:0"><span class="lb">${tx("Título")}</span>
       <input type="text" value="${esc(d.titulo)}" oninput="P.draft.titulo=this.value;P.draft.destino=null" placeholder="${tx("Qué hay que hacer")}"></label>
-    ${d.destino?`<p class="tiny muted" style="margin:-6px 0 10px">🔗 ${tx("Al tocarla, te va a llevar directo a ese formulario.")}</p>`:""}
+    ${agendaDestinoDe(d)?`<p class="tiny muted" style="margin:-6px 0 10px">🔗 ${tx("Al tocarla, te va a llevar directo a ese formulario.")}</p>`:""}
     <button type="button" class="btn ghost sm" style="margin:0 0 10px" onclick="toggleCatalogo()">${P.catVisible?tx("Ocultar la lista de formularios"):"📋 "+tx("Elegir de la lista de formularios")}</button>
     ${P.catVisible?`<div class="catbox">${catalogoHtml()}</div>`:""}
     <div class="grid2">
