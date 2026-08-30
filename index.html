@@ -243,6 +243,14 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
   padding:14px 0 4px;color:#5B6B7F;font-size:10.5px}
 #piemarca svg{width:22px;height:22px}
 .lock{font-size:12px;opacity:.85}
+/* ---------- Espiral Pro: insignia y CTA en degradé azul→violeta ---------- */
+.pro-chip{display:none;align-items:center;justify-content:center;flex:none;
+  font-family:"Barlow Condensed",Inter,sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;
+  color:#fff;padding:2px 8px 1px;border-radius:999px;line-height:1.5;
+  background:linear-gradient(90deg,var(--c6),var(--c7));box-shadow:0 1px 3px rgba(46,94,170,.35)}
+html[data-pro="1"] .pro-chip{display:inline-flex}
+.pro-cta{background:linear-gradient(90deg,var(--c6),var(--c7));color:#fff;box-shadow:var(--shadow)}
+.pro-cta .tiny{color:#fff}
 .mundoban{display:flex;justify-content:space-between;align-items:center;gap:10px;
   background:var(--card);border:1px solid var(--line);border-radius:12px;
   padding:10px 14px;margin-bottom:12px;cursor:pointer;font-weight:600;font-size:14px}
@@ -407,7 +415,7 @@ html[data-tema="oscuro"] #splash{background:#0E1621}
     <button class="icb" id="bback" onclick="volver()" title="Volver" style="display:none;margin-right:10px">←</button>
     <div class="logo" onclick="go('inicio')" style="flex:1;line-height:1.05;display:flex;align-items:center;gap:9px">
       <svg class="iso" viewBox="0 0 100 100" width="34" height="34" aria-hidden="true"><path d="M75.2 58.6L75.6 56.8L75.7 55.0L75.8 53.2L75.7 51.5L75.6 49.8L75.3 48.1L74.9 46.4L74.4 44.8L73.7 43.2L73.0 41.7L72.2 40.3L71.3 38.9L70.3 37.6L69.3 36.4L68.2 35.3L67.0 34.2L65.7 33.3L64.4 32.5L63.1 31.7L61.7 31.1L60.3 30.5L58.9 30.1L57.5 29.7L56.0 29.5L54.6 29.3L53.2 29.3L51.7 29.3L50.3 29.5L49.0 29.7L47.6 30.0L46.3 30.5L45.1 31.0L43.9 31.5L42.8 32.2L41.7 32.9L40.7 33.7L39.7 34.6L38.8 35.5L38.0 36.4L37.3 37.4L36.6 38.4L36.1 39.5L35.6 40.5L35.2 41.6L34.8 42.8L34.6 43.9L34.4 45.0L34.3 46.1L34.3 47.2L34.4 48.3L34.5 49.3L34.7 50.4L35.0 51.4L35.3 52.3L35.8 53.3L36.2 54.2L36.7 55.0L37.3 55.8L37.9 56.5L38.6 57.2L39.2 57.8L40.0 58.4L40.7 58.9L41.5 59.3L42.3 59.7L43.0 60.0L43.8 60.3L44.7 60.5L45.5 60.6L46.3 60.7L47.0 60.7L47.8 60.7L48.6 60.6L49.3 60.4L50.0 60.2L50.7 60.0L51.3 59.7L51.9 59.4L52.5 59.0L53.0 58.6L53.5 58.2L53.9 57.8L54.3 57.3L54.7 56.8L55.0 56.3L55.3 55.8L55.5 55.3L55.7 54.8L55.8 54.2L55.9 53.7L55.9 53.2L55.9 52.7L55.9 52.2L55.8 51.8L55.7 51.3L55.6 50.9L55.4 50.5L55.2 50.1L55.0 49.8L54.7 49.5L54.5 49.2L54.2 49.0L53.9 48.7L53.6 48.6L53.3 48.4L53.0 48.3L52.7 48.2L52.4 48.2L52.1 48.2L51.8 48.2" fill="none" stroke="#0E7C86" stroke-width="8.4" stroke-linecap="round"/><path d="M75.3 15.2L74.0 14.5L72.7 13.8L71.4 13.1L70.1 12.5L68.8 11.9L67.4 11.4L66.1 11.0L64.7 10.5L63.3 10.2L61.9 9.8L60.5 9.6L59.1 9.3L57.7 9.2L56.3 9.0L54.9 9.0L53.5 8.9L52.1 8.9L50.7 9.0L49.3 9.1L47.9 9.3" fill="none" stroke="#E4572E" stroke-width="10.4" stroke-linecap="round"/><path d="M50.1 9.0L48.7 9.2L47.3 9.4L45.9 9.6L44.6 9.9L43.2 10.2L41.9 10.5L40.6 10.9L39.3 11.4L38.0 11.9L36.8 12.4L35.5 13.0L34.3 13.6L33.2 14.2L32.0 14.9L30.9 15.7L29.8 16.4L28.7 17.2L27.7 18.1L26.7 18.9L25.7 19.8" fill="none" stroke="#F5A524" stroke-width="10.1" stroke-linecap="round"/><path d="M27.2 18.4L26.2 19.3L25.3 20.2L24.4 21.2L23.5 22.1L22.6 23.1L21.8 24.2L21.0 25.2L20.3 26.3L19.6 27.4L18.9 28.5L18.3 29.6L17.7 30.7L17.2 31.9L16.7 33.1L16.2 34.3L15.8 35.5L15.4 36.7L15.1 37.9L14.8 39.1L14.6 40.3" fill="none" stroke="#F2CD31" stroke-width="9.8" stroke-linecap="round"/><path d="M15.0 38.4L14.7 39.7L14.5 40.9L14.3 42.1L14.2 43.4L14.1 44.6L14.0 45.8L14.0 47.1L14.1 48.3L14.1 49.5L14.2 50.7L14.4 52.0L14.6 53.2L14.8 54.3L15.1 55.5L15.4 56.7L15.8 57.8L16.2 59.0L16.6 60.1L17.1 61.2L17.6 62.2" fill="none" stroke="#3FA34D" stroke-width="9.6" stroke-linecap="round"/><path d="M16.8 60.6L17.3 61.6L17.8 62.7L18.4 63.7L18.9 64.8L19.6 65.8L20.2 66.7L20.9 67.7L21.6 68.6L22.3 69.5L23.1 70.3L23.9 71.2L24.7 72.0L25.6 72.7L26.4 73.5L27.3 74.2L28.2 74.9L29.1 75.5L30.1 76.1L31.1 76.7L32.0 77.2" fill="none" stroke="#17A2C6" stroke-width="9.3" stroke-linecap="round"/><path d="M30.5 76.4L31.5 76.9L32.5 77.4L33.5 77.9L34.5 78.4L35.5 78.8L36.5 79.2L37.6 79.5L38.6 79.8L39.7 80.1L40.7 80.3L41.8 80.5L42.9 80.6L43.9 80.8L45.0 80.8L46.1 80.9L47.1 80.9L48.2 80.9L49.2 80.8L50.3 80.7L51.3 80.5" fill="none" stroke="#2E5EAA" stroke-width="9.0" stroke-linecap="round"/><path d="M49.7 80.7L50.8 80.6L51.8 80.5L52.8 80.3L53.8 80.1L54.8 79.8L55.8 79.5L56.8 79.2L57.7 78.8L58.7 78.5L59.6 78.0L60.5 77.6L61.4 77.1L62.3 76.6L63.1 76.1L63.9 75.5L64.8 74.9L65.5 74.3L66.3 73.7L67.0 73.0L67.7 72.4" fill="none" stroke="#7B4EA8" stroke-width="8.7" stroke-linecap="round"/><path d="M66.6 73.4L67.3 72.7L68.0 72.1L68.7 71.3L69.3 70.6L69.9 69.9L70.5 69.1L71.1 68.3L71.6 67.5L72.1 66.7L72.6 65.9L73.0 65.1L73.4 64.2L73.8 63.4L74.1 62.5L74.4 61.6L74.7 60.7L74.9 59.8L75.2 59.0L75.3 58.1L75.5 57.2" fill="none" stroke="#E0457B" stroke-width="8.4" stroke-linecap="round"/></svg>
-      <div><span class="word">Espiral</span>
+      <div><div style="display:flex;align-items:center;gap:6px"><span class="word">Espiral</span><span class="pro-chip">PRO</span></div>
       <span class="tag" id="slogan">Cada vuelta, un nivel más arriba</span></div>
     </div>
     <div class="hbtns">
@@ -1436,6 +1444,8 @@ function vInicio(){
     </div>
   </section>
 
+  ${ctaProHTML()}
+
   <section class="block">
     <div class="section-title"><h2>${t("sec.insp")}</h2></div>
     <div class="tiles">${tilesHTML()}</div>
@@ -1735,6 +1745,7 @@ function tomarArchivo(inp, destino){
       render(); toast(tx("Documento adjuntado")); return;
     }
     if(P.fotoDestino==="logo"){ S.empresa.logo = b64; guardar(); render(); toast(tx("Logo cargado")); return; }
+    if(P.fotoDestino==="avatar"){ setPerfil("foto", b64); guardarPerfil(); return; }
     if(P.fotoDestino==="hallazgo"){ leerFormHallazgo(); P.hFoto = b64; render(); }
     else if(P.fotoDestino==="mttoFoto"){ P.draft.foto = b64; render(); }
     else { P.draft.fotos.push(b64); const y=window.scrollY; render(); window.scrollTo(0,y); }
@@ -2572,10 +2583,7 @@ function tilesProtHTML(){
     <span class="de">(${tx("muestras de laboratorio y dispensers")})</span></button>
     <button class="tile" style="--tc:var(--c8);opacity:.55" onclick="toast('En desarrollo')">
     <span class="ic">🔊</span><span class="nm">${t("tile.ruido")}</span>
-    <span class="de">${t("tile.ruido.d")}</span></button>
-    <button class="tile" style="--tc:var(--c7);opacity:.55" onclick="toast('En desarrollo')">
-    <span class="ic">🌀</span><span class="nm">${t("tile.vent")}</span>
-    <span class="de">${t("tile.vent.d")}</span></button>`;
+    <span class="de">${t("tile.ruido.d")}</span></button>`;
 }
 function tilesDocHTML(){
   return `<button class="tile" style="--tc:var(--c8)" onclick="go('docs')">
@@ -12831,13 +12839,20 @@ function vAjustes(){
   const pf = (S.sesion&&S.sesion.perfil) || {};
   const setPf = "setPerfil";
   const cuentaBody = !u ? "" : `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-      <div style="width:44px;height:44px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex:none">${esc((u.nombre||u.email||"?")[0].toUpperCase())}</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;flex:none;overflow:hidden">${pf.foto?`<img src="${esc(pf.foto)}" style="width:100%;height:100%;object-fit:cover">`:esc((u.nombre||u.email||"?")[0].toUpperCase())}</div>
       <div style="min-width:0;flex:1">
-        <div style="font-weight:700">${esc(u.nombre||"—")}</div>
+        <div style="font-weight:700;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(u.nombre||"—")}${esPro()?`<span class="pro-chip" style="display:inline-flex">PRO</span>`:""}</div>
         <div class="tiny muted">${esc(u.email)}</div>
       </div>
       <span class="pill" style="background:${rol==="admin"?"var(--ok)":"var(--c5)"};color:#fff">${rol==="admin"?tx("Administrador"):tx("Miembro")}</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <input type="file" id="favatar1" class="fin" accept="image/*" onchange="tomarArchivo(this,'avatar')">
+      <label class="btn soft sm foto" for="favatar1">${pf.foto?tx("Cambiar foto"):tx("Subir foto de perfil")}</label>
+      <input type="file" id="favatar2" class="fin" accept="image/*" capture="user" onchange="tomarArchivo(this,'avatar')">
+      <label class="btn ghost sm foto" for="favatar2">${tx("📷 Sacar foto")}</label>
+      ${pf.foto?`<button class="btn ghost sm" style="color:var(--no)" onclick="quitarFotoPerfil()">${tx("Quitar")}</button>`:""}
     </div>
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Nombre")}</span>
@@ -12897,7 +12912,7 @@ function vAjustes(){
           ${PAISES.map(x=>`<option value="${x.k}" ${(e.pais||"AR")===x.k?"selected":""}>${x.f} ${esc(x.n)}</option>`).join("")}
         </select></label>
       <p class="tiny muted" style="margin:4px 2px 0">${tx("Define qué documentación se le exige a los contratistas y cómo se llama el seguro de accidentes en")} ${esc(paisAct().n)}: <b>${esc(paisAct().seguro)}</b> · <b>${esc(paisAct().id)}</b>.</p>
-      <button class="btn ghost sm" style="margin-top:8px" onclick="go('equiv')">${tx("Ver equivalencias entre países")}</button>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="go('equiv')">${tx("Ver equivalencias entre países")}${lk("equiv")}</button>
 
       <div class="grp">${t("aj.logo")}</div>
       <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
@@ -13018,7 +13033,8 @@ async function guardarPerfil(){
         nombre: pf.nombre || null,
         apellido: pf.apellido || null,
         pais: pf.pais || null,
-        nacimiento: pf.nacimiento || null
+        nacimiento: pf.nacimiento || null,
+        foto: pf.foto || null
       });
     }catch(e){}
   }
@@ -13027,6 +13043,12 @@ async function guardarPerfil(){
 }
 function setEmp(k,v){ S.empresa[k]=v; S.empresa._sucio=true; guardar(); }
 function quitarLogo(){ delete S.empresa.logo; guardar(); render(); toast(tx("Logo quitado")); }
+async function quitarFotoPerfil(){
+  if(!S.sesion || !S.sesion.perfil) return;
+  delete S.sesion.perfil.foto;
+  await guardarPerfil();
+  toast(tx("Foto de perfil quitada"));
+}
 async function guardarAjustes(){
   await guardar();
   await empujarEmpresaActiva(true);   // guardado explícito: confirmar en el servidor ya, sin esperar el debounce
@@ -14491,9 +14513,9 @@ async function entrarConUsuario(u){
   // recupero el perfil guardado (nombre, apellido, país, fecha) del servidor
   if(sbOn()){
     try{
-      const { data:pf } = await SB.from("esp_perfiles").select("nombre, apellido, pais, nacimiento").eq("id", u.id).maybeSingle();
+      const { data:pf } = await SB.from("esp_perfiles").select("nombre, apellido, pais, nacimiento, foto").eq("id", u.id).maybeSingle();
       if(pf){
-        S.sesion.perfil = { nombre:pf.nombre||"", apellido:pf.apellido||"", pais:pf.pais||"", nacimiento:pf.nacimiento||"" };
+        S.sesion.perfil = { nombre:pf.nombre||"", apellido:pf.apellido||"", pais:pf.pais||"", nacimiento:pf.nacimiento||"", foto:pf.foto||"" };
         // separo nombre/apellido si el perfil no los tiene pero sí el nombre completo
         if(!S.sesion.perfil.nombre && pf.nombre){ S.sesion.perfil.nombre = pf.nombre; }
         if(pf.nombre){ S.sesion.nombre = [pf.nombre, pf.apellido].filter(Boolean).join(" ").trim() || pf.nombre; nombre = S.sesion.nombre; }
@@ -14816,20 +14838,6 @@ function vInicioRH(){
     </div>
   </section>
 
-  <section class="block">
-    <div class="section-title"><h2>${tx("Próximamente")}</h2></div>
-    <div class="tiles">
-      <button class="tile locked" style="--tc:var(--muted)" onclick="toast(tx('Lo estamos preparando.'))">
-        <span class="ic">🩺</span><span class="nm">${tx("Exámenes médicos")}</span>
-        <span class="de">(${tx("preocupacional y periódicos")})</span></button>
-      <button class="tile locked" style="--tc:var(--muted)" onclick="toast(tx('Lo estamos preparando.'))">
-        <span class="ic">📅</span><span class="nm">${tx("Licencias y ausencias")}</span>
-        <span class="de">(${tx("vacaciones, enfermedad, ART")})</span></button>
-      <button class="tile locked" style="--tc:var(--muted)" onclick="toast(tx('Lo estamos preparando.'))">
-        <span class="ic">🗂</span><span class="nm">${tx("Legajo y documentos")}</span>
-        <span class="de">(${tx("datos, contactos, adjuntos")})</span></button>
-    </div>
-  </section>
   <div style="height:10px"></div>`;
 }
 
@@ -15300,10 +15308,10 @@ function vInicioMtto(){
     <div class="section-title"><h2>${tx("Planilla de hallazgos")}</h2></div>
     <div class="tiles">
       <button class="tile" style="--tc:var(--c2)" onclick="nuevoMtto();go('mttoEdit')">
-        <span class="ic">🔧</span><span class="nm">${tx("Nuevo hallazgo")}</span>
+        <span class="ic">🔧</span><span class="nm">${tx("Nuevo hallazgo")}${lk("mttoEdit")}</span>
         <span class="de">(${tx("mantenimiento, eléctrico, pintura, etc.")})</span></button>
       ${puedeAdministrar()?`<button class="tile" style="--tc:var(--c4)" onclick="go('gestionMtto')">
-        <span class="ic">⚙️</span><span class="nm">${tx("Gestionar hallazgos")}</span>
+        <span class="ic">⚙️</span><span class="nm">${tx("Gestionar hallazgos")}${lk("gestionMtto")}</span>
         <span class="de">(${tx("asignar responsable y hacer seguimiento")})</span></button>`:""}
     </div>
   </section>
@@ -15977,19 +15985,40 @@ const PRO_VENTAJAS = [
    y de miembros del equipo. El precio base es el de "Individual";
    "Equipo" sale 5 veces eso; "Consultora" se conversa a medida.
    ============================================================ */
+/* nivel gratuito: no está en PLANES (no se "activa", ya lo tiene
+   cualquiera que abre la app) pero se muestra como una tarjeta más
+   en vPro() para que el cliente vea qué gana subiendo de nivel. */
+const PLAN_GRATIS = {
+  nombre:"Gratis", precioTxt:"US$ 0",
+  resumen:"Para empezar a ordenar la seguridad e higiene de tu empresa, sin pagar nada.",
+  d:["7 plantillas de inspección: extintores, autoelevadores, escaleras, arnés, tableros eléctricos, andamios y auditoría diaria",
+     "EPP, ropa de trabajo y nómina de personal", "Capacitación con firma de los participantes",
+     "Investigación de accidentes", "Historial completo, con editar y eliminar",
+     "Informes en PDF y copia de seguridad", "Español, inglés y portugués"]
+};
 const PLANES = [
   { k:"ind", nombre:"Individual", precio:6.99, precioTxt:"US$ 6,99/mes",
     empresasMax:1, miembrosMax:3,
-    resumen:"Para una persona que quiere sumar a algunos pocos más.",
-    d:["1 empresa", "Hasta 3 personas en el equipo (vos + 2)", "Todos los módulos Pro habilitados"] },
+    resumen:"Para vos, si sos el/la responsable de higiene y seguridad y querés sumar a algún colega.",
+    intro:"Todos los formularios de la versión gratuita, más:",
+    d:["Auditoría mensual con % de efectividad y matriz de riesgos IPER", "Permiso de trabajo y protocolos de higiene",
+       "Contratistas por país, con vencimientos", "Panel, plan de acción y exportar a Excel",
+       "Informes con tu logo, sin la marca de Espiral", "1 empresa · hasta 3 personas en el equipo (vos + 2)"],
+    checkoutUrl:"https://buy.stripe.com/3cIbJ1dIq2vu0iZ4wx97G09" },
   { k:"equipo", nombre:"Equipo", precio:34.95, precioTxt:"US$ 34,95/mes",
-    empresasMax:2, miembrosMax:10,
-    resumen:"Para una PyME con un equipo más grande, hasta 2 empresas.",
-    d:["Hasta 2 empresas", "Hasta 10 personas en el equipo", "Todos los módulos Pro habilitados"] },
+    empresasMax:3, miembrosMax:10,
+    resumen:"Para un equipo de HyS más grande, o para gestionar hasta 3 empresas o plantas propias.",
+    intro:"Todos los formularios de la versión gratuita, más:",
+    d:["Todo lo del nivel Individual", "Hasta 3 empresas, cada una con su propio historial",
+       "Hasta 10 personas en el equipo", "Ideal para una PyME con varias plantas o un equipo de HyS más grande"],
+    destacado:true,
+    checkoutUrl:"https://buy.stripe.com/bJe5kD6fYeecc1Hfbb97G0a" },
   { k:"consultora", nombre:"Consultora", precio:null, precioTxt:"A consultar",
     empresasMax:Infinity, miembrosMax:Infinity,
-    resumen:"Para consultoras o empresas con varias plantas o clientes.",
-    d:["Empresas ilimitadas", "Equipo a medida", "Todos los módulos Pro habilitados"] }
+    resumen:"Para consultoras o empresas con varias plantas o clientes propios.",
+    intro:"Todos los formularios de la versión gratuita, más:",
+    d:["Todo lo del nivel Equipo", "Empresas ilimitadas y equipo a medida",
+       "Planillas o formularios a medida, según lo que necesite tu empresa"] }
 ];
 /* mail de contacto para el nivel Consultora, que no tiene precio fijo.
    TODO: reemplazar por el mail comercial real de proyectohs.com */
@@ -16029,6 +16058,24 @@ function puedeEmpresa(){
 }
 
 function irPro(motivo){ P.proDe = motivo||""; go("pro"); }
+/* tarjeta que invita a pasarse a Pro, para la pantalla principal.
+   Una vez que la cuenta es Pro, deja de aparecer. */
+function ctaProHTML(){
+  if(esPro()) return "";
+  return `
+  <section class="block">
+    <button class="card pad pro-cta" style="width:100%;text-align:left;cursor:pointer;border:none" onclick="irPro('')">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:26px;line-height:1">⭐</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15.5px">${tx("Pasate a Espiral Pro")}</div>
+          <div class="tiny" style="opacity:.92;margin-top:2px">${tx("Auditoría mensual, matriz de riesgos, permiso de trabajo, contratistas, panel y más.")}</div>
+        </div>
+        <span style="font-size:20px;opacity:.85">›</span>
+      </div>
+    </button>
+  </section>`;
+}
 /* 3.1 · pantalla intermedia suave antes de mandar a la venta.
    Devuelve true si el usuario YA es Pro (puede seguir); si no, muestra
    el modal explicativo y devuelve false para cortar la acción. */
@@ -16092,12 +16139,55 @@ function desactivarPro(){
 }
 function desactivarProCuenta(){
   // este botón baja del nivel Consultora (empresas ilimitadas) al nivel
-  // Equipo (hasta 2 empresas), sin perder Pro.
-  if(!gate(tx("¿Bajar al nivel Equipo (hasta 2 empresas)? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
+  // Equipo (hasta 3 empresas), sin perder Pro.
+  if(!gate(tx("¿Bajar al nivel Equipo (hasta 3 empresas)? No se borra ningún dato: las que ya tenés quedan como están."), ()=>desactivarProCuenta())) return;
   if(S.plan === "consultora") S.plan = "equipo";
   guardar(); pintarShell(); toast(tx("Tu cuenta bajó al nivel Equipo")); render();
 }
 
+/* arma el link de pago de Stripe con el correo y el id de cuenta
+   precargados (si hay sesión), para identificar el pago más fácil */
+function stripeUrl(pl){
+  if(!pl.checkoutUrl) return "#";
+  const params = [];
+  const email = (S.sesion && S.sesion.email) || "";
+  if(email) params.push("prefilled_email="+encodeURIComponent(email));
+  const uid = (S.sesion && S.sesion.uid) || "";
+  if(uid) params.push("client_reference_id="+encodeURIComponent(uid));
+  return pl.checkoutUrl + (params.length ? "?"+params.join("&") : "");
+}
+/* una tarjeta de nivel para la pantalla de Pro. "pl" puede ser
+   PLAN_GRATIS (sin k, sin precio real) o una entrada de PLANES. */
+function planCardHTML(pl, activo){
+  const esFree = !pl.k;
+  const esElActivo = esFree ? !activo : (activo && activo.k===pl.k);
+  let boton;
+  if(pl.k==="consultora"){
+    boton = `<button class="btn soft" style="width:100%;box-sizing:border-box" onclick="contactarConsultora()">${tx("Hablemos")}</button>`;
+  } else if(esFree){
+    boton = esElActivo
+      ? `<button class="btn ghost" style="width:100%;box-sizing:border-box" disabled>${tx("Tu nivel actual")}</button>`
+      : `<button class="btn ghost" style="width:100%;box-sizing:border-box" onclick="desactivarPro()">${tx("Volver a gratis")}</button>`;
+  } else if(esElActivo){
+    boton = `<button class="btn ghost" style="width:100%;box-sizing:border-box" disabled>${tx("Tu plan actual")}</button>`;
+  } else {
+    boton = `<a class="btn" style="width:100%;box-sizing:border-box;display:block;text-align:center;text-decoration:none" href="${stripeUrl(pl)}" target="_blank" rel="noopener">${tx("Contratar")} ${tx(pl.nombre)}</a>`;
+  }
+  return `<div class="card pad" style="margin-bottom:14px;position:relative;${pl.destacado
+      ? "border:2px solid transparent;background:linear-gradient(var(--card),var(--card)) padding-box, linear-gradient(90deg,var(--c6),var(--c7)) border-box"
+      : (esElActivo?"border-color:var(--ok)":"")}">
+    ${pl.destacado?`<div style="position:absolute;top:-11px;left:14px;background:linear-gradient(90deg,var(--c6),var(--c7));color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:3px 10px;border-radius:999px">${tx("★ Más elegido")}</div>`:""}
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+      <h3 style="font-size:17px;font-weight:700;margin:0">${tx(pl.nombre)}</h3>
+      <span style="font-weight:700;color:var(--primary)">${pl.precio!=null?pl.precioTxt:tx(pl.precioTxt)}</span>
+    </div>
+    <p class="tiny muted" style="margin:2px 0 8px">${tx(pl.resumen)}</p>
+    ${pl.intro?`<p class="tiny" style="margin:0 0 4px;font-weight:600">${tx(pl.intro)}</p>`:""}
+    <div class="tiny" style="line-height:1.8">${pl.d.map(x=>"✅ "+tx(x)).join("<br>")}</div>
+    <div style="margin-top:10px">${boton}</div>
+    ${esElActivo?`<div class="tiny" style="color:var(--ok);margin-top:6px;font-weight:600;text-align:center">${tx("✓ Nivel activo")}</div>`:""}
+  </div>`;
+}
 function contactarConsultora(){
   const asunto = tx("Quiero el nivel Consultora de Espiral");
   const cuerpo = tx("Hola, quiero más información sobre el nivel Consultora (varias empresas, equipo a medida).")
@@ -16114,39 +16204,23 @@ function vPro(){
   const activo = planActual();
   return `
   <section class="block">
-    <div class="card pad" style="text-align:center">
-      <div style="font-size:34px;line-height:1">🔒</div>
-      <h2 style="font-size:22px;font-weight:700;margin:6px 0 2px">${tx("Espiral Pro")}</h2>
-      <p class="small muted" style="margin:0">${motivo
+    <div class="card pad" style="text-align:center;background:linear-gradient(135deg,var(--c6),var(--c7));color:#fff;border:none">
+      <div style="font-size:34px;line-height:1">⭐</div>
+      <h2 style="font-size:22px;font-weight:700;margin:6px 0 2px;color:#fff">${tx("Espiral Pro")}</h2>
+      <p class="small" style="margin:0;opacity:.95">${motivo
         ? tx("Para usar")+" "+tx(motivo)+" "+tx("necesitás alguno de estos niveles.")
-        : tx("Elegí el nivel según cuántas empresas y personas necesitás.")}</p>
+        : tx("Elegí el nivel que mejor se adapte a tu empresa y llevá la gestión de HyS al siguiente nivel.")}</p>
     </div>
   </section>
 
   <section class="block">
     <div class="section-title"><h2>${tx("Niveles")}</h2></div>
-    ${PLANES.map(pl=>{
-      const esElActivo = activo && activo.k===pl.k;
-      const boton = pl.k==="consultora"
-        ? `<button class="btn soft" onclick="contactarConsultora()">${tx("Hablemos")}</button>`
-        : (esElActivo
-          ? `<button class="btn ghost" disabled>${tx("Tu plan actual")}</button>`
-          : `<button class="btn" onclick="activarPro('${pl.k}')">${tx("Activar")} ${tx(pl.nombre)}</button>`);
-      return `<div class="card pad" style="margin-bottom:10px;${esElActivo?"border-color:var(--ok)":""}">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
-          <h3 style="font-size:17px;font-weight:700;margin:0">${tx(pl.nombre)}</h3>
-          <span style="font-weight:700;color:var(--primary)">${pl.precio!=null?pl.precioTxt:tx(pl.precioTxt)}</span>
-        </div>
-        <p class="tiny muted" style="margin:2px 0 8px">${tx(pl.resumen)}</p>
-        <div class="tiny" style="line-height:1.8">${pl.d.map(x=>"✅ "+tx(x)).join("<br>")}</div>
-        <div style="margin-top:10px">${boton}</div>
-        ${esElActivo?`<div class="tiny" style="color:var(--ok);margin-top:6px;font-weight:600">${tx("✓ Nivel activo")}</div>`:""}
-      </div>`;
-    }).join("")}
+    ${planCardHTML(PLAN_GRATIS, activo)}
+    ${PLANES.map(pl=>planCardHTML(pl, activo)).join("")}
   </section>
 
   <section class="block">
-    <div class="section-title"><h2>${tx("Qué incluye cada nivel")}</h2></div>
+    <div class="section-title"><h2>${tx("Qué se desbloquea con Pro")}</h2></div>
     <div class="card pad">
       ${PRO_VENTAJAS.map(v=>`<div class="row" style="cursor:default">
         <span class="ic" style="font-size:19px;width:28px;text-align:center">${v.ic}</span>
@@ -16158,25 +16232,8 @@ function vPro(){
   </section>
 
   <section class="block">
-    <div class="section-title"><h2>${tx("Lo que ya tenés gratis")}</h2></div>
     <div class="card pad">
-      <p class="small muted" style="margin:0 0 10px">${tx("Esto no se toca nunca, con Pro o sin Pro:")}</p>
-      <div class="tiny" style="line-height:1.9">
-        ✅ ${tx("Las seis plantillas de inspección")}<br>
-        ✅ ${tx("EPP, ropa de trabajo y nómina de personal")}<br>
-        ✅ ${tx("Capacitación con firma de los participantes")}<br>
-        ✅ ${tx("Investigación de accidentes")}<br>
-        ✅ ${tx("Historial completo, con editar y eliminar")}<br>
-        ✅ ${tx("Informes en PDF")}<br>
-        ✅ ${tx("Copia de seguridad de tus datos")}<br>
-        ✅ ${tx("Español, inglés y portugués")}
-      </div>
-    </div>
-  </section>
-
-  <section class="block">
-    <div class="card pad">
-      <p class="tiny muted" style="margin:0 2px 0;text-align:center">${tx("Versión de prueba: activa el nivel en este dispositivo. El pago real llega con proyectohs.com.")}</p>
+      <p class="tiny muted" style="margin:0 2px 0;text-align:center">${tx("El pago se procesa de forma segura con Stripe. En breve te habilitamos el nivel en tu cuenta.")}</p>
       <button class="btn ghost" style="margin-top:12px" onclick="volver()">${tx("Ahora no")}</button>
     </div>
   </section>
