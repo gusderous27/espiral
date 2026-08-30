@@ -98,6 +98,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--primary);box-shadow:0
 textarea{min-height:78px;resize:vertical}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 @media(max-width:420px){.grid2{grid-template-columns:1fr}}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px}
+@media(max-width:520px){.grid3{grid-template-columns:1fr}}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:none;
   border-radius:12px;background:var(--primary);color:#fff;font-weight:600;cursor:pointer}
@@ -230,9 +232,12 @@ nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px
   /* las fotos de evidencia (hallazgos, inspecciones, etc.) se cargan a
      resolución de cámara y sin límite de alto: en el reporte impreso una
      sola ocupaba una hoja entera y desarmaba la paginación. Achicada así el
-     reporte entra en menos páginas. No afecta logo/firma/QR: esos ya traen
-     su propio max-height en línea, que siempre gana por especificidad. */
-  .card img{max-height:260px;width:auto;max-width:100%;object-fit:contain;display:block;margin:0 auto}
+     reporte entra en menos páginas. Se excluye .replogo explícitamente:
+     "img" a secas tiene MÁS especificidad que ".replogo" sola (una clase +
+     un elemento le gana a una sola clase), así que sin este :not() esta
+     regla terminaba pisando el max-height:64px del logo del encabezado y
+     lo imprimía gigante. */
+  .card img:not(.replogo){max-height:260px;width:auto;max-width:100%;object-fit:contain;display:block;margin:0 auto}
 }
 #piemarca{display:none;align-items:center;gap:8px;justify-content:center;
   padding:14px 0 4px;color:#5B6B7F;font-size:10.5px}
@@ -1092,6 +1097,32 @@ tableros_electricos:{
   nota:"Todo trabajo realizado en instalaciones eléctricas, con o sin energía, será llevado a cabo exclusivamente por personal autorizado y debidamente calificado para este tipo de trabajos. Ninguna otra persona participará en trabajos eléctricos. Tener presente los aspectos climáticos al momento de las tareas."
 },
 
+andamios:{
+  nombre:"Andamios", ic:"🏗️", color:"var(--c7)", modo:"ok",
+  desc:"verificación visual del armado y las condiciones de seguridad",
+  cab:[
+    {k:"nro",l:"Andamio N.º"},
+    {k:"sector",l:"Ubicación / sector",t:"area"},
+    {k:"tipo",l:"Tipo de andamio",o:["Tubular fijo","Tubular con ruedas (móvil)"]}
+  ],
+  secs:[
+   {t:"Armado y condiciones de seguridad",items:[
+    {x:"Rigidez, resistencia y estabilidad del andamio"},
+    {x:"Dispositivos de seguridad correspondientes", h:"Ruedas con freno, crucetas y largueros sujetos con sus tuercas o sistema esférico"},
+    {x:"A partir del tercer cuerpo, asegurado fijándolo a una estructura adecuadamente resistente", h:"Si corresponde"},
+    {x:"Inmovilidad lateral y vertical del andamio asegurada"},
+    {x:"2 barandas colocadas, una a 1,00 m y otra a 0,80 m, más zócalos y doble tablón", h:"Plataforma de 0,60 m"},
+    {x:"Tablones de las plataformas trabados y amarrados firmemente al andamio con ataduras de alambre"},
+    {x:"Espacio entre el muro y el andamio o plataforma no mayor a 0,20 m", h:"Si es mayor, debe colocarse baranda por delante a una altura de 0,70 m"},
+    {x:"Escalera de ascenso sobre el lateral contrario a la ubicación de los tablones, continua en toda su extensión"},
+    {x:"Si no posee ruedas, no se moviliza", h:"Solo pueden movilizarse los que tengan como máximo 2 cuerpos y sin tablones colocados"},
+    {x:"Apoyado sobre piso firme y superficies regulares"}
+   ]}
+  ],
+  firma2:"Firma y aclaración del operario",
+  nota:"El armado, uso y desarme de andamios debe ser supervisado por personal capacitado (capataz o puntero). Ante cualquier incumplimiento detectado, no utilizar el andamio hasta subsanarlo."
+},
+
 auditoria:{
   nombre:"Auditoría diaria", ic:"🔍", color:"var(--c8)", modo:"hallazgos",
   desc:"actos y condiciones inseguras",
@@ -1103,7 +1134,7 @@ auditoria:{
 },
 
 };
-const ORDEN = ["extintores","autoelevador_diario","autoelevador_trimestral","escaleras","arnes","tableros_electricos","auditoria"];
+const ORDEN = ["extintores","autoelevador_diario","autoelevador_trimestral","escaleras","arnes","tableros_electricos","andamios","auditoria"];
 /* qué es y para qué sirve cada relevamiento, mostrado debajo del título del
    formulario para que quede clara la finalidad antes de empezar a cargarlo */
 const TPL_EXPLICACION = {
@@ -1113,13 +1144,14 @@ const TPL_EXPLICACION = {
   escaleras: "Verificá que las escaleras de mano estén en buen estado antes de usarlas, para prevenir caídas.",
   arnes: "Controlá el arnés y sus componentes antes de un trabajo en altura: un solo defecto detectado lo retira de servicio.",
   tableros_electricos: "Verificación visual del gabinete y los dispositivos de seguridad de un tablero eléctrico.",
+  andamios: "Verificación visual del armado y las condiciones de seguridad de un andamio antes de usarlo.",
   auditoria: "Recorrida por la planta para detectar y registrar actos y condiciones inseguras del día a día."
 };
 const TILES = [
   {k:"extintores"},
   {g:"auto", nombre:"Autoelevadores", ic:"🚜", color:"var(--c2)", desc:"control diario o revisión trimestral",
    ops:["autoelevador_diario","autoelevador_trimestral"]},
-  {k:"escaleras"},{k:"arnes"},{k:"tableros_electricos"},
+  {k:"escaleras"},{k:"arnes"},{k:"tableros_electricos"},{k:"andamios"},
   {ruta:"ptt", nombre:"Permiso de trabajo", ic:"📝", color:"var(--c1)", desc:"(altura, caliente, confinados, eléctrico)"},
   {ruta:"uso", nombre:"Uso diario de EPP", ic:"✅", color:"var(--c4)", desc:"verificación por área"}
 ];
@@ -1169,7 +1201,11 @@ const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&l
 const hoy = () => new Date().toISOString().slice(0,10);
 const horaAhora = () => new Date().toISOString().slice(11,16);
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-function fecha(d){ if(!d) return "—"; const p=String(d).slice(0,10).split("-"); return p.length===3?p[2]+"/"+p[1]+"/"+p[0]:d; }
+function fecha(d){ if(!d) return "—"; const p=String(d).slice(0,10).split("-");
+  if(p.length===3) return p[2]+"/"+p[1]+"/"+p[0];
+  if(p.length===2 && /^\d{2}$/.test(p[1])) { const mn=MESES_L[parseInt(p[1],10)-1]; return mn?tx(mn)+" "+p[0]:d; }
+  return d;
+}
 function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"),1900); }
 let AVISO_GUARDA = false;
 async function guardar(){
@@ -6904,6 +6940,7 @@ const DIC = {
 "Dividir el interior en partes iguales y medir en el centro de cada área, a la altura donde el trabajador realiza la tarea.":["Split the interior into equal parts and measure at the centre of each one, at the height where the work is done.","Divida o interior em partes iguais e meça no centro de cada uma, na altura em que o trabalhador realiza a tarefa."],
 ": k = (largo × ancho) ÷ [altura de montaje × (largo + ancho)]. La altura de montaje es la distancia entre la luminaria y el plano de trabajo.":[": k = (length × width) ÷ [mounting height × (length + width)]. Mounting height is the distance from the fitting to the work plane.",": k = (comprimento × largura) ÷ [altura de montagem × (comprimento + largura)]. A altura de montagem é a distância entre a luminária e o plano de trabalho."],
 "Verificar contra el valor exigido según Dec. 351/79, Anexo IV, tabla 2, por tipo de edificio, local y tarea visual. Si no figura, usar la tabla 1 por clase de tarea.":["Compare against the required value for the type of building, room and visual task in the applicable standard.","Compare com o valor exigido para o tipo de edifício, local e tarefa visual conforme a norma aplicável."],
+"Verificar contra el valor exigido por la legislación de higiene y seguridad vigente en tu país, según el tipo de edificio, local y tarea visual.":["Compare against the required value under your country's applicable occupational health and safety legislation, for the type of building, room and visual task.","Compare com o valor exigido pela legislação de segurança e saúde ocupacional vigente no seu país, conforme o tipo de edifício, local e tarefa visual."],
 ": E mínima ≥ E media ÷ 2. La tabla 4 agrega que la iluminación general debe ser al menos la mitad de la localizada.":[": minimum E ≥ average E ÷ 2. General lighting must be at least half of the localised lighting.",": E mínima ≥ E média ÷ 2. A iluminação geral deve ser ao menos a metade da localizada."],
 "Valores orientativos: el valor exigido se toma de la tabla 2 según edificio, local y tarea visual.":["Reference values: the required level comes from the standard, by building, room and visual task.","Valores de referência: o nível exigido vem da norma, por edifício, local e tarefa visual."],
 "Los menús, las secciones y los informes cambian de idioma. Los textos legales de cada check list se traducen módulo por módulo.":["Menus, sections and reports switch language. The legal wording of each checklist is translated module by module.","Menus, seções e relatórios mudam de idioma. Os textos legais de cada checklist são traduzidos módulo a módulo."],
@@ -8389,6 +8426,7 @@ const DIC = {
 "Lugar:":["Location:","Local:"],
 "Metodología:":["Method:","Metodologia:"],
 "Método de cuadrícula · protocolo del Dec. 351/79, Anexo IV.":["Grid method protocol.","Protocolo pelo método da malha."],
+"Método de cuadrícula · verificá los valores exigidos según la legislación de tu país.":["Grid method · check the required values under your country's legislation.","Método da malha · verifique os valores exigidos pela legislação do seu país."],
 "Niveles:":["Levels:","Níveis:"],
 "Nombre y apellido:":["Full name:","Nome completo:"],
 "Obra / planta:":["Site / plant:","Obra / planta:"],
@@ -9022,7 +9060,7 @@ function traducirTPL(){
 const TIPO_ILUM = ["Natural","Artificial","Mixta"];
 const FUENTE_LUM = ["Incandescente","Fluorescente","Descarga","Halógena","LED","Mixta"];
 const CLASE_ILUM = ["General","Localizada","Mixta"];
-const DOC_LUX = ["Certificado de calibración del instrumento","Plano o croquis del establecimiento","Fotografías del relevamiento","Registro de luminarias"];
+const DOC_LUX = ["Certificado de calibración del instrumento","Plano o croquis del establecimiento"];
 const TABLA1 = [
   {l:"Visión ocasional · solo para transitar", v:"100"},
   {l:"Tareas intermitentes ordinarias, poca demanda visual", v:"100 a 300"},
@@ -9149,7 +9187,7 @@ function vLux(){
   <section class="block">
     <div class="section-title"><h2>${tx("Iluminación")}</h2>
       <button class="btn sm" onclick="nuevaLux();go('luxEdit')">${tx("+ Nueva")}</button></div>
-    <p class="small muted" style="margin:-4px 0 12px">${tx("Método de cuadrícula · protocolo del Dec. 351/79, Anexo IV.")}</p>
+    <p class="small muted" style="margin:-4px 0 12px">${paisAct().k==="AR"?tx("Método de cuadrícula · protocolo del Dec. 351/79, Anexo IV."):tx("Método de cuadrícula · verificá los valores exigidos según la legislación de tu país.")}</p>
     ${!lista.length?`<div class="card empty"><span class="ic">💡</span>${tx("Todavía no hay mediciones cargadas.")}</div>`:
       `<div class="card pad">${lista.map(r=>{
         const malos = r.puntos.filter(p=>{const c=calcPunto(p); return c.cumple===false || (c.media!==null && !c.unif);}).length;
@@ -9170,7 +9208,9 @@ function vLux(){
     <div class="item"><div class="tx"><span class="n">3</span><span>${tx("Determinar el")}<b>${tx("número mínimo de puntos")}</b>${tx("según k: menor a 1 → 4 puntos; de 1 a 2 → 9; de 2 a 3 → 16; 3 o más → 25.")}</span></div></div>
     <div class="item"><div class="tx"><span class="n">4</span><span>${tx("Tomar el valor en el centro de cada cuadrícula, teniendo en cuenta los turnos de trabajo.")}</span></div></div>
     <div class="item"><div class="tx"><span class="n">5</span><span>${tx("Obtener la")}<b>${tx("E media")}</b>${tx(", promedio de los valores medidos.")}</span></div></div>
-    <div class="item"><div class="tx"><span class="n">6</span><span>${tx("Verificar contra el valor exigido según Dec. 351/79, Anexo IV, tabla 2, por tipo de edificio, local y tarea visual. Si no figura, usar la tabla 1 por clase de tarea.")}</span></div></div>
+    <div class="item"><div class="tx"><span class="n">6</span><span>${paisAct().k==="AR"
+      ?tx("Verificar contra el valor exigido según Dec. 351/79, Anexo IV, tabla 2, por tipo de edificio, local y tarea visual. Si no figura, usar la tabla 1 por clase de tarea.")
+      :tx("Verificar contra el valor exigido por la legislación de higiene y seguridad vigente en tu país, según el tipo de edificio, local y tarea visual.")}</span></div></div>
     <div class="item"><div class="tx"><span class="n">7</span><span>${tx("Verificar la")}<b>${tx("uniformidad")}</b>${tx(": E mínima ≥ E media ÷ 2. La tabla 4 agrega que la iluminación general debe ser al menos la mitad de la localizada.")}</span></div></div>
     <div class="grp">${tx("Referencia orientativa · tabla 1")}</div>
     ${TABLA1.map(t=>`<div class="item" style="padding:7px 0"><div style="display:flex;justify-content:space-between;gap:10px">
@@ -9196,7 +9236,7 @@ function sugerirLux(){
     " de muestreo, aplicando el método de cuadrícula, midiendo en el centro de cada área a la altura del plano de trabajo.");
   if(bajos.length) con.push("Los valores medidos no alcanzan el mínimo exigido por la legislación vigente en: "+bajos.join("; ")+".");
   else con.push("En todos los puntos relevados la iluminancia media alcanza el valor mínimo exigido por la legislación vigente.");
-  if(noUnif.length) con.push("La uniformidad de la iluminancia no se ajusta a lo requerido por el Anexo IV del Dec. 351/79 en: "+noUnif.join("; ")+".");
+  if(noUnif.length) con.push("La uniformidad de la iluminancia no se ajusta a lo requerido"+(paisAct().k==="AR"?" por el Anexo IV del Dec. 351/79":"")+" en: "+noUnif.join("; ")+".");
   else con.push("En todos los puntos relevados la uniformidad de la iluminancia se ajusta a lo requerido (E mínima ≥ E media ÷ 2).");
   if(bajos.length || noUnif.length){
     rec.push("Reemplazar las lámparas quemadas o agotadas y completar los artefactos faltantes en los sectores observados.");
@@ -9297,11 +9337,11 @@ function vLuxEdit(){
 
       <div class="grp">${tx("Dimensiones del recinto")}</div>
       <div class="grid2">
-        <label class="f"><span class="lb">${etiquetaLongLux("Largo")}</span><input id="lux_${i}_largo" type="number" inputmode="decimal" step="any" value="${esc(p.largo)}" oninput="setPto(${i},'largo',this.value)"></label>
-        <label class="f"><span class="lb">${etiquetaLongLux("Ancho")}</span><input id="lux_${i}_ancho" type="number" inputmode="decimal" step="any" value="${esc(p.ancho)}" oninput="setPto(${i},'ancho',this.value)"></label>
+        <label class="f"><span class="lb">${etiquetaLongLux("Largo")}</span><input id="lux_${i}_largo" type="text" inputmode="decimal" value="${esc(p.largo)}" oninput="setPto(${i},'largo',this.value)"></label>
+        <label class="f"><span class="lb">${etiquetaLongLux("Ancho")}</span><input id="lux_${i}_ancho" type="text" inputmode="decimal" value="${esc(p.ancho)}" oninput="setPto(${i},'ancho',this.value)"></label>
       </div>
       <label class="f"><span class="lb">${etiquetaLongLux("Altura de montaje")}</span>
-        <input id="lux_${i}_altura" type="number" inputmode="decimal" step="any" value="${esc(p.altura)}" placeholder="${tx("De la luminaria al plano de trabajo")}" oninput="setPto(${i},'altura',this.value)"></label>
+        <input id="lux_${i}_altura" type="text" inputmode="decimal" value="${esc(p.altura)}" placeholder="${tx("De la luminaria al plano de trabajo")}" oninput="setPto(${i},'altura',this.value)"></label>
 
       ${c.k!==null?`<div style="background:var(--primary-s);color:var(--primary-d);border-radius:11px;padding:11px 13px;margin-bottom:12px">
         <b style="font-family:'Barlow Condensed';font-size:18px">Índice del local k = ${c.k.toFixed(2)}</b>
@@ -9312,14 +9352,14 @@ function vLuxEdit(){
       ${c.n?`<div class="grp">${tx("Valores medidos (lux)")}</div>
       <div class="gridlux">
         ${p.valores.map((v,j)=>`<label class="lux"><span>${j+1}</span>
-          <input id="lux_${i}_val${j}" type="number" inputmode="decimal" step="any" value="${esc(v)}" oninput="setVal(${i},${j},this.value)"></label>`).join("")}
+          <input id="lux_${i}_val${j}" type="text" inputmode="decimal" value="${esc(v)}" oninput="setVal(${i},${j},this.value)"></label>`).join("")}
       </div>`:""}
 
       <div class="grid2" style="margin-top:14px">
         <label class="f"><span class="lb">${tx("Valor requerido (lux)")}</span>
-          <input id="lux_${i}_requerido" type="number" inputmode="decimal" step="any" value="${esc(p.requerido)}" placeholder="${paisAct().k==="AR"?tx("Anexo IV, Dec. 351/79"):tx("Según la legislación vigente")}" oninput="setPto(${i},'requerido',this.value)"></label>
+          <input id="lux_${i}_requerido" type="text" inputmode="decimal" value="${esc(p.requerido)}" placeholder="${paisAct().k==="AR"?tx("Anexo IV, Dec. 351/79"):tx("Según la legislación vigente")}" oninput="setPto(${i},'requerido',this.value)"></label>
         <label class="f"><span class="lb">${tx("Iluminación localizada (lux)")}</span>
-          <input id="lux_${i}_localizada" type="number" inputmode="decimal" step="any" value="${esc(p.localizada||"")}" placeholder="${tx("Si existe")}" oninput="setPto(${i},'localizada',this.value)"></label>
+          <input id="lux_${i}_localizada" type="text" inputmode="decimal" value="${esc(p.localizada||"")}" placeholder="${tx("Si existe")}" oninput="setPto(${i},'localizada',this.value)"></label>
       </div>
 
       ${c.media!==null?`
@@ -9336,9 +9376,8 @@ function vLuxEdit(){
       <label class="f"><span class="lb">${tx("Observaciones del punto")}</span>
         <input type="text" value="${esc(p.obs||"")}" oninput="setPto(${i},'obs',this.value)"></label>
       <div class="grp">${tx("Croquis o foto del punto")}</div>
-      <input type="file" id="fcro${i}" class="fin" accept="image/*" onchange="tomarArchivo(this,'lux:${i}')">
-      <label class="btn soft sm foto" for="fcro${i}">${tx("🖼 Adjuntar croquis")}</label>
-      <div class="thumbs">${(p.croquis||[]).map((f,j)=>`<div class="thumb"><img src="${f}"><b onclick="delCroquis(${i},${j})">×</b></div>`).join("")}</div>
+      ${fotoBtns("lux:"+i)}
+      ${(p.croquis||[]).length?`<div class="thumbs" style="margin-top:8px">${p.croquis.map((f,j)=>`<div class="thumb"><img src="${f}"><b onclick="delCroquis(${i},${j})">×</b></div>`).join("")}</div>`:""}
     </div>`;}).join("")}
     <button class="btn ghost" onclick="addPunto()">${tx("+ Agregar punto de muestreo")}</button>`;
 
@@ -9524,7 +9563,12 @@ function xlsxCuerpoDesdeCeldas(celdas, dim, numCols, anchoCol){
   });
   const merges = celdas.filter(c=>c.merge).map(c=>c.merge);
   const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
-  const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="${anchoCol||22}" customWidth="1"/>`).join("")}</cols>`;
+  // anchoCol: un número (mismo ancho para todas las columnas) o un array
+  // (ancho propio por columna, p.ej. para que la columna de N.º quede angosta)
+  const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>{
+    const w = Array.isArray(anchoCol) ? (anchoCol[i]!=null ? anchoCol[i] : (anchoCol[anchoCol.length-1]||22)) : (anchoCol||22);
+    return `<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`;
+  }).join("")}</cols>`;
   return { rowsXml, mergeXml, dim, colsXml, lastRow, fotos:[] };
 }
 /* Hoja 1/3 · datos del establecimiento, instrumental, metodología y
@@ -9641,6 +9685,56 @@ function xlsxLuxHojaAnalisis(r, empresa){
     {ref:"I12", texto:"Firma, Aclaración y Registro del Profesional Interviniente"+(r.profesional?" — "+r.profesional:""), style:3, merge:"I12:L12"},
   ];
   return xlsxCuerpoDesdeCeldas(celdas, "A1:L12", 12);
+}
+/* Hoja de UNA constancia de entrega de EPP, con el formato oficial de la
+   Res. SRT 299/11, Anexo I: replica los 18 campos numerados y las 18 filas
+   fijas de la tabla de productos del formulario en papel. */
+function xlsxEntregaHoja(r, empresa){
+  const e = empresa||{};
+  const p = trab(r.trabajadorId);
+  const anchos = [5,22,20,16,16,10,14,20];
+  const celdas = [
+    {ref:"F1", texto:"Resolución 299/11, Anexo I", style:7, merge:"F1:H1"},
+    {ref:"A2", texto:"ENTREGA DE ROPA DE TRABAJO Y ELEMENTOS DE PROTECCIÓN PERSONAL", style:4, merge:"A2:H2"},
+    {ref:"A4", texto:"(1) Razón Social: "+(e.razon||""), style:6, merge:"A4:D4"},
+    {ref:"E4", texto:"(2) C.U.I.T.: "+(e.cuit||""), style:6, merge:"E4:H4"},
+    {ref:"A6", texto:"(3) Dirección: "+(e.direccion||""), style:6, merge:"A6:C6"},
+    {ref:"D6", texto:"(4) Localidad: "+(e.localidad||""), style:6, merge:"D6:E6"},
+    {ref:"F6", texto:"(5) C.P.: "+(e.cp||""), style:6},
+    {ref:"G6", texto:"(6) Provincia: "+(e.provincia||""), style:6, merge:"G6:H6"},
+    {ref:"A8", texto:"(7) Nombre y Apellido del Trabajador: "+(p.nombre||r.nombreTrab||""), style:6, merge:"A8:E8"},
+    {ref:"F8", texto:"(8) D.N.I.: "+(p.dni||""), style:6, merge:"F8:H8"},
+    {ref:"A10", texto:"(9) Descripción breve del puesto/s de trabajo en el/los cuales se desempeña en trabajador: "+(p.puesto||""), style:6, merge:"A10:D12"},
+    {ref:"E10", texto:"(10) Elementos de protección personal, necesarios para el trabajador, según el puesto de trabajo: "+(r.necesarios||""), style:6, merge:"E10:H12"},
+    {ref:"A14", texto:"", style:5},
+    {ref:"B14", texto:"(11) Producto", style:5},
+    {ref:"C14", texto:"(12) Tipo // Modelo", style:5},
+    {ref:"D14", texto:"(13) Marca", style:5},
+    {ref:"E14", texto:"(14) Posee certificación SI // NO", style:5},
+    {ref:"F14", texto:"(15) Cantidad", style:5},
+    {ref:"G14", texto:"(16) Fecha de entrega", style:5},
+    {ref:"H14", texto:"(17) Firma del trabajador", style:5},
+  ];
+  const items = (r.items||[]).filter(i=>(i.prod||"").trim());
+  const nFilas = Math.max(items.length, 18);
+  const fmg = r.firma ? "IMG:"+r.firma : "";
+  let rn = 15;
+  for(let i=0;i<nFilas;i++){
+    const it = items[i];
+    celdas.push({ref:"A"+rn, texto:i+1, style:6});
+    celdas.push({ref:"B"+rn, texto:it?(it.prod||""):"", style:6});
+    celdas.push({ref:"C"+rn, texto:it?(it.modelo||""):"", style:6});
+    celdas.push({ref:"D"+rn, texto:it?(it.marca||""):"", style:6});
+    celdas.push({ref:"E"+rn, texto:it?(it.cert||""):"", style:6});
+    celdas.push({ref:"F"+rn, texto:it?(it.cant||""):"", style:6});
+    celdas.push({ref:"G"+rn, texto:it&&it.fecha?fecha(it.fecha):"", style:6});
+    celdas.push({ref:"H"+rn, texto:it?fmg:"", style:6});
+    rn++;
+  }
+  const filaInfo = rn+1, filaInfoFin = filaInfo+2, filaHoja = filaInfoFin+1;
+  celdas.push({ref:"A"+filaInfo, texto:"(18) Información adicional: "+(r.adicional||""), style:6, merge:"A"+filaInfo+":H"+filaInfoFin});
+  celdas.push({ref:"H"+filaHoja, texto:"Hoja 1/1", style:2});
+  return xlsxCuerpoDesdeCeldas(celdas, "A1:H"+filaHoja, 8, anchos);
 }
 /* Excel de UN estudio puntual, con el formato oficial de la Res. SRT 84/12
    (3 solapas: Datos, Grilla y Análisis) — se descarga desde el detalle del
@@ -11291,6 +11385,19 @@ function paqueteExcel(tipo, id){
       {nombre:"ANÁLISIS", cuerpo:xlsxLuxHojaAnalisis(r,e)}
     ], nombreBase:"espiral-proto-iluminacion-"+nombreArchivo({t:"res-84-12",f:r.fecha||hoy()}) };
   }
+  if(tipo==="epp"){
+    const r = (S.epp||[]).find(x=>x.id===id); if(!r) return null;
+    if(r.tipo==="entrega"){
+      // la constancia de entrega de EPP tiene su propio formato (el oficial
+      // de la Res. SRT 299/11, Anexo I, en 1 sola solapa) — como excelUno,
+      // mailUno y compartirArchivo ya arman el .xlsx a partir de este mismo
+      // paquete, alcanza con este único punto para la descarga, el mail y
+      // el WhatsApp
+      const p = trab(r.trabajadorId);
+      return { empresa:e, hojas:[{nombre:"Anexo I", cuerpo:xlsxEntregaHoja(r,e)}],
+        nombreBase:"espiral-entrega-epp-"+nombreArchivo({t:(p.nombre||r.nombreTrab||"trabajador"),f:r.fecha||hoy()}) };
+    }
+  }
   if(tipo==="insp"){
     const r = (S.insp||[]).find(x=>x.id===id); if(!r) return null;
     const T = TPL[r.tpl];
@@ -12779,6 +12886,7 @@ function vAjustes(){
       ${f("razon","Razón social")}
       <div class="grid2">${f("cuit","CUIT / identificación")}${f("obra","Obra o planta")}</div>
       ${f("direccion","Dirección")}
+      <div class="grid3">${f("localidad","Localidad")}${f("cp","C.P.")}${f("provincia","Provincia")}</div>
 
       <div class="grp">${tx("Contacto")}</div>
       ${f("contactoNombre","Nombre y apellido")}
@@ -13099,6 +13207,26 @@ function nuevoCrono(clase){
     soloMes:false, fecha:hoy(), responsable:e.responsable||"", horario:"", direccion:e.direccion||"", sala:"",
     participantes:[], filas:[], obs:"", firma:null, com:{} };
 }
+/* cantidad de días de un mes de un año dado (28-31), para no dejar elegir p.ej. 31 de febrero */
+function diasEnMes(anio, mesNum){
+  const a = parseInt(anio,10)||new Date().getFullYear(), m = parseInt(mesNum,10)||1;
+  return new Date(a, m, 0).getDate();
+}
+/* el campo "Fecha" del cronograma no vuelve a pedir el año (ya está elegido
+   arriba, en "Período (año)"): solo pide mes (y día, si es "Día exacto"),
+   y arma la fecha completa combinándolo con P.draft.anio */
+function setCronoFecha(parte, v){
+  const d = P.draft;
+  const cur = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(d.fecha||"") || [];
+  let mes = cur[2] || "01", dia = cur[3] || "01";
+  if(parte==="mes") mes = v;
+  if(parte==="dia") dia = v;
+  const anio = d.anio || cur[1] || String(new Date().getFullYear());
+  const maxDia = diasEnMes(anio, mes);
+  if(parseInt(dia,10) > maxDia) dia = String(maxDia).padStart(2,"0");
+  d.fecha = d.soloMes ? (anio+"-"+mes) : (anio+"-"+mes+"-"+dia);
+  render();
+}
 /* al tocar "Seguridad e higiene" o "Capacitaciones" desde la pantalla
    principal del cronograma: si ya hay uno de ese tipo para el año en curso,
    lo sigue completando (así todos los temas del año quedan en el mismo
@@ -13306,16 +13434,26 @@ function vCronoEdit(){
           ${d.anio && aniosCrono().indexOf(d.anio)<0?`<option selected>${esc(d.anio)}</option>`:""}
         </select></label>
       <label class="f"><span class="lb">${tx(esCap?"Fecha de la capacitación":"Fecha")}</span>
-        ${d.soloMes
-          ? `<input type="month" value="${esc((d.fecha||"").slice(0,7))}" oninput="P.draft.fecha=this.value">`
-          : `<input type="date" value="${esc(d.fecha)}" oninput="P.draft.fecha=this.value">`}
+        ${(()=>{
+          const curMes = (d.fecha||"").slice(5,7) || "01";
+          const mesSel = `<select onchange="setCronoFecha('mes',this.value)" style="flex:1">
+            ${MESES_L.map((m,i)=>{const mm=String(i+1).padStart(2,"0");return `<option value="${mm}" ${curMes===mm?"selected":""}>${esc(tx(m))}</option>`;}).join("")}
+          </select>`;
+          if(d.soloMes) return mesSel;
+          const curDia = (d.fecha||"").slice(8,10) || "01";
+          const nDias = diasEnMes(d.anio, curMes);
+          const diaSel = `<select onchange="setCronoFecha('dia',this.value)" style="width:76px">
+            ${Array.from({length:nDias},(_,i)=>String(i+1).padStart(2,"0")).map(dd=>`<option ${curDia===dd?"selected":""}>${dd}</option>`).join("")}
+          </select>`;
+          return `<div style="display:flex;gap:8px">${mesSel}${diaSel}</div>`;
+        })()}
       </label>
     </div>
     <div class="opts" style="margin:-4px 0 10px">
       <button class="opt" data-on="${d.soloMes?0:1}" data-k="${d.soloMes?"":"ok"}"
-        onclick="P.draft.soloMes=false;P.draft.fecha=(P.draft.fecha&&P.draft.fecha.length===7)?P.draft.fecha+'-01':(P.draft.fecha||hoy());render()">${tx("Día exacto")}</button>
+        onclick="P.draft.soloMes=false;setCronoFecha('dia',(P.draft.fecha||hoy()).slice(8,10)||'01')">${tx("Día exacto")}</button>
       <button class="opt" data-on="${d.soloMes?1:0}" data-k="${d.soloMes?"ok":""}"
-        onclick="P.draft.soloMes=true;P.draft.fecha=(P.draft.fecha||hoy()).slice(0,7);render()">${tx("Solo el mes")}</button>
+        onclick="P.draft.soloMes=true;setCronoFecha('mes',(P.draft.fecha||hoy()).slice(5,7)||'01')">${tx("Solo el mes")}</button>
     </div>
     ${campoPersonaIper("Responsable",d.responsable,"cronoRespOtro","v=>P.draft.responsable=v")}
     ${esCap?`
@@ -14485,14 +14623,14 @@ function modalAviso(msg){
 }
 
 const MUNDOS = {
-  hs: { ic:"🦺", nombre:"Seguridad e Higiene", desc:"inspecciones, EPP, auditorías, permisos y protocolos",
-        color:"var(--primary)", inicio:"inicio" },
-  mc: { ic:"⚙️", nombre:"Mejora Continua", desc:"ideas del personal, sugerencias y reconocimiento",
-        color:"var(--c6)", inicio:"inicioMC" },
   rh: { ic:"👥", nombre:"Recursos Humanos", desc:"nómina, legajos, exámenes médicos y licencias",
         color:"var(--c8)", inicio:"inicioRH" },
+  hs: { ic:"🦺", nombre:"Seguridad e Higiene", desc:"inspecciones, EPP, auditorías, permisos y protocolos",
+        color:"var(--primary)", inicio:"inicio" },
   mtto: { ic:"🔧", nombre:"Mantenimiento", desc:"hallazgos de mantenimiento y su gestión",
-        color:"var(--c2)", inicio:"inicioMtto" }
+        color:"var(--c2)", inicio:"inicioMtto" },
+  mc: { ic:"⚙️", nombre:"Mejora Continua", desc:"ideas del personal, sugerencias y reconocimiento",
+        color:"var(--c6)", inicio:"inicioMC" }
 };
 function irInicio(){
   // la casita vuelve al selector de mundos: "¿Dónde querés trabajar hoy?"
@@ -15689,7 +15827,7 @@ function vAgenda(){
    duplicar y no desincronizarse si esas listas cambian. */
 const AGENDA_CATALOGO = [
   { grupo:"Seguridad e Higiene", ic:"🦺", secciones:[
-      { nombre:"Inspecciones", items:["Extintores","Autoelevador · Diario","Autoelevador · Trimestral","Escaleras de mano","Arnés de seguridad","Tableros eléctricos","Auditoría diaria"] },
+      { nombre:"Inspecciones", items:["Extintores","Autoelevador · Diario","Autoelevador · Trimestral","Escaleras de mano","Arnés de seguridad","Tableros eléctricos","Andamios","Auditoría diaria"] },
       { nombre:"Auditorías y seguimiento", items:["Auditoría mensual","Plan de acción"] },
       { nombre:"EPP y ropa de trabajo", items:["Entrega de EPP","Uso diario de EPP","Ropa de trabajo"] },
       { nombre:"Investigación y matriz de riesgos", items:["Investigación de accidentes","Matriz de riesgos (IPER)"] },
