@@ -4429,9 +4429,23 @@ function desviosGrupos(){
     { k:"aud",  label:tx("Auditoría mensual"), items:gAud }
   ].filter(g=>g.items.length);
 }
+/* de los ítems TODAVÍA abiertos de un desvío (los que componen it.n), cuántos
+   nadie tocó todavía ("Abierto", en rojo) y cuántos ya se están gestionando
+   ("En proceso", en amarillo) — para que un desvío que ya tiene a alguien
+   trabajando en él no se vea igual que uno que nadie miró. Los que ya se
+   cerraron ("Finalizado") no cuentan acá: esos dejan de ser un desvío, por
+   eso desaparecen del total en cuanto se gestionan. */
+function estadoDesvioItem(it){
+  const enProceso = accionesDeRegistro(it.page, it.id)
+    .filter(a=>!a.hecha && accSeg(a.ref).estado==="En proceso").length;
+  return { abierto: Math.max(0, it.n - enProceso), enProceso };
+}
 function filaDesvioItem(it){
   const gest = accionesDeRegistro(it.page, it.id);
   const abiertos = gest.filter(a=>!a.hecha).length;
+  const est = estadoDesvioItem(it);
+  const pills = (est.abierto?`<span class="pill" style="border-color:var(--no);color:var(--no);flex:none">${est.abierto}</span>`:"")
+    + (est.enProceso?`<span class="pill" style="border-color:var(--c2);color:var(--c2);flex:none">${est.enProceso}</span>`:"");
   return `<div class="row">
     <div style="flex:1;min-width:0;display:flex;gap:12px;align-items:center;cursor:pointer" onclick="go('${it.page}','${it.id}')">
       <span style="font-size:17px;flex:none">${it.ic}</span>
@@ -4439,7 +4453,7 @@ function filaDesvioItem(it){
         <div style="font-weight:600;font-size:14.5px">${it.titulo}</div>
         <div class="tiny muted">${it.sub}</div>
       </div>
-      <span class="pill" style="border-color:var(--no);color:var(--no);flex:none">${it.n}</span>
+      <div style="display:flex;gap:4px;flex:none">${pills}</div>
     </div>
     ${gest.length?`<button class="btn soft sm" style="width:auto;flex:none;padding:6px 10px;margin-left:10px" onclick="event.stopPropagation();verGestionDesvio('${it.page}','${it.id}')">${tx("Gestionar")}${abiertos?` (${abiertos})`:""}</button>`:""}
   </div>`;
@@ -4458,15 +4472,19 @@ function bloqueDesviosMod(g){
 }
 function vDesvios(){
   const grupos = desviosGrupos();
-  const total = grupos.reduce((a,g)=>a+g.items.reduce((x,it)=>x+it.n,0),0);
+  const todosLosItems = grupos.reduce((a,g)=>a.concat(g.items),[]);
+  const total = todosLosItems.reduce((a,it)=>a+it.n,0);
   if(!total) return `<section class="block"><div class="card empty"><span class="ic">✅</span>${tx("No hay desvíos cargados.")}</div></section>`;
+  const estados = todosLosItems.reduce((a,it)=>{ const e=estadoDesvioItem(it); a.abierto+=e.abierto; a.enProceso+=e.enProceso; return a; }, {abierto:0, enProceso:0});
   const todoAbierto = grupos.length>0 && grupos.every(g=>histAbierto("desv:"+g.k,false));
   return `
   <section class="block">
     <div class="section-title"><h2>${tx("Desvíos")}</h2></div>
     <p class="tiny muted" style="margin:-4px 2px 12px">${tx("Todo lo marcado \"No cumple\" en cualquier inspección, agrupado por módulo.")}</p>
     <div class="kpis">
-      <div class="kpi" style="border-color:var(--no)"><b style="color:var(--no)">${total}</b><span class="tiny muted">${tx("Desvíos")}</span></div>
+      <div class="kpi" style="border-color:var(--no)"><b style="color:var(--no)">${estados.abierto}</b><span class="tiny muted">🔴 ${tx("Sin gestionar")}</span></div>
+      <div class="kpi" style="border-color:var(--c2)"><b style="color:var(--c2)">${estados.enProceso}</b><span class="tiny muted">🟡 ${tx("En proceso")}</span></div>
+      <div class="kpi"><b>${total}</b><span class="tiny muted">${tx("Total")}</span></div>
     </div>
     <button class="btn soft sm" style="margin:12px 0 10px" onclick="toggleTodosHist(desviosGrupos().map(g=>'desv:'+g.k), ${!todoAbierto})">${todoAbierto?tx("Colapsar todo"):tx("Desplegar todo")}</button>
     ${grupos.map(bloqueDesviosMod).join("")}
