@@ -14624,7 +14624,20 @@ async function entrarConUsuario(u){
   }
   await sincronizarDesdeServidor();
   aplicarMigracionAccSeguimiento(LEGADO_ACC_SEG);
-  guardar();
+  /* Guardo SOLO en este dispositivo (no en el servidor): esto corre en
+     CADA apertura de la app con sesión activa (no solo la primera vez), y
+     es el momento más común en el que el celular llega con un push
+     anterior sin confirmar (_sucio=true persistido de una sesión previa
+     que se cerró/mató antes de que el envío con debounce terminara). Si
+     acá llamábamos guardar() (que además de guardar local vuelve a
+     empujar al servidor), esa copia vieja se re-subía pisando lo que otro
+     dispositivo acababa de arreglar — la app entera quedaba pegada
+     resubiendo desvíos ya cerrados en otro lado (reportado 30/08/2026: un
+     desvío cerrado en la compu se seguía viendo abierto en el celular).
+     sincronizarDesdeServidor() ya se encarga de resubir lo que haga falta
+     (paso 3, para lo genuinamente _sucio), así que acá alcanza con
+     persistir localmente lo recién sincronizado. */
+  DB.set("insp_hs_v1", S);
   S.mundo = "";
   pintarShell();
   // ¿Es su primer ingreso? (no tiene ninguna empresa real donde participe)
@@ -15777,11 +15790,28 @@ function agendaEventos(){
       ic:r.clase==="cap"?"🎓":"📅", color:r.clase==="cap"?"var(--c3)":"var(--c6)",
       titulo: tx(CRONO_TIT[r.clase]||"Cronograma"), sub: r.sala||r.direccion||"" });
   });
+  /* Los vencimientos de acciones/desvíos (la fecha de mejora o adecuación
+     que se propone en cualquier formulario) se cruzan acá con su estado
+     real de gestión (accSeguimiento), sin importar desde dónde se haya
+     cerrado o avanzado — Plan de acción, Desvíos, o el propio cronograma:
+     - Finalizado: se saca del cronograma (ya está resuelto, no tiene
+       sentido seguir viéndolo vencido).
+     - En proceso: se pinta amarillo, para un efecto visual instantáneo de
+       que ya se está gestionando.
+     - Abierto (sin gestionar todavía): sigue en rojo, como antes.
+     Se lee accSeguimiento en forma directa (sin accSeg(), que crea la
+     entrada si no existe) porque esto es solo lectura para pintar el
+     calendario: no hace falta ni conviene crear entradas "Abierto" de
+     acciones que nadie tocó todavía solo por haber abierto el cronograma. */
   if(typeof accionesTodas==="function"){
     accionesTodas().forEach(a=>{
-      if(a.hecha || !a.vence) return;
+      if(!a.vence) return;
+      const seg = S.accSeguimiento && S.accSeguimiento[accClave(a.ref)];
+      const estado = (seg && seg.estado) || (a.hecha ? "Finalizado" : "Abierto");
+      if(a.hecha || estado==="Finalizado") return;
       out.push({ fecha:a.vence, hora:"", tipo:"accion", refId:"",
-        ic:"◔", color:"var(--no)", titulo:(a.texto||tx("Acción")).slice(0,70), sub:a.mod||"" });
+        ic:"◔", color: estado==="En proceso" ? "var(--c2)" : "var(--no)",
+        titulo:(a.texto||tx("Acción")).slice(0,70), sub:a.mod||"" });
     });
   }
   return out.sort((a,b)=>(a.fecha+(a.hora||"").padStart(5,"0")).localeCompare(b.fecha+(b.hora||"").padStart(5,"0")));
