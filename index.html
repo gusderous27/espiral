@@ -767,6 +767,17 @@ function definirActiva(){
       set(v){ const e=S.empresa; if(!e.datos) e.datos={}; e.datos[k]=v; }
     });
   });
+  /* accSeguimiento (estado/bitácora/cierre de cada desvío del plan de
+     acción) va aparte de COLECCIONES porque es un objeto, no un arreglo,
+     pero se expone igual: por empresa y adentro de "datos", para que
+     sincronice con el servidor como el resto (antes vivía suelto en
+     S.accSeguimiento, cargado directo del dispositivo — ver
+     aplicarMigracionAccSeguimiento). */
+  Object.defineProperty(S, "accSeguimiento", {
+    configurable:true, enumerable:false,
+    get(){ const e=S.empresa; if(!e.datos) e.datos={}; if(!e.datos.accSeguimiento) e.datos.accSeguimiento={}; return e.datos.accSeguimiento; },
+    set(v){ const e=S.empresa; if(!e.datos) e.datos={}; e.datos.accSeguimiento=v; }
+  });
 }
 function nuevaEmpresa(nombre){
   const u = sesionActiva();
@@ -1233,6 +1244,14 @@ async function guardar(){
   empujarEmpresaActiva();   // sube al servidor si hay sesión (no bloquea)
   return ok;
 }
+/* Los campos que realmente viajan al servidor por cada empresa (usado tanto
+   por el envío con debounce de la empresa activa como por cualquier otro
+   push puntual, por ejemplo tras fusionar accSeguimiento migrado). */
+function snapshotEmpresa(e){
+  return { id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos, pro:e.pro,
+    logo:e.logo, pais:e.pais, cuit:e.cuit, obra:e.obra, direccion:e.direccion, contacto:e.contacto,
+    responsable:e.responsable, contactoNombre:e.contactoNombre, contactoTel:e.contactoTel, contactoMail:e.contactoMail };
+}
 let EMPUJE_T = null;
 /* Sube la empresa activa al servidor. Por defecto con debounce (para no
    saturar mientras se tipea). inmediato:true la manda YA y devuelve la
@@ -1244,9 +1263,7 @@ function empujarEmpresaActiva(inmediato){
   const e = S.empresa;
   if(!e || !e.id) return Promise.resolve();
   clearTimeout(EMPUJE_T);
-  const snapshot = { id:e.id, razon:e.razon, roles:e.roles, ownerId:e.ownerId, datos:e.datos, pro:e.pro,
-    logo:e.logo, pais:e.pais, cuit:e.cuit, obra:e.obra, direccion:e.direccion, contacto:e.contacto,
-    responsable:e.responsable, contactoNombre:e.contactoNombre, contactoTel:e.contactoTel, contactoMail:e.contactoMail };
+  const snapshot = snapshotEmpresa(e);
   const subir = async ()=>{
     const r = await sbGuardarEmpresa(snapshot);
     if(!r || !r.error){
@@ -1327,7 +1344,7 @@ const HIST = [];
    y se vacía apenas se navega a algo nuevo, igual que el atrás/adelante de un navegador */
 const FWD = [];
 const PANT_EDIT = ["form","cap","ptt","inv","entrega","uso","ropa","luxEdit","audEdit","iperEdit",
-  "cronoEdit","parteEdit","aguaEdit","audNueva","audArmar","nueva"];
+  "cronoEdit","parteEdit","aguaEdit","audNueva","audArmar","nueva","agendaEdit"];
 let SIN_HIST = false;
 
 function go(p, arg){
@@ -1344,7 +1361,7 @@ function go(p, arg){
   SIN_HIST = false;
   P.page = p;
   if(p==="form" && !editando){ P.tpl = arg; nuevoDraft(arg); }
-  if(p==="ver" || p==="verEpp" || p==="verInv" || p==="verIper" || p==="verCap" || p==="verPtt" || p==="verLux" || p==="verAud" || p==="verCrono" || p==="verParte" || p==="verAgua" || p==="verIdea" || p==="verMtto"){ P.verId = arg; }
+  if(p==="ver" || p==="verEpp" || p==="verInv" || p==="verIper" || p==="verCap" || p==="verPtt" || p==="verLux" || p==="verAud" || p==="verCrono" || p==="verParte" || p==="verAgua" || p==="verIdea" || p==="verMtto" || p==="verAgenda"){ P.verId = arg; }
   if(p==="cap" && !editando){ nuevaCap(); }
   if(p==="ptt" && !editando){ nuevaPtt(); }
   if(p==="inv" && !editando){ nuevaInv(); }
@@ -1399,7 +1416,7 @@ function render(){
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
     verAud:()=>vVerAud(P.verId), pro:vPro, desvios:vDesvios, desvioGestion:vDesvioGestion,
     inicioMtto:vInicioMtto, mttoEdit:vMttoEdit, verMtto:vVerMtto, gestionMtto:vGestionMtto, mttoGestion:vMttoGestion,
-    agenda:vAgenda, agendaEdit:vAgendaEdit}[P.page] || vInicio;
+    agenda:vAgenda, agendaEdit:vAgendaEdit, verAgenda:vVerAgenda}[P.page] || vInicio;
   const enAuth = (P.page==="login" || P.page==="onboarding");
   // el splash tiene pointer-events:none, así que no hace falta matarlo acá;
   // se desvanece solo con su animación desde arrancarSesion.
@@ -4179,6 +4196,52 @@ function accSeg(ref){
   S.accSeguimiento = S.accSeguimiento || {};
   if(!S.accSeguimiento[c]) S.accSeguimiento[c] = { estado:"Abierto", bitacora:[], cerradoPor:"", cerradoFecha:"" };
   return S.accSeguimiento[c];
+}
+/* qué tan avanzado está un seguimiento, para decidir cuál de dos versiones
+   de un mismo desvío "gana" al fusionar (nunca reabrimos algo que en otro
+   lado ya se cerró). */
+function rangoEstadoAcc(seg){
+  if(!seg) return -1;
+  return seg.estado==="Finalizado" ? 2 : seg.estado==="En proceso" ? 1 : 0;
+}
+/* MIGRACIÓN (una sola vez por dispositivo): hasta esta versión,
+   S.accSeguimiento —el estado, la bitácora y el cierre de cada desvío del
+   plan de acción— se guardaba suelto en el dispositivo, aparte de los
+   datos de la empresa. Como nunca viajaba al servidor, cerrar un desvío
+   de checklist (extintores, escaleras, etc.) en un dispositivo no se veía
+   reflejado en ningún otro: quedaba "cerrado" solo ahí. (Reportado
+   30/08/2026: cerrado en la web, seguía apareciendo abierto en el
+   celular.) Ahora vive adentro de cada empresa (e.datos.accSeguimiento)
+   para sincronizar como el resto de los registros.
+   Esta función reparte lo que haya quedado guardado en el formato viejo
+   hacia la empresa a la que en realidad pertenece cada clave (según el id
+   del registro de origen), FUSIONÁNDOLO con lo que la empresa ya tenga en
+   ese momento (por eso se llama DESPUÉS de sincronizarDesdeServidor(): así
+   compara contra los datos ya actualizados del servidor, no contra una
+   copia vieja). Si una clave choca, gana la versión más avanzada —no se
+   reabre nunca un desvío que otro dispositivo ya cerró. */
+function aplicarMigracionAccSeguimiento(legado){
+  if(!legado || !Object.keys(legado).length) return;
+  (S.empresas||[]).forEach(e=>{
+    if(!e.datos) e.datos = {};
+    const ids = new Set();
+    ["insp","iper","aud","inv","mtto"].forEach(k=>(e.datos[k]||[]).forEach(r=>r && r.id && ids.add(r.id)));
+    if(!ids.size) return;
+    const propio = e.datos.accSeguimiento || {};
+    let cambio = false;
+    Object.keys(legado).forEach(clave=>{
+      const id = clave.split("|")[1];
+      if(!ids.has(id)) return;
+      const entrante = legado[clave];
+      if(rangoEstadoAcc(entrante) > rangoEstadoAcc(propio[clave])){ propio[clave] = entrante; cambio = true; }
+    });
+    if(!cambio) return;
+    e.datos.accSeguimiento = propio;
+    e._sucio = true;
+    if(sbOn() && sesionActiva()){
+      sbGuardarEmpresa(snapshotEmpresa(e)).then(r=>{ if(!r || !r.error) e._sucio = false; });
+    }
+  });
 }
 function vAccionGestion(){
   if(!puedeAdministrar()) return `<section class="block"><div class="card empty">🔒 ${tx("Solo el administrador puede gestionar el plan de acción.")}</div></section>`;
@@ -14553,6 +14616,7 @@ async function entrarConUsuario(u){
     }catch(e){}
   }
   await sincronizarDesdeServidor();
+  aplicarMigracionAccSeguimiento(LEGADO_ACC_SEG);
   guardar();
   S.mundo = "";
   pintarShell();
@@ -15621,7 +15685,7 @@ function vVerMtto(){
    fecha exacta y el plan de acción con vencimiento).
    ============================================================ */
 function nuevaAgenda(){
-  P.draft = { id:uid(), tipo:"agenda", fecha:hoy(), hora:"", titulo:"", descripcion:"", invitados:[] };
+  P.draft = { id:uid(), tipo:"agenda", fecha:hoy(), hora:"", titulo:"", descripcion:"", invitados:[], destino:null };
 }
 function editarAgenda(id){
   const r = (S.agenda||[]).find(x=>x.id===id);
@@ -15715,11 +15779,57 @@ function agendaEventos(){
   }
   return out.sort((a,b)=>(a.fecha+(a.hora||"").padStart(5,"0")).localeCompare(b.fecha+(b.hora||"").padStart(5,"0")));
 }
+/* Tocar una acción ya agendada NO debe abrir directo su edición (era el bug
+   reportado 30/08/2026: parecía llevar "a agendar una nueva acción" y era
+   fácil, sin querer, pisar/perder lo ya guardado). Ahora un toque:
+   1) si se agendó eligiéndola de la lista de formularios, va directo a ESE
+      formulario real (agendaDestinoIr) — "llevame al form de la auditoría";
+   2) si no, muestra el recordatorio en modo lectura (verAgenda).
+   Editar/eliminar quedan atrás de un gesto explícito: deslizar la fila en la
+   vista semana/lista (swFila, igual que en el resto de la app), o mantener
+   presionado el chip en la vista mes (agendaMenu). */
 function agendaIr(tipo, id){
   cerrarFab();
-  if(tipo==="agenda") editarAgenda(id);
+  if(tipo==="agenda"){
+    const r = (S.agenda||[]).find(x=>x.id===id);
+    if(r && r.destino && agendaDestinoIr(r.destino)) return;
+    go("verAgenda", id);
+  }
   else if(tipo==="crono") go("verCrono", id);
   else go("acciones");
+}
+/* navega al formulario real asociado a lo agendado (si se eligió de la
+   lista de formularios al agendarlo). Devuelve true si pudo navegar. */
+function agendaDestinoIr(destino){
+  if(!destino) return false;
+  if(destino.accion==="idea"){ nuevaIdea(); go("ideaEdit"); return true; }
+  if(destino.accion==="mtto"){ nuevoMtto(); if(destino.tipo) P.draft.mtipo = destino.tipo; go("mttoEdit"); return true; }
+  if(destino.tpl){ go("form", destino.tpl); return true; }
+  if(destino.page){ go(destino.page); return true; }
+  return false;
+}
+function agendaDestinoIrPorId(id){
+  const r = (S.agenda||[]).find(x=>x.id===id);
+  if(r) agendaDestinoIr(r.destino);
+}
+/* menú de Ver/Editar/Eliminar para un chip del cronograma (mantener
+   presionado, en la vista mes). En la vista semana/lista se usa el swipe
+   estándar (swFila) en vez de este menú. */
+function agendaMenu(tipo, refId){
+  cerrarModal();
+  const esAgenda = tipo==="agenda";
+  const ov = document.createElement("div");
+  ov.className = "modal";
+  ov.innerHTML = `<div class="mcard" style="text-align:left">
+    <div class="grp" style="margin:0 0 10px">${tx("¿Qué querés hacer?")}</div>
+    <button class="btn soft" onclick="cerrarModal();agendaIr('${tipo}','${refId}')">👁 ${tx("Ver")}</button>
+    ${esAgenda?`
+    <button class="btn soft" style="margin-top:8px" onclick="cerrarModal();editarAgenda('${refId}')">✏️ ${tx("Editar")}</button>
+    <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="cerrarModal();borrarAgenda('${refId}')">🗑 ${tx("Eliminar")}</button>
+    `:""}
+    <button class="btn ghost" style="margin-top:8px" onclick="cerrarModal()">${tx("Cancelar")}</button>
+  </div>`;
+  document.body.appendChild(ov);
 }
 /* fecha base normalizada al inicio de la unidad que se está navegando,
    para que sumar/restar semana, mes o año no arrastre desvíos de día
@@ -15748,13 +15858,17 @@ function agendaNav(dir){
   render();
 }
 function agendaFila(e){
-  return `<div class="row" onclick="agendaIr('${e.tipo}','${e.refId||""}')">
+  const fila = `<div class="row" onclick="agendaIr('${e.tipo}','${e.refId||""}')">
     <span class="dot" style="background:${e.color}"></span>
     <div style="flex:1;min-width:0">
       <div style="font-weight:600;font-size:14.5px">${e.ic} ${esc(e.titulo)}</div>
       <div class="tiny muted">${e.hora?e.hora+" · ":""}${esc(e.sub||"")}</div>
     </div>
   </div>`;
+  // deslizar para editar/eliminar (igual que el resto de la app) solo tiene
+  // sentido para lo que se agendó acá mismo; lo que viene de otros
+  // cronogramas (crono/acción) se edita desde su propio módulo.
+  return e.tipo==="agenda" ? swFila("agenda", e.refId, fila) : fila;
 }
 /* fecha local (sin pasar por toISOString/UTC, que puede correr el día
    según el huso horario): usa directamente año/mes/día del Date local. */
@@ -15787,9 +15901,12 @@ function agendaCeldaMes(dia, porFecha){
   const MAX = 3;
   const visibles = evs.slice(0, MAX);
   const resto = evs.length - visibles.length;
+  // el chip NO lleva onclick: un toque corto o uno sostenido se distinguen
+  // con los listeners de puntero de más abajo (ver agendaMenu / AG_LP),
+  // porque acá no hay lugar para deslizar como en la vista semana/lista.
   return `<div class="agcald${dia.enMes?"":" fuera"}">
     <span class="agn${esHoy?" hoy":""}" onclick="P.agendaVista='semana';P.agendaRef='${dia.f}';render()">${parseInt(dia.f.slice(8,10),10)}</span>
-    ${visibles.map(e=>`<div class="agchip" style="background:${e.color}" onclick="agendaIr('${e.tipo}','${e.refId||""}')" title="${esc(e.titulo)}">${esc(e.titulo)}</div>`).join("")}
+    ${visibles.map(e=>`<div class="agchip" style="background:${e.color}" data-tipo="${e.tipo}" data-ref="${e.refId||""}" title="${esc(e.titulo)}">${esc(e.titulo)}</div>`).join("")}
     ${resto>0?`<div class="agmas" onclick="P.agendaVista='semana';P.agendaRef='${dia.f}';render()">+${resto} más</div>`:""}
   </div>`;
 }
@@ -15876,6 +15993,38 @@ const AGENDA_CATALOGO = [
       { nombre:"Planilla de hallazgos", items: MTTO_TIPOS.slice() }
   ]}
 ];
+/* a qué pantalla real lleva cada ítem del catálogo, para que tocar la
+   acción ya agendada abra directo ESE formulario (y no el cronograma). Se
+   guarda junto con el título al elegir el ítem (ver catElegir). Los ítems
+   de "Planilla de hallazgos" no están listados uno por uno acá porque
+   salen de MTTO_TIPOS (que puede cambiar); se resuelven aparte, con
+   {accion:"mtto", tipo:item}. Lo que se escribe a mano (sin elegir de la
+   lista) queda sin destino: ahí se abre el recordatorio en modo lectura. */
+const AGENDA_DESTINOS = {
+  "Inspecciones|Extintores": {tpl:"extintores"},
+  "Inspecciones|Autoelevador · Diario": {tpl:"autoelevador_diario"},
+  "Inspecciones|Autoelevador · Trimestral": {tpl:"autoelevador_trimestral"},
+  "Inspecciones|Escaleras de mano": {tpl:"escaleras"},
+  "Inspecciones|Arnés de seguridad": {tpl:"arnes"},
+  "Inspecciones|Tableros eléctricos": {tpl:"tableros_electricos"},
+  "Inspecciones|Andamios": {tpl:"andamios"},
+  "Inspecciones|Auditoría diaria": {tpl:"auditoria"},
+  "Auditorías y seguimiento|Auditoría mensual": {page:"audNueva"},
+  "Auditorías y seguimiento|Plan de acción": {page:"acciones"},
+  "EPP y ropa de trabajo|Entrega de EPP": {page:"entrega"},
+  "EPP y ropa de trabajo|Uso diario de EPP": {page:"uso"},
+  "EPP y ropa de trabajo|Ropa de trabajo": {page:"ropa"},
+  "Investigación y matriz de riesgos|Investigación de accidentes": {page:"inv"},
+  "Investigación y matriz de riesgos|Matriz de riesgos (IPER)": {page:"iper"},
+  "Capacitaciones|Capacitación dictada": {page:"cap"},
+  "Capacitaciones|Cronograma anual": {page:"crono"},
+  "Protocolos de higiene|Iluminación": {page:"lux"},
+  "Protocolos de higiene|Agua potable": {page:"agua"},
+  "Contratistas y disciplina|Documentación de contratistas": {page:"docs"},
+  "Contratistas y disciplina|Parte disciplinario": {page:"parte"},
+  "Permiso de trabajo|Permiso de trabajo": {page:"ptt"},
+  "Buzón de ideas|Nueva idea": {accion:"idea"}
+};
 function catToggleGrupo(g){
   P.catAbierto = P.catAbierto || {g:null,s:null};
   P.catAbierto.g = (P.catAbierto.g===g) ? null : g;
@@ -15889,6 +16038,8 @@ function catToggleSeccion(s){
 }
 function catElegir(seccion, item){
   P.draft.titulo = seccion + " · " + item;
+  const clave = seccion + "|" + item;
+  P.draft.destino = AGENDA_DESTINOS[clave] || (seccion==="Planilla de hallazgos" ? {accion:"mtto", tipo:item} : null);
   P.catAbierto = {g:null, s:null};
   P.catVisible = false;
   render();
@@ -15927,7 +16078,8 @@ function vAgendaEdit(){
 
   <section class="block"><div class="card pad">
     <label class="f" style="margin-top:0"><span class="lb">${tx("Título")}</span>
-      <input type="text" value="${esc(d.titulo)}" oninput="P.draft.titulo=this.value" placeholder="${tx("Qué hay que hacer")}"></label>
+      <input type="text" value="${esc(d.titulo)}" oninput="P.draft.titulo=this.value;P.draft.destino=null" placeholder="${tx("Qué hay que hacer")}"></label>
+    ${d.destino?`<p class="tiny muted" style="margin:-6px 0 10px">🔗 ${tx("Al tocarla, te va a llevar directo a ese formulario.")}</p>`:""}
     <button type="button" class="btn ghost sm" style="margin:0 0 10px" onclick="toggleCatalogo()">${P.catVisible?tx("Ocultar la lista de formularios"):"📋 "+tx("Elegir de la lista de formularios")}</button>
     ${P.catVisible?`<div class="catbox">${catalogoHtml()}</div>`:""}
     <div class="grid2">
@@ -15953,6 +16105,29 @@ function vAgendaEdit(){
     <button class="btn" onclick="guardarAgenda()">${txGuardar("agenda","Guardar en el cronograma")}</button>
     ${esExistente?`<button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarAgenda('${d.id}')">${tx("Eliminar")}</button>`:""}
     <button class="btn ghost" style="margin-top:8px" onclick="P.draft=null;go('agenda')">${tx("Salir sin guardar")}</button>
+  </section>
+  <div style="height:10px"></div>`;
+}
+/* vista de solo lectura de una acción agendada: acá aterriza un toque
+   corto cuando lo agendado no tiene un formulario real asociado (destino).
+   Editar/eliminar quedan como acciones explícitas acá abajo, nunca como
+   resultado de tocar la fila/el chip. */
+function vVerAgenda(){
+  const r = (S.agenda||[]).find(x=>x.id===P.verId);
+  if(!r) return `<section class="block"><div class="card empty">${tx("No se encontró lo agendado.")}</div></section>`;
+  return `${bandaMundo()}
+  <section class="block"><div class="card pad">
+    <span class="eyebrow">🗓️ ${tx("Agendado")}</span>
+    <h2 style="font-size:20px;font-weight:700;margin:2px 0 6px">${esc(r.titulo||tx("Acción agendada"))}</h2>
+    <p class="small muted" style="margin:0">${fecha(r.fecha)}${r.hora?" · "+esc(r.hora):""}</p>
+    ${r.descripcion?`<p class="small" style="margin:12px 0 0;white-space:pre-wrap">${esc(r.descripcion)}</p>`:""}
+    ${(r.invitados&&r.invitados.length)?`<div class="grp" style="margin-top:14px">${tx("Invitados")}</div>
+      ${r.invitados.map(i=>`<div class="tiny muted">${esc(i.email)}</div>`).join("")}`:""}
+  </div></section>
+  <section class="block noprint">
+    <button class="btn soft" onclick="editarAgenda('${r.id}')">✏️ ${tx("Editar")}</button>
+    <button class="btn ghost" style="margin-top:8px;color:var(--no)" onclick="borrarAgenda('${r.id}')">🗑 ${tx("Eliminar")}</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="go('agenda')">${tx("Volver al cronograma")}</button>
   </section>
   <div style="height:10px"></div>`;
 }
@@ -16384,7 +16559,8 @@ const SW_ACC = {
   parte:{ver:id=>go("verParte",id), edit:editarParte, del:borrarParte },
   agua:{ ver:id=>go("verAgua",id),  edit:editarAgua,  del:borrarAgua },
   idea:{ ver:id=>go("verIdea",id),  edit:editarIdea,  del:borrarIdea },
-  mtto:{ ver:id=>go("verMtto",id),  edit:editarMtto,  del:borrarMtto }
+  mtto:{ ver:id=>go("verMtto",id),  edit:editarMtto,  del:borrarMtto },
+  agenda:{ ver:id=>go("verAgenda",id), edit:editarAgenda, del:borrarAgenda }
 };
 function swAcc(col, id, que){
   swCerrar();
@@ -16443,6 +16619,30 @@ function swSoltar(){
 }
 document.addEventListener("pointerup", swSoltar, {passive:true});
 document.addEventListener("pointercancel", swSoltar, {passive:true});
+
+/* --- "mantener presionado" un chip del cronograma (vista mes): ahí no hay
+   lugar para deslizar como en la vista semana/lista, así que un toque
+   sostenido (500ms sin moverse) abre el menú Ver/Editar/Eliminar
+   (agendaMenu), y uno corto navega normal (agendaIr). El chip no lleva
+   onclick propio: todo pasa por acá. --- */
+let AG_LP = null;
+document.addEventListener("pointerdown", e=>{
+  const chip = e.target.closest && e.target.closest(".agchip");
+  if(!chip) return;
+  AG_LP = { tipo:chip.dataset.tipo, ref:chip.dataset.ref, x:e.clientX, y:e.clientY, disparado:false,
+    t: setTimeout(()=>{ if(AG_LP){ AG_LP.disparado = true; agendaMenu(AG_LP.tipo, AG_LP.ref); } }, 500) };
+}, {passive:true});
+document.addEventListener("pointermove", e=>{
+  if(!AG_LP) return;
+  if(Math.abs(e.clientX-AG_LP.x)>10 || Math.abs(e.clientY-AG_LP.y)>10){ clearTimeout(AG_LP.t); AG_LP=null; }
+}, {passive:true});
+document.addEventListener("pointerup", ()=>{
+  if(!AG_LP) return;
+  clearTimeout(AG_LP.t);
+  if(!AG_LP.disparado) agendaIr(AG_LP.tipo, AG_LP.ref);
+  AG_LP = null;
+}, {passive:true});
+document.addEventListener("pointercancel", ()=>{ if(AG_LP){ clearTimeout(AG_LP.t); AG_LP=null; } }, {passive:true});
 
 /* --- swipe de pantalla completa: deslizar a la derecha = atrás, a la
    izquierda = adelante, como en una app nativa. Solo con el dedo (no con el
@@ -16654,10 +16854,17 @@ function bkBloque(){
 /* ============================================================
    ARRANQUE
    ============================================================ */
+/* accSeguimiento del formato viejo (suelto en el dispositivo, no por
+   empresa): se guarda acá para repartirlo con aplicarMigracionAccSeguimiento
+   DESPUÉS de sincronizar con el servidor (ver arrancarSesion/entrarConUsuario),
+   nunca antes — si se aplicara antes, esta copia local vieja podría tapar
+   sin querer un cierre más reciente que ya subió otro dispositivo. */
+let LEGADO_ACC_SEG = null;
 (async function init(){
   const g = await DB.get("insp_hs_v1");
+  LEGADO_ACC_SEG = (g && g.accSeguimiento) || null;
   S = { tema:(g && g.tema) || "claro", idioma:(g && g.idioma) || "es", empresas:[], activa:null, proCuenta: !!(g && g.proCuenta),
-    accSeguimiento: (g && g.accSeguimiento) || {}, notifEventos: (g && g.notifEventos) || [], notifDescartadas: (g && g.notifDescartadas) || {} };
+    notifEventos: (g && g.notifEventos) || [], notifDescartadas: (g && g.notifDescartadas) || {} };
   if(g && g.empresas && g.empresas.length){
     S.empresas = g.empresas;
     S.activa = g.activa && g.empresas.some(e=>e.id===g.activa) ? g.activa : g.empresas[0].id;
@@ -16737,9 +16944,12 @@ async function arrancarSesion(){
     }
     else {
       if(S.sesion && S.sesion.via==="sb"){ S.sesion=null; }
+      aplicarMigracionAccSeguimiento(LEGADO_ACC_SEG);
       P.authModo="elegir"; go("login");
     }
   } else if(!sbOn()){
+    // sin backend: no hay con qué fusionar, se aplica directo sobre lo local
+    aplicarMigracionAccSeguimiento(LEGADO_ACC_SEG);
     if(sesionActiva()){ S.mundo=""; go("mundos"); }
     else { P.authModo="elegir"; go("login"); }
   }
