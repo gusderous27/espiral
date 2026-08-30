@@ -1691,6 +1691,13 @@ function tomarArchivo(inp, destino){
       const pt = P.draft.puntos[k]; pt.croquis = pt.croquis||[]; pt.croquis.push(b64);
       render(); toast(tx("Croquis adjuntado")); return;
     }
+    if((P.fotoDestino||"").indexOf("luxDoc:")===0){
+      const idx = parseInt(P.fotoDestino.split(":")[1],10);
+      const label = DOC_LUX[idx];
+      P.draft.adjuntosFotos = P.draft.adjuntosFotos||{};
+      (P.draft.adjuntosFotos[label] = P.draft.adjuntosFotos[label]||[]).push(b64);
+      render(); toast(tx("Documento adjuntado")); return;
+    }
     if(P.fotoDestino==="logo"){ S.empresa.logo = b64; guardar(); render(); toast(tx("Logo cargado")); return; }
     if(P.fotoDestino==="hallazgo"){ leerFormHallazgo(); P.hFoto = b64; render(); }
     else if(P.fotoDestino==="mttoFoto"){ P.draft.foto = b64; render(); }
@@ -8012,7 +8019,9 @@ const DIC = {
 "Actividad del puesto":["Job activity","Atividade do posto"],
 "Aislamiento":["Isolation","Isolamento"],
 "Altura de montaje (m)":["Mounting height (m)","Altura de montagem (m)"],
+"Altura de montaje (ft)":["Mounting height (ft)","Altura de montagem (ft)"],
 "Ancho (m)":["Width (m)","Largura (m)"],
+"Ancho (ft)":["Width (ft)","Largura (ft)"],
 "Acción correctiva":["Corrective action","Ação corretiva"],
 "Aptitud / control ambulatorio":["Fitness / medical clearance","Aptidão / controle ambulatorial"],
 "Aseguradora":["Insurer","Seguradora"],
@@ -8110,6 +8119,11 @@ const DIC = {
 "Instructor":["Trainer","Instrutor"],
 "Instrumental utilizado":["Instrument used","Instrumento utilizado"],
 "Largo (m)":["Length (m)","Comprimento (m)"],
+"Largo (ft)":["Length (ft)","Comprimento (ft)"],
+"Según la legislación vigente":["Per current legislation","Segundo a legislação vigente"],
+"Escribí la dirección de esta sucursal":["Type this branch's address","Escreva o endereço desta filial"],
+"Sacale una foto o adjuntá una imagen de cada documento: queda anexado a este protocolo.":["Take a photo or attach an image of each document: it stays attached to this record.","Tire uma foto ou anexe uma imagem de cada documento: fica anexado a este registro."],
+"Documento adjuntado":["Document attached","Documento anexado"],
 "Legajo":["Employee no.","Matrícula"],
 "Localidad":["Town / city","Cidade"],
 "Lugar donde se dictó":["Where it was held","Local onde foi realizado"],
@@ -9008,6 +9022,7 @@ function traducirTPL(){
 const TIPO_ILUM = ["Natural","Artificial","Mixta"];
 const FUENTE_LUM = ["Incandescente","Fluorescente","Descarga","Halógena","LED","Mixta"];
 const CLASE_ILUM = ["General","Localizada","Mixta"];
+const DOC_LUX = ["Certificado de calibración del instrumento","Plano o croquis del establecimiento","Fotografías del relevamiento","Registro de luminarias"];
 const TABLA1 = [
   {l:"Visión ocasional · solo para transitar", v:"100"},
   {l:"Tareas intermitentes ordinarias, poca demanda visual", v:"100 a 300"},
@@ -9040,13 +9055,35 @@ function calcPunto(p){
     cumple: isNaN(req) ? null : media >= req,
     req: isNaN(req) ? null : req};
 }
+/* el texto legal (Anexo IV, Dec. 351/79) solo corresponde a Argentina; para
+   el resto de los países se deja la metodología sin la cita normativa */
+function metodologiaLuxDefault(){
+  return paisAct().k==="AR"
+    ? "Método de cuadrícula (grilla) según Anexo IV del Dec. 351/79"
+    : "Método de cuadrícula (grilla)";
+}
+/* unidad de longitud usada en el protocolo: pies en Estados Unidos, metros
+   en el resto — el índice del local (k) es un cociente y da igual con
+   cualquiera de las dos unidades, mientras se use la misma en los tres
+   campos, así que no hace falta convertir ningún valor cargado */
+function unidadLongLux(){ return paisAct().k==="US" ? "ft" : "m"; }
+function etiquetaLongLux(base){ return tx(base+" ("+unidadLongLux()+")"); }
+/* direcciones ya usadas en protocolos de iluminación anteriores, más la de
+   la empresa (Ajustes), para armar el desplegable de "sucursal" sin tener
+   que volver a escribirla si la empresa tiene más de un establecimiento */
+function direccionesLux(){
+  const e = S.empresa||{};
+  const usadas = (S.lux||[]).map(r=>r.direccion).filter(Boolean);
+  return Array.from(new Set((e.direccion?[e.direccion]:[]).concat(usadas)));
+}
 function nuevaLux(){
-  P.draft = {id:uid(), tipo:"lux", fecha:hoy(), profesional:(S.empresa||{}).responsable||"", matricula:"",
-    localidad:"", provincia:"", cp:"", horaIni:"", horaFin:"", turno:"Turno único", clima:"",
-    metodologia:"Método de cuadrícula (grilla) según Anexo IV del Dec. 351/79",
-    inst:{marca:"",modelo:"",serie:"",calib:""}, adjuntos:[], observaciones:"",
+  const e = S.empresa||{};
+  P.draft = {id:uid(), tipo:"lux", fecha:hoy(), profesional:e.responsable||"", matricula:"",
+    direccion:e.direccion||"", localidad:"", provincia:"", cp:"", horaIni:"", horaFin:"", turno:"Turno único", clima:"",
+    metodologia:metodologiaLuxDefault(),
+    inst:{marca:"",modelo:"",serie:"",calib:""}, adjuntos:[], adjuntosFotos:{}, observaciones:"",
     puntos:[], conclusiones:"", recomendaciones:"", firma:null};
-  P.luxHoja = 1;
+  P.luxHoja = 1; P.luxDirOtro = false;
 }
 function editarLux(id){
   const r=(S.lux||[]).find(x=>x.id===id);
@@ -9059,6 +9096,30 @@ function addPunto(){
 }
 function delPunto(i){ if(!gate("¿Eliminar este punto de muestreo?", ()=>delPunto(i))) return;
   P.draft.puntos.splice(i,1); render(); }
+/* render() reconstruye TODO el HTML de la pantalla ($("#app").innerHTML=...),
+   así que llamarlo en cada tecla tipeada le hacía perder el foco al campo
+   (con inputs numéricos, alcanzaba con un solo dígito). Esta variante guarda
+   qué campo (por su id) y qué posición del cursor tenía el foco antes de
+   redibujar, y se lo devuelve al terminar — así se puede volver a renderizar
+   en cada cambio (para que el veredicto se actualice solo) sin que se note. */
+function renderConFoco(){
+  const activo = (typeof document!=="undefined" && document.activeElement) || null;
+  const id = activo && activo.id ? activo.id : null;
+  let sel = null;
+  if(id && activo && typeof activo.selectionStart==="number"){
+    try{ sel = [activo.selectionStart, activo.selectionEnd]; }catch(e){}
+  }
+  const y = (typeof window!=="undefined" && window.scrollY) || 0;
+  render();
+  if(typeof window!=="undefined" && window.scrollTo) window.scrollTo(0,y);
+  if(id && typeof document!=="undefined"){
+    const el2 = document.getElementById(id);
+    if(el2 && el2.focus){
+      el2.focus();
+      if(sel && el2.setSelectionRange){ try{ el2.setSelectionRange(sel[0], sel[1]); }catch(e){} }
+    }
+  }
+}
 function setPto(i,k,v){
   P.draft.puntos[i][k]=v;
   if(k==="largo"||k==="ancho"||k==="altura"){
@@ -9066,12 +9127,21 @@ function setPto(i,k,v){
     const arr = P.draft.puntos[i].valores||[];
     if(c.n){ while(arr.length<c.n) arr.push(""); if(arr.length>c.n) arr.length=c.n; }
     P.draft.puntos[i].valores = arr;
-    const y=window.scrollY; render(); window.scrollTo(0,y);
   }
+  // se redibuja siempre (no solo para largo/ancho/altura) para que el
+  // veredicto (media vs. requerido) se actualice solo al tipear, sin tener
+  // que ir a otra hoja y volver
+  renderConFoco();
 }
 function setVal(i,j,v){
   P.draft.puntos[i].valores[j]=v;
-  const y=window.scrollY; render(); window.scrollTo(0,y);
+  renderConFoco();
+}
+function delAdjuntoLux(idx,j){
+  const label = DOC_LUX[idx];
+  const fotos = (P.draft.adjuntosFotos||{})[label];
+  if(fotos) fotos.splice(j,1);
+  render();
 }
 function vLux(){
   const lista = (S.lux||[]).slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
@@ -9150,7 +9220,8 @@ function vLuxEdit(){
 
   if(hoja===1) cuerpo = `<div class="card pad">
     <div class="grp" style="margin-top:0">${tx("Datos del establecimiento")}</div>
-    <p class="tiny muted" style="margin:-2px 0 10px">Razón social, CUIT y dirección se toman de Ajustes: ${esc(e.razon||"sin cargar")}.</p>
+    <p class="tiny muted" style="margin:-2px 0 10px">Razón social y CUIT se toman de Ajustes: ${esc(e.razon||"sin cargar")}.</p>
+    ${campoOtro("Dirección del establecimiento", direccionesLux(), d.direccion||"", "luxDirOtro", "v=>{P.draft.direccion=v;render()}", "Escribí la dirección de esta sucursal")}
     <div class="grid2">
       <label class="f"><span class="lb">${tx("Localidad")}</span><input type="text" value="${esc(d.localidad)}" oninput="P.draft.localidad=this.value"></label>
       <label class="f"><span class="lb">${tx("Provincia")}</span><input type="text" value="${esc(d.provincia)}" oninput="P.draft.provincia=this.value"></label>
@@ -9185,11 +9256,15 @@ function vLuxEdit(){
     </div>
 
     <div class="grp">${tx("Documentación que se adjunta")}</div>
-    <div class="opts" style="margin-left:0">
-      ${["Certificado de calibración del instrumento","Plano o croquis del establecimiento","Fotografías del relevamiento","Registro de luminarias"]
-        .map(x=>`<button class="opt" data-k="${(d.adjuntos||[]).indexOf(x)>=0?"ok":""}" data-on="${(d.adjuntos||[]).indexOf(x)>=0?1:0}"
-          onclick="toggleArr('adjuntos',this.dataset.v)" data-v="${esc(x)}">${esc(x)}</button>`).join("")}
-    </div>
+    <p class="tiny muted" style="margin:-2px 0 10px">${tx("Sacale una foto o adjuntá una imagen de cada documento: queda anexado a este protocolo.")}</p>
+    ${DOC_LUX.map((x,idx)=>{
+      const fotos = (d.adjuntosFotos||{})[x]||[];
+      return `<div class="card pad" style="margin-bottom:10px">
+        <div class="small" style="font-weight:600;margin-bottom:8px">${esc(tx(x))}</div>
+        ${fotoBtns("luxDoc:"+idx)}
+        ${fotos.length?`<div class="thumbs" style="margin-top:8px">${fotos.map((f,j)=>`<div class="thumb"><img src="${f}"><b onclick="delAdjuntoLux(${idx},${j})">×</b></div>`).join("")}</div>`:""}
+      </div>`;
+    }).join("")}
 
     <div class="grp">${tx("Profesional interviniente")}</div>
     <div class="grid2">
@@ -9222,11 +9297,11 @@ function vLuxEdit(){
 
       <div class="grp">${tx("Dimensiones del recinto")}</div>
       <div class="grid2">
-        <label class="f"><span class="lb">${tx("Largo (m)")}</span><input type="number" inputmode="decimal" value="${esc(p.largo)}" oninput="setPto(${i},'largo',this.value)"></label>
-        <label class="f"><span class="lb">${tx("Ancho (m)")}</span><input type="number" inputmode="decimal" value="${esc(p.ancho)}" oninput="setPto(${i},'ancho',this.value)"></label>
+        <label class="f"><span class="lb">${etiquetaLongLux("Largo")}</span><input id="lux_${i}_largo" type="number" inputmode="decimal" step="any" value="${esc(p.largo)}" oninput="setPto(${i},'largo',this.value)"></label>
+        <label class="f"><span class="lb">${etiquetaLongLux("Ancho")}</span><input id="lux_${i}_ancho" type="number" inputmode="decimal" step="any" value="${esc(p.ancho)}" oninput="setPto(${i},'ancho',this.value)"></label>
       </div>
-      <label class="f"><span class="lb">${tx("Altura de montaje (m)")}</span>
-        <input type="number" inputmode="decimal" value="${esc(p.altura)}" placeholder="${tx("De la luminaria al plano de trabajo")}" oninput="setPto(${i},'altura',this.value)"></label>
+      <label class="f"><span class="lb">${etiquetaLongLux("Altura de montaje")}</span>
+        <input id="lux_${i}_altura" type="number" inputmode="decimal" step="any" value="${esc(p.altura)}" placeholder="${tx("De la luminaria al plano de trabajo")}" oninput="setPto(${i},'altura',this.value)"></label>
 
       ${c.k!==null?`<div style="background:var(--primary-s);color:var(--primary-d);border-radius:11px;padding:11px 13px;margin-bottom:12px">
         <b style="font-family:'Barlow Condensed';font-size:18px">Índice del local k = ${c.k.toFixed(2)}</b>
@@ -9237,14 +9312,14 @@ function vLuxEdit(){
       ${c.n?`<div class="grp">${tx("Valores medidos (lux)")}</div>
       <div class="gridlux">
         ${p.valores.map((v,j)=>`<label class="lux"><span>${j+1}</span>
-          <input type="number" inputmode="decimal" value="${esc(v)}" oninput="setVal(${i},${j},this.value)"></label>`).join("")}
+          <input id="lux_${i}_val${j}" type="number" inputmode="decimal" step="any" value="${esc(v)}" oninput="setVal(${i},${j},this.value)"></label>`).join("")}
       </div>`:""}
 
       <div class="grid2" style="margin-top:14px">
         <label class="f"><span class="lb">${tx("Valor requerido (lux)")}</span>
-          <input type="number" inputmode="decimal" value="${esc(p.requerido)}" placeholder="${tx("Anexo IV, Dec. 351/79")}" oninput="setPto(${i},'requerido',this.value)"></label>
+          <input id="lux_${i}_requerido" type="number" inputmode="decimal" step="any" value="${esc(p.requerido)}" placeholder="${paisAct().k==="AR"?tx("Anexo IV, Dec. 351/79"):tx("Según la legislación vigente")}" oninput="setPto(${i},'requerido',this.value)"></label>
         <label class="f"><span class="lb">${tx("Iluminación localizada (lux)")}</span>
-          <input type="number" inputmode="decimal" value="${esc(p.localizada||"")}" placeholder="${tx("Si existe")}" oninput="setPto(${i},'localizada',this.value)"></label>
+          <input id="lux_${i}_localizada" type="number" inputmode="decimal" step="any" value="${esc(p.localizada||"")}" placeholder="${tx("Si existe")}" oninput="setPto(${i},'localizada',this.value)"></label>
       </div>
 
       ${c.media!==null?`
@@ -9309,6 +9384,14 @@ function vLuxEdit(){
 function guardarLux(){
   capturarFirmas();
   const d = P.draft;
+  // "adjuntos" (lista de etiquetas, usada en el detalle/Excel/impresión) se
+  // completa con las categorías que ahora tienen una foto adjuntada de
+  // verdad, sin perder lo que ya estuviera tildado en protocolos viejos
+  // (de cuando esto era un simple checklist, sin fotos)
+  d.adjuntos = Array.from(new Set(
+    (d.adjuntos||[]).filter(x=>DOC_LUX.indexOf(x)>=0)
+      .concat(DOC_LUX.filter(x=>((d.adjuntosFotos||{})[x]||[]).length>0))
+  ));
   if(!d.puntos.length) return toast(tx("Agregá al menos un punto de muestreo"));
   const sinDatos = d.puntos.filter(p=>calcPunto(p).media===null).length;
   if(sinDatos && !gate("Hay "+sinDatos+" punto(s) sin valores medidos. ¿Guardar igual?", ()=>guardarLux())) return;
@@ -9338,7 +9421,7 @@ function vVerLux(){
     <div style="flex:1;min-width:0">
       <div class="eyebrow">${tx("Protocolo para medición de iluminación en el ambiente laboral")}</div>
       ${e.logo?"":`<div style="font-family:'Barlow Condensed';font-weight:700;font-size:22px;line-height:1.05;text-transform:uppercase">${esc(e.razon||"Sin empresa cargada")}</div>`}
-      <div class="tiny muted">${esc(e.direccion||"")}${r.localidad?" · "+esc(r.localidad):""}${r.provincia?" · "+esc(r.provincia):""}${e.cuit?" · CUIT "+esc(e.cuit):""}</div>
+      <div class="tiny muted">${esc(r.direccion||e.direccion||"")}${r.localidad?" · "+esc(r.localidad):""}${r.provincia?" · "+esc(r.provincia):""}${e.cuit?" · CUIT "+esc(e.cuit):""}</div>
       <div class="tiny muted">${fecha(r.fecha)}${r.horaIni?" · "+esc(r.horaIni)+" a "+esc(r.horaFin||""):""}${r.turno?" · "+esc(r.turno):""}</div>
     </div>
   </div></section>
@@ -9350,6 +9433,7 @@ function vVerLux(){
     ${(r.inst&&(r.inst.marca||r.inst.modelo))?`<div class="small"><span class="muted">${tx("Instrumental:")}</span>
       ${esc(r.inst.marca||"")} ${esc(r.inst.modelo||"")}${r.inst.serie?" · serie "+esc(r.inst.serie):""}${r.inst.calib?" · calibrado el "+fecha(r.inst.calib):""}</div>`:""}
     ${(r.adjuntos||[]).length?`<div class="small"><span class="muted">${tx("Documentación adjunta:")}</span> ${esc(r.adjuntos.join(" · "))}</div>`:""}
+    ${DOC_LUX.some(x=>((r.adjuntosFotos||{})[x]||[]).length)?`<div class="thumbs" style="margin-top:8px">${DOC_LUX.flatMap(x=>((r.adjuntosFotos||{})[x]||[])).map(f=>`<div class="thumb"><img src="${f}"></div>`).join("")}</div>`:""}
   </div></section>
 
   ${r.puntos.map((p,i)=>{const c=calcPunto(p); const bien = c.media!==null && c.cumple!==false && c.unif;
@@ -9357,7 +9441,7 @@ function vVerLux(){
     <div class="grp" style="margin-top:0">Punto ${i+1} · ${esc(p.sector||"—")}</div>
     <div class="small">${esc(p.seccion||"")}</div>
     <div class="tiny muted">${esc(p.hora||"—")} · ${esc(p.tipoIlum)} · ${esc(p.fuente)} · ${esc(p.clase)}</div>
-    <div class="tiny muted">Recinto ${esc(p.largo)} × ${esc(p.ancho)} m · altura de montaje ${esc(p.altura)} m${c.k!==null?" · k = "+c.k.toFixed(2)+" · "+c.n+" puntos":""}</div>
+    <div class="tiny muted">Recinto ${esc(p.largo)} × ${esc(p.ancho)} ${unidadLongLux()} · altura de montaje ${esc(p.altura)} ${unidadLongLux()}${c.k!==null?" · k = "+c.k.toFixed(2)+" · "+c.n+" puntos":""}</div>
     ${c.media!==null?`
       <div class="kpis" style="margin-top:10px">
         <div class="kpi"><b>${c.media.toFixed(1)}</b><span class="tiny muted">${tx("E media (lx)")}</span></div>
@@ -9408,6 +9492,203 @@ function bloqueLux(){
     ${donut([{l:"Puntos que cumplen",v:ok,c:"#3FA34D"},{l:"Puntos que no cumplen",v:mal,c:"#D64545"}])}
     ${sectores.length?`<div class="grp">${tx("Sectores a corregir")}</div>${barras(cuenta(sectores),"var(--no)")}`:""}
   </div></section>`;
+}
+
+/* ============================================================
+   EXCEL DE ILUMINACIÓN
+   ------------------------------------------------------------
+   Dos formatos distintos, a pedido del usuario:
+   · hojasResumenLux(): el excel de LA SECCIÓN (todas las mediciones de la
+     empresa) — una solapa "Resumen" con un renglón por estudio/área
+     (agrupados por año) + una solapa de detalle por cada estudio, para que
+     un especialista pueda verificar el desglose punto por punto.
+   · xlsxLuxHojaDatos/Grilla/Analisis + excelLuxOficial(): el excel de UN
+     estudio puntual, reproduciendo la estructura de las 3 hojas del
+     formulario oficial de la Res. SRT 84/12 (Datos del establecimiento,
+     Grilla de mediciones, Análisis y firma) para poder presentarlo tal cual.
+   ============================================================ */
+/* arma filas/columnas a mano (celda por celda, con sus combinaciones) para
+   una solapa cuyo layout no es el genérico de xlsxHojaCuerpo — lo usan las
+   3 hojas del formulario oficial de iluminación */
+function xlsxCuerpoDesdeCeldas(celdas, dim, numCols, anchoCol){
+  const porFila = {};
+  let lastRow = 1;
+  celdas.forEach(c=>{
+    const fn = parseInt(/\d+/.exec(c.ref)[0],10);
+    lastRow = Math.max(lastRow, fn);
+    (porFila[fn]=porFila[fn]||[]).push(c);
+  });
+  let rowsXml = "";
+  Object.keys(porFila).map(Number).sort((a,b)=>a-b).forEach(fn=>{
+    rowsXml += `<row r="${fn}">${porFila[fn].map(c=>xlsxCelda(c.ref, c.texto, c.style)).join("")}</row>`;
+  });
+  const merges = celdas.filter(c=>c.merge).map(c=>c.merge);
+  const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "";
+  const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="${anchoCol||22}" customWidth="1"/>`).join("")}</cols>`;
+  return { rowsXml, mergeXml, dim, colsXml, lastRow, fotos:[] };
+}
+/* Hoja 1/3 · datos del establecimiento, instrumental, metodología y
+   documentación adjunta — replica los campos numerados (1) a (17) del
+   formulario oficial DATOS de la Res. SRT 84/12 */
+function xlsxLuxHojaDatos(r, empresa){
+  const e = empresa||{};
+  const marca = [(r.inst||{}).marca,(r.inst||{}).modelo,(r.inst||{}).serie].filter(Boolean).join(" · ");
+  const tiene = x => (r.adjuntos||[]).indexOf(x)>=0;
+  const docsExtra = ["Fotografías del relevamiento","Registro de luminarias"].filter(tiene);
+  const celdas = [
+    {ref:"G1", texto:"ANEXO", style:7},
+    {ref:"A2", texto:"PROTOCOLO PARA MEDICIÓN DE ILUMINACIÓN EN EL AMBIENTE LABORAL", style:4, merge:"A2:G2"},
+    {ref:"A4", texto:"(1) Razón Social: "+(e.razon||""), style:6, merge:"A4:G4"},
+    {ref:"A6", texto:"(2) Dirección: "+(r.direccion||e.direccion||""), style:6, merge:"A6:G6"},
+    {ref:"A8", texto:"(3) Localidad: "+(r.localidad||""), style:6, merge:"A8:G8"},
+    {ref:"A10", texto:"(4) Provincia: "+(r.provincia||""), style:6, merge:"A10:G10"},
+    {ref:"A12", texto:"(5) C.P.: "+(r.cp||""), style:6, merge:"A12:B12"},
+    {ref:"C12", texto:"(6) C.U.I.T.: "+(e.cuit||""), style:6, merge:"C12:G12"},
+    {ref:"A14", texto:"(7) Horarios/Turnos Habituales de Trabajo: "+(r.turno||""), style:6, merge:"A14:G14"},
+    {ref:"A16", texto:"Datos de la Medición", style:7, merge:"A16:G16"},
+    {ref:"A17", texto:"(8) Marca, modelo y número de serie del instrumento utilizado: "+marca, style:6, merge:"A17:G17"},
+    {ref:"A18", texto:"(9) Fecha de Calibración del Instrumental utilizado en la medición: "+((r.inst||{}).calib?fecha(r.inst.calib):""), style:6, merge:"A18:G18"},
+    {ref:"A19", texto:"(10) Metodología Utilizada en la Medición: "+(r.metodologia||""), style:6, merge:"A19:G19"},
+    {ref:"A20", texto:"(11) Fecha de la Medición: "+fecha(r.fecha), style:6, merge:"A20:C20"},
+    {ref:"D20", texto:"(12) Hora de Inicio: "+(r.horaIni||""), style:6, merge:"D20:E20"},
+    {ref:"F20", texto:"(13) Hora de Finalización: "+(r.horaFin||""), style:6, merge:"F20:G20"},
+    {ref:"A21", texto:"(14) Condiciones Atmosféricas: "+(r.clima||""), style:6, merge:"A21:G21"},
+    {ref:"A23", texto:"Documentación que se Adjuntará a la Medición", style:7, merge:"A23:G23"},
+    {ref:"A24", texto:"(15) Certificado de Calibración."+(tiene("Certificado de calibración del instrumento")?" ✓":""), style:6, merge:"A24:G24"},
+    {ref:"A25", texto:"(16) Plano o Croquis del establecimiento."+(tiene("Plano o croquis del establecimiento")?" ✓":""), style:6, merge:"A25:G25"},
+  ];
+  let rn = 26;
+  docsExtra.forEach(x=>{ celdas.push({ref:"A"+rn, texto:"• "+x+" ✓", style:6, merge:"A"+rn+":G"+rn}); rn++; });
+  celdas.push({ref:"A"+rn, texto:"(17) Observaciones: "+(r.observaciones||""), style:6, merge:"A"+rn+":G"+rn});
+  const filaHoja = rn+1, filaFirma1 = filaHoja+1, filaFirma2 = filaHoja+2;
+  celdas.push({ref:"G"+filaHoja, texto:"Hoja 1/3", style:2});
+  celdas.push({ref:"E"+filaFirma1, texto:"……………………………………….", style:6, merge:"E"+filaFirma1+":G"+filaFirma1});
+  celdas.push({ref:"E"+filaFirma2, texto:"Firma, Aclaración y Registro del Profesional Interviniente"+(r.profesional?" — "+r.profesional:"")+(r.matricula?" · Mat. "+r.matricula:""), style:3, merge:"E"+filaFirma2+":G"+filaFirma2});
+  return xlsxCuerpoDesdeCeldas(celdas, "A1:G"+filaFirma2, 7);
+}
+/* Hoja 2/3 · grilla de puntos de muestreo — el formulario oficial trae 12
+   renglones fijos; si el estudio tiene más puntos (según el índice del
+   local, hasta 25) se agregan a continuación con el mismo formato */
+function xlsxLuxHojaGrilla(r, empresa){
+  const e = empresa||{};
+  const celdas = [
+    {ref:"L1", texto:"ANEXO", style:7},
+    {ref:"A2", texto:"PROTOCOLO PARA MEDICIÓN DE ILUMINACIÓN EN EL AMBIENTE LABORAL", style:4, merge:"A2:L2"},
+    {ref:"A3", texto:"Razón Social: "+(e.razon||""), style:6, merge:"A3:H3"},
+    {ref:"I3", texto:"C.U.I.T.: "+(e.cuit||""), style:6, merge:"I3:L3"},
+    {ref:"A4", texto:"Dirección: "+(r.direccion||e.direccion||""), style:6, merge:"A4:G4"},
+    {ref:"H4", texto:"Localidad: "+(r.localidad||""), style:6, merge:"H4:I4"},
+    {ref:"J4", texto:"CP: "+(r.cp||""), style:6},
+    {ref:"K4", texto:"Provincia: "+(r.provincia||""), style:6, merge:"K4:L4"},
+    {ref:"A6", texto:"Datos de la Medición", style:7, merge:"A6:L6"},
+    {ref:"A7", texto:"Punto de Muestreo", style:5},
+    {ref:"B7", texto:"Hora", style:5},
+    {ref:"C7", texto:"Sector", style:5, merge:"C7:D7"},
+    {ref:"E7", texto:"Sección / Puesto / Puesto Tipo", style:5, merge:"E7:F7"},
+    {ref:"G7", texto:"Tipo de Iluminación: Natural / Artificial / Mixta", style:5},
+    {ref:"H7", texto:"Tipo de Fuente Lumínica: Incandescente / Descarga / Mixta", style:5},
+    {ref:"I7", texto:"Iluminación: General / Localizada / Mixta", style:5},
+    {ref:"J7", texto:"Valor de la uniformidad de Iluminancia · E mínima ≥ (E media)/2", style:5},
+    {ref:"K7", texto:"Valor Medido (Lux)", style:5},
+    {ref:"L7", texto:"Valor requerido legalmente"+(paisAct().k==="AR"?" Según Anexo IV Dec. 351/79":""), style:5},
+  ];
+  const puntos = r.puntos||[];
+  const nFilas = Math.max(puntos.length, 12);
+  let rn = 8;
+  for(let i=0;i<nFilas;i++){
+    const p = puntos[i];
+    celdas.push({ref:"A"+rn, texto:i+1, style:6});
+    if(p){
+      const c = calcPunto(p);
+      celdas.push({ref:"B"+rn, texto:p.hora||"", style:6});
+      celdas.push({ref:"C"+rn, texto:p.sector||"", style:6, merge:"C"+rn+":D"+rn});
+      celdas.push({ref:"E"+rn, texto:p.seccion||"", style:6, merge:"E"+rn+":F"+rn});
+      celdas.push({ref:"G"+rn, texto:p.tipoIlum||"", style:6});
+      celdas.push({ref:"H"+rn, texto:p.fuente||"", style:6});
+      celdas.push({ref:"I"+rn, texto:p.clase||"", style:6});
+      celdas.push({ref:"J"+rn, texto:c.media!==null?(c.unif?"Cumple":"No cumple"):"", style:6});
+      celdas.push({ref:"K"+rn, texto:c.media!==null?c.media.toFixed(2):"", style:6});
+      celdas.push({ref:"L"+rn, texto:c.req!==null?c.req:"", style:6});
+    }
+    rn++;
+  }
+  celdas.push({ref:"A"+rn, texto:"Observaciones: "+(r.observaciones||""), style:6, merge:"A"+rn+":L"+rn});
+  const filaHoja = rn+1, filaFirma1 = filaHoja+1, filaFirma2 = filaHoja+2;
+  celdas.push({ref:"L"+filaHoja, texto:"Hoja 2/3", style:2});
+  celdas.push({ref:"I"+filaFirma1, texto:"……………………………………………………….", style:6, merge:"I"+filaFirma1+":L"+filaFirma1});
+  celdas.push({ref:"I"+filaFirma2, texto:"Firma, Aclaración y Registro del Profesional Interviniente"+(r.profesional?" — "+r.profesional:""), style:3, merge:"I"+filaFirma2+":L"+filaFirma2});
+  return xlsxCuerpoDesdeCeldas(celdas, "A1:L"+filaFirma2, 12);
+}
+/* Hoja 3/3 · conclusiones, recomendaciones y firma */
+function xlsxLuxHojaAnalisis(r, empresa){
+  const e = empresa||{};
+  const celdas = [
+    {ref:"L1", texto:"ANEXO", style:7},
+    {ref:"A2", texto:"PROTOCOLO PARA MEDICIÓN DE ILUMINACIÓN EN EL AMBIENTE LABORAL", style:4, merge:"A2:L2"},
+    {ref:"A3", texto:"Razón Social: "+(e.razon||""), style:6, merge:"A3:H3"},
+    {ref:"I3", texto:"C.U.I.T.: "+(e.cuit||""), style:6, merge:"I3:L3"},
+    {ref:"A4", texto:"Dirección: "+(r.direccion||e.direccion||""), style:6, merge:"A4:G4"},
+    {ref:"H4", texto:"Localidad: "+(r.localidad||""), style:6, merge:"H4:I4"},
+    {ref:"J4", texto:"CP: "+(r.cp||""), style:6},
+    {ref:"K4", texto:"Provincia: "+(r.provincia||""), style:6, merge:"K4:L4"},
+    {ref:"A6", texto:"Análisis de los Datos y Mejoras a Realizar", style:7, merge:"A6:L6"},
+    {ref:"A7", texto:"Conclusiones.", style:7, merge:"A7:G7"},
+    {ref:"H7", texto:"Recomendaciones para adecuar el nivel de iluminación a la legislación vigente.", style:7, merge:"H7:L7"},
+    {ref:"A8", texto:r.conclusiones||"", style:6, merge:"A8:G9"},
+    {ref:"H8", texto:r.recomendaciones||"", style:6, merge:"H8:L9"},
+    {ref:"L10", texto:"Hoja 3/3", style:2},
+    {ref:"I11", texto:"…………………………………………………………………………………………..", style:6, merge:"I11:L11"},
+    {ref:"I12", texto:"Firma, Aclaración y Registro del Profesional Interviniente"+(r.profesional?" — "+r.profesional:""), style:3, merge:"I12:L12"},
+  ];
+  return xlsxCuerpoDesdeCeldas(celdas, "A1:L12", 12);
+}
+/* Excel de UN estudio puntual, con el formato oficial de la Res. SRT 84/12
+   (3 solapas: Datos, Grilla y Análisis) — se descarga desde el detalle del
+   protocolo, en "Guardar / Compartir → Exportar a Excel" */
+function excelLuxOficial(id){
+  if(!muroExcel()) return;
+  const p = paqueteExcel("lux", id); if(!p) return toast(tx("No se pudo generar"));
+  const bytes = construirXlsx(p);
+  const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  bajarBlob((p.nombreBase||"espiral")+".xlsx", blob, true);
+}
+/* Excel de LA SECCIÓN completa: una solapa "Resumen" con un renglón por
+   estudio/área (agrupados por año, para poder ver de un vistazo todas las
+   áreas evaluadas de la empresa en un mismo año) + una solapa de detalle
+   por cada estudio (el desglose punto por punto, tal como se cargó), para
+   que un especialista pueda verificarlo */
+function hojasResumenLux(lista){
+  const ms = (lista||[]).slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const filasResumen = ms.map(r=>{
+    const cs = r.puntos.map(calcPunto);
+    const evaluados = cs.filter(c=>c.media!==null);
+    const malos = evaluados.filter(c=>c.cumple===false || !c.unif).length;
+    return [(r.fecha||"").slice(0,4), fecha(r.fecha), r.puntos[0]?(r.puntos[0].sector||""):"", r.direccion||"",
+      r.profesional||"", r.puntos.length, evaluados.length, malos,
+      evaluados.length?(malos?"No cumple":"Cumple"):"Sin datos"];
+  });
+  const hojas = [{nombre:tx("Resumen"), titulo:tx("Protocolos de medición de iluminación · todas las áreas"), fecha:hoy(),
+    bloques:[{tipo:"tabla", cols:["Año","Fecha","Sector / área","Dirección","Profesional","Puntos cargados","Puntos evaluados","Puntos que no cumplen","Resultado"], filas:filasResumen}]}];
+  const usados = {};
+  ms.forEach(r=>{
+    const filas = r.puntos.map((p,i)=>{ const c=calcPunto(p);
+      return [i+1,p.hora,p.sector,p.seccion,p.tipoIlum,p.fuente,p.clase,p.largo,p.ancho,p.altura,
+        c.k!==null?c.k.toFixed(2):"", c.n||"", p.valores.filter(v=>v!=="").join(" · "),
+        c.media!==null?c.media.toFixed(2):"", c.min!==null?c.min.toFixed(2):"",
+        c.media!==null?(c.unif?"Cumple":"No cumple"):"", c.req!==null?c.req:"",
+        c.cumple===null?"":(c.cumple?"Cumple":"No cumple")];
+    });
+    let nombreBase = "Detalle "+fecha(r.fecha)+(r.puntos[0]&&r.puntos[0].sector?" "+r.puntos[0].sector:"");
+    const nombre = xlsxNombreHoja(nombreBase, usados);
+    hojas.push({nombre, titulo:tx("Detalle")+" · "+fecha(r.fecha), fecha:r.fecha,
+      bloques:[
+        {tipo:"meta", filas:[["Fecha",fecha(r.fecha)],["Profesional",r.profesional||""],["Dirección",r.direccion||""],
+          ["Localidad",(r.localidad||"")+(r.provincia?" · "+r.provincia:"")]]},
+        {tipo:"tabla", titulo:tx("Puntos de muestreo"), cols:["Punto","Hora","Sector","Sección / puesto","Tipo","Fuente","Iluminación",
+          "Largo","Ancho","Altura montaje","Índice k","Puntos mín.","Valores medidos","E media","E mínima","Uniformidad","Requerido","Cumple"], filas}
+      ]});
+  });
+  return hojas;
 }
 
 /* ============================================================
@@ -9494,6 +9775,7 @@ function regPorTipo(tipo, id){
     t="Protocolo de medición de iluminación"; f=r.fecha;
     M.push(["Fecha",fecha(r.fecha)],["Horario",(r.horaIni||"")+" a "+(r.horaFin||"")],["Turno",r.turno||""],
       ["Profesional",r.profesional||"—"],["Matrícula",r.matricula||"—"],
+      ["Dirección",r.direccion||(S.empresa||{}).direccion||""],
       ["Localidad",(r.localidad||"")+(r.provincia?" · "+r.provincia:"")+(r.cp?" · CP "+r.cp:"")],
       ["Metodología",r.metodologia||""],["Condiciones climáticas",r.clima||""],
       ["Instrumental",[(r.inst||{}).marca,(r.inst||{}).modelo,(r.inst||{}).serie].filter(Boolean).join(" ")],
@@ -10840,7 +11122,10 @@ function construirLibroXlsx(o){
     const graficos = h.graficos || [];
     // grilla de 2 gráficos por fila: 6 columnas cada uno + 1 de separación
     const ANCHO_GRAF = 6, GAP_GRAF = 1, ALTO_GRAF = 16;
-    const cuerpo = xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo, graficos.length ? (ANCHO_GRAF*2+GAP_GRAF) : 0);
+    // h.cuerpo: para solapas con un layout "a mano" (p.ej. replicando un
+    // formulario oficial con sus propias celdas y combinaciones) en vez del
+    // armado genérico de xlsxHojaCuerpo (título + bloques de meta/tabla)
+    const cuerpo = h.cuerpo || xlsxHojaCuerpo(h.bloques, empresa, h.titulo||"", h.fecha, logoInfo, graficos.length ? (ANCHO_GRAF*2+GAP_GRAF) : 0);
     const fotos = cuerpo.fotos || [];
     const hayDrawing = !!logoInfo || graficos.length>0 || fotos.length>0;
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -10947,6 +11232,9 @@ ${workbookRelsEntries.join("\n")}
 /* Libro de una sola solapa: envoltorio fino sobre construirLibroXlsx para
    no tocar a quienes ya lo llaman así (descarga de un solo registro/tipo). */
 function construirXlsx(o){
+  // o.hojas: paquete con varias solapas ya armadas (p.ej. el formato oficial
+  // de iluminación, en 3 hojas). Si no viene, arma UNA sola solapa como antes.
+  if(o.hojas) return construirLibroXlsx({ empresa:o.empresa, hojas:o.hojas });
   return construirLibroXlsx({ empresa:o.empresa, hojas:[{nombre:o.hoja, titulo:o.titulo, fecha:o.fecha, bloques:o.bloques, graficos:o.graficos}] });
 }
 /* Toma un valor de cabecera (r.cab[k]) y lo formatea según el tipo de campo */
@@ -10992,6 +11280,17 @@ function hojaInspTpl(tpl){
    inspección — con una columna por cada campo del formulario. */
 function paqueteExcel(tipo, id){
   const e = S.empresa || {};
+  if(tipo==="lux"){
+    // el excel de iluminación tiene su propio formato (el oficial de la
+    // Res. SRT 84/12, en 3 solapas) — se arma igual para la descarga directa
+    // (excelUno → excelLuxOficial) y para adjuntarlo por mail / WhatsApp
+    const r = (S.lux||[]).find(x=>x.id===id); if(!r) return null;
+    return { empresa:e, hojas:[
+      {nombre:"DATOS", cuerpo:xlsxLuxHojaDatos(r,e)},
+      {nombre:"GRILLA", cuerpo:xlsxLuxHojaGrilla(r,e)},
+      {nombre:"ANÁLISIS", cuerpo:xlsxLuxHojaAnalisis(r,e)}
+    ], nombreBase:"espiral-proto-iluminacion-"+nombreArchivo({t:"res-84-12",f:r.fecha||hoy()}) };
+  }
   if(tipo==="insp"){
     const r = (S.insp||[]).find(x=>x.id===id); if(!r) return null;
     const T = TPL[r.tpl];
@@ -11106,6 +11405,9 @@ async function bajarBlob(nombre, blob, forzarDescarga){
 }
 function excelUno(tipo,id){
   if(!muroExcel()) return;
+  // el excel de un protocolo de iluminación tiene su propio formato (el
+  // oficial de la Res. SRT 84/12, en 3 solapas), distinto del genérico
+  if(tipo==="lux") return excelLuxOficial(id);
   const p = paqueteExcel(tipo,id); if(!p) return toast(tx("No se pudo generar"));
   const bytes = construirXlsx(p);
   const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
@@ -12027,18 +12329,7 @@ function hojasSeccionPanel(sec){
     }
   }
   else if(sec==="lux"){
-    if((S.lux||[]).length){
-      const filas = [];
-      S.lux.forEach(r=>r.puntos.forEach((p,i)=>{ const c=calcPunto(p);
-        filas.push([fecha(r.fecha),r.profesional||"",i+1,p.hora,p.sector,p.seccion,p.tipoIlum,p.fuente,p.clase,
-          p.largo,p.ancho,p.altura,c.k!==null?c.k.toFixed(2):"",c.n||"",
-          c.media!==null?c.media.toFixed(2):"",c.min!==null?c.min.toFixed(2):"",
-          c.media!==null?(c.unif?"Cumple":"No cumple"):"",c.req!==null?c.req:"",
-          c.cumple===null?"":(c.cumple?"Cumple":"No cumple")]); }));
-      hoja(tx("Iluminación"), tx("Protocolos de medición de iluminación"),
-        ["Fecha","Profesional","Punto","Hora","Sector","Sección / puesto","Tipo","Fuente","Iluminación",
-          "Largo","Ancho","Altura montaje","Índice k","Puntos mín.","E media","E mínima","Uniformidad","Requerido","Cumple"], filas);
-    }
+    if((S.lux||[]).length) hojas.push(...hojasResumenLux(S.lux));
   }
   else if(sec==="aud"){
     if((S.aud||[]).length){
@@ -12197,18 +12488,7 @@ function exportarExcel(){
         r.razonPrest||r.prestador||"",r.desc||"",r.peligros.join(" · "),r.prevencion.join(" · "),
         r.protec.join(" · "),r.resp.autoriz||"",r.estado,r.resp.finFecha?fecha(r.resp.finFecha):""]));
   }
-  if((S.lux||[]).length){
-    const filas = [];
-    S.lux.forEach(r=>r.puntos.forEach((p,i)=>{ const c=calcPunto(p);
-      filas.push([fecha(r.fecha),r.profesional||"",i+1,p.hora,p.sector,p.seccion,p.tipoIlum,p.fuente,p.clase,
-        p.largo,p.ancho,p.altura,c.k!==null?c.k.toFixed(2):"",c.n||"",
-        c.media!==null?c.media.toFixed(2):"",c.min!==null?c.min.toFixed(2):"",
-        c.media!==null?(c.unif?"Cumple":"No cumple"):"",c.req!==null?c.req:"",
-        c.cumple===null?"":(c.cumple?"Cumple":"No cumple")]); }));
-    hoja(tx("Iluminación"), tx("Protocolos de medición de iluminación"),
-      ["Fecha","Profesional","Punto","Hora","Sector","Sección / puesto","Tipo","Fuente","Iluminación",
-        "Largo","Ancho","Altura montaje","Índice k","Puntos mín.","E media","E mínima","Uniformidad","Requerido","Cumple"], filas);
-  }
+  if((S.lux||[]).length) hojas.push(...hojasResumenLux(S.lux));
   if((S.aud||[]).length){
     const filas1 = [];
     S.aud.forEach(r=>{ const T=audTotal(r);
