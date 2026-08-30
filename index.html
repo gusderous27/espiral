@@ -1270,6 +1270,31 @@ document.addEventListener("visibilitychange", ()=>{
   }
 });
 
+/* La app solo trae datos del servidor al arrancar/loguearse
+   (sincronizarDesdeServidor, en entrarConUsuario). Si alguien deja la
+   pestaña/app abierta de un dispositivo y en OTRO dispositivo cierra
+   desvíos o carga registros nuevos, el que quedó abierto nunca se entera
+   hasta que lo cierra y lo vuelve a abrir: mostraba números viejos
+   (Reportado: web al día, celular con la app abierta desde antes seguía
+   mostrando desvíos ya cerrados). Por eso, al volver a esta pestaña/app
+   (foreground) volvemos a sincronizar solas — con un piso de tiempo para
+   no golpear el servidor si el usuario cambia de pestaña seguido. La
+   fusión de sincronizarDesdeServidor() ya protege cualquier edición local
+   sin guardar (flag _sucio), así que esto no pisa nada que el usuario
+   esté cargando en este mismo dispositivo. Evitamos volver a pintar la
+   pantalla si está en medio de cargar un formulario (PANT_EDIT), para no
+   interrumpirlo con un render de golpe. */
+let ULTIMO_SYNC_FOCO = 0;
+document.addEventListener("visibilitychange", async ()=>{
+  if(document.visibilityState!=="visible" || !sbOn() || !sesionActiva()) return;
+  const ahora = Date.now();
+  if(ahora - ULTIMO_SYNC_FOCO < 20000) return;
+  ULTIMO_SYNC_FOCO = ahora;
+  await sincronizarDesdeServidor();
+  guardar();
+  if(PANT_EDIT.indexOf(P.page) < 0) render();
+});
+
 function toggleTema(){
   S.tema = S.tema==="claro" ? "oscuro" : "claro";
   document.documentElement.setAttribute("data-tema", S.tema);
