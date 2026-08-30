@@ -4192,6 +4192,14 @@ function cerrarAccion(t,id,k,i){
    ============================================================ */
 const ACC_ESTADOS = ["Abierto", "En proceso", "Finalizado"];
 function accClave(ref){ return ref.t+"|"+ref.id+"|"+(ref.k===undefined||ref.k===null?"":ref.k)+"|"+(ref.i===undefined||ref.i===null?"":ref.i); }
+/* el inverso de accClave(): a partir de la clave guardada reconstruye el
+   ref {t,id,k,i} que necesita marcarAccionOrigenEn(). Los ids nunca
+   llevan "|" (vienen de uid() o randomUUID), así que separar por "|" es
+   seguro. */
+function accRefDeClave(clave){
+  const p = (clave||"").split("|");
+  return { t:p[0], id:p[1], k: p[2]||undefined, i: p[3]||undefined };
+}
 function accColor(est){
   return est==="Finalizado" ? "var(--ok)" : est==="En proceso" ? "var(--c2)" : "var(--c5)";
 }
@@ -4249,6 +4257,35 @@ function aplicarMigracionAccSeguimiento(legado){
       sbGuardarEmpresa(snapshotEmpresa(e)).then(r=>{ if(!r || !r.error) e._sucio = false; });
     }
   });
+}
+/* Fusión del plan de acción en CADA sincronización (no solo la migración
+   de una vez): aunque el resto del blob de una empresa quede protegido
+   porque tiene cambios locales sin confirmar (_sucio, ver
+   sincronizarDesdeServidor), el seguimiento de desvíos SÍ se puede fusionar
+   sin riesgo — nunca se reabre una clave que en el otro lado ya está más
+   avanzada. Esto es lo que evita que un dispositivo con un envío pendiente
+   o trabado deje de enterarse para siempre de cierres hechos en otro lado
+   (reportado 30-31/08/2026: un desvío finalizado en la computadora seguía
+   viéndose abierto en el celular, sesión tras sesión). Además, para los
+   tipos que tienen un espejo dentro del registro de origen (auditp, aud,
+   iper, inv, mtto) —de los que depende el contador de "Desvíos" del
+   inicio, que NO lee accSeguimiento sino ese espejo— se actualiza también
+   ese campo con marcarAccionOrigenEn(), así el conteo no queda desfasado
+   aunque el resto del registro siga protegido. */
+function fusionarAccSeguimientoEntrante(local, remotoAcc){
+  if(!local || !remotoAcc || !Object.keys(remotoAcc).length) return;
+  local.datos = local.datos || {};
+  const propio = local.datos.accSeguimiento || {};
+  let cambio = false;
+  Object.keys(remotoAcc).forEach(clave=>{
+    const entrante = remotoAcc[clave];
+    if(rangoEstadoAcc(entrante) > rangoEstadoAcc(propio[clave])){
+      propio[clave] = entrante;
+      cambio = true;
+      marcarAccionOrigenEn(local.datos, accRefDeClave(clave), entrante.estado==="Finalizado");
+    }
+  });
+  if(cambio) local.datos.accSeguimiento = propio;
 }
 function vAccionGestion(){
   if(!puedeAdministrar()) return `<section class="block"><div class="card empty">🔒 ${tx("Solo el administrador puede gestionar el plan de acción.")}</div></section>`;
@@ -4364,16 +4401,39 @@ function setAccEstado(est){
   }
   guardar(); render();
 }
+/* pone hecho/hecha en el registro que originó la acción, DENTRO de "datos"
+   (el datos.* de una empresa cualquiera, no necesariamente la activa: lo
+   necesita la fusión de accSeguimiento al sincronizar, que puede tocar una
+   empresa que no es la seleccionada en pantalla). */
+function marcarAccionOrigenEn(datos, ref, cerrada){
+  try{
+    if(ref.t==="auditp"){ const r=((datos&&datos.aud)||[]).find(x=>x.id===ref.id); if(r){ const it=r.bloques[ref.k].items[ref.i]; it.hecho=cerrada; it.cierre=cerrada?hoy():""; } }
+    else if(ref.t==="iper"){ const r=((datos&&datos.iper)||[]).find(x=>x.id===ref.id); if(r){ r.tareas[ref.k].riesgos[ref.i].hecho=cerrada; } }
+    else if(ref.t==="inv"){ const r=((datos&&datos.inv)||[]).find(x=>x.id===ref.id); if(r){ r[ref.k][ref.i].c = cerrada?hoy():""; } }
+    else if(ref.t==="aud"){ const r=((datos&&datos.insp)||[]).find(x=>x.id===ref.id); if(r){
+      const h=r.hallazgos[ref.i]; h.estado=cerrada?"Cerrado":"Abierto";
+      // recalcular los totales del registro para que el KPI de "Desvíos"
+      // del inicio y del panel reflejen los hallazgos ya gestionados
+      r.nc = r.hallazgos.filter(x=>x.estado!=="Cerrado").length;
+      r.ok = r.hallazgos.length - r.nc;
+      r.pct = r.hallazgos.length ? Math.round(r.ok/r.hallazgos.length*100) : 100;
+    } }
+    else if(ref.t==="mtto"){ const r=((datos&&datos.mtto)||[]).find(x=>x.id===ref.id); if(r){ r.estado = cerrada?"Finalizado":"Reportado"; r.fechaCump = cerrada?hoy():""; } }
+  }catch(e){}
+}
+/* pone hecho/hecha en el registro que originó la acción, en la empresa
+   ACTIVA (S.aud/S.insp/etc ya son, cada uno, un getter atado a
+   S.empresa.datos.*). Es el uso normal, desde la pantalla del plan de
+   acción. Se mantiene independiente de marcarAccionOrigenEn() (en vez de
+   delegar en ella pasándole S.empresa.datos) para no depender de que
+   S.empresa exista tal cual en cualquier contexto donde se llame. */
 function marcarAccionOrigen(ref, cerrada){
-  // pone hecho/hecha en el registro que originó la acción
   try{
     if(ref.t==="auditp"){ const r=(S.aud||[]).find(x=>x.id===ref.id); if(r){ const it=r.bloques[ref.k].items[ref.i]; it.hecho=cerrada; it.cierre=cerrada?hoy():""; } }
     else if(ref.t==="iper"){ const r=(S.iper||[]).find(x=>x.id===ref.id); if(r){ r.tareas[ref.k].riesgos[ref.i].hecho=cerrada; } }
     else if(ref.t==="inv"){ const r=(S.inv||[]).find(x=>x.id===ref.id); if(r){ r[ref.k][ref.i].c = cerrada?hoy():""; } }
     else if(ref.t==="aud"){ const r=(S.insp||[]).find(x=>x.id===ref.id); if(r){
       const h=r.hallazgos[ref.i]; h.estado=cerrada?"Cerrado":"Abierto";
-      // recalcular los totales del registro para que el KPI de "Desvíos"
-      // del inicio y del panel reflejen los hallazgos ya gestionados
       r.nc = r.hallazgos.filter(x=>x.estado!=="Cerrado").length;
       r.ok = r.hallazgos.length - r.nc;
       r.pct = r.hallazgos.length ? Math.round(r.ok/r.hallazgos.length*100) : 100;
@@ -14697,7 +14757,14 @@ async function sincronizarDesdeServidor(){
   //    la pestaña. Esas quedan marcadas para volver a subirse más abajo.
   remotas.forEach(f=>{
     const local = porId[f.id];
-    if(local && local._sucio) return;
+    if(local && local._sucio){
+      // el resto del blob queda protegido, pero el plan de acción se
+      // fusiona igual (nunca reabre nada, ver fusionarAccSeguimientoEntrante):
+      // así un dispositivo con un envío propio pendiente/trabado no deja de
+      // enterarse para siempre de los cierres que se hicieron en otro lado.
+      fusionarAccSeguimientoEntrante(local, (f.datos && f.datos.accSeguimiento) || {});
+      return;
+    }
     porId[f.id] = filaAEmpresa(f);
   });
 
