@@ -16030,8 +16030,11 @@ function plan(k){ return PLANES.find(p=>p.k===k) || null; }
    que ya tenga cargadas más empresas de las que Equipo permite, en
    cuyo caso se la trata como "Consultora" para no bloquearla. */
 function planActual(){
-  if(S.plan){ const p = plan(S.plan); if(p) return p; }
+  // primero hay que confirmar que la cuenta/empresa realmente es Pro:
+  // S.plan es un string suelto en el almacenamiento local y no alcanza
+  // por sí solo (ver esProCuenta) para no mostrar un nivel que no es.
   if(!esPro()) return null;
+  if(S.plan){ const p = plan(S.plan); if(p) return p; }
   const equipoP = plan("equipo");
   return ((S.empresas||[]).length > equipoP.empresasMax) ? plan("consultora") : equipoP;
 }
@@ -16040,8 +16043,15 @@ function miembrosActuales(e){
   e = e || S.empresa || {};
   return 1 + Object.keys(e.roles||{}).length;
 }
-/* Pro de la CUENTA: habilita multiempresa, es personal */
-function esProCuenta(){ return !!S.proCuenta; }
+/* Pro de la CUENTA: habilita multiempresa, es personal.
+   S.proCuenta viaja en el almacenamiento local del DISPOSITIVO (no del
+   servidor), así que se etiqueta con el uid de quien la activó
+   (S.proCuentaDe) y acá se exige que coincida con el uid de la sesión
+   actual. Sin esto, si en un mismo navegador ya se activó Pro alguna vez
+   (por ejemplo al probarlo), CUALQUIER cuenta nueva que se cree o loguee
+   en ese mismo navegador heredaba el Pro de arrastre — sin haber pagado
+   nada. Bug real, reportado por el usuario el 30/08/2026. */
+function esProCuenta(){ return !!S.proCuenta && S.proCuentaDe === ((S.sesion&&S.sesion.uid)||null); }
 /* Pro: alcanza con que la empresa activa sea Pro o con que la CUENTA
    sea Pro (una vez que la cuenta se hizo Pro, queda habilitada en
    TODAS las empresas que esa cuenta cargue, no solo en la que la activó) */
@@ -16106,6 +16116,7 @@ function activarPro(tier){
   const paraCuenta = P.proDe === "empresa";
   S.plan = pl.k;
   S.proCuenta = true;
+  S.proCuentaDe = (S.sesion && S.sesion.uid) || null;
   if(S.empresa && S.empresa.id) S.empresa.pro = true;
   guardar(); pintarShell();
   // 3.2 · aviso de bienvenida + volver a la acción/pantalla previa
@@ -16134,6 +16145,7 @@ function desactivarPro(){
   if(!gate(tx("¿Volver a la versión gratuita? No se borra ningún dato."), ()=>desactivarPro())) return;
   if(S.empresa && S.empresa.id) S.empresa.pro = false;
   S.proCuenta = false;
+  S.proCuentaDe = null;
   S.plan = "";
   guardar(); pintarShell(); toast(tx("Volviste a la versión gratuita")); render();
 }
