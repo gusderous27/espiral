@@ -1328,7 +1328,7 @@ function render(){
     crono:vCrono, cronoEdit:vCronoEdit, verCrono:vVerCrono,
     agua:vAgua, aguaEdit:vAguaEdit, verAgua:vVerAgua,
     parte:vParte, parteEdit:vParteEdit, verParte:vVerParte,
-    verAud:()=>vVerAud(P.verId), pro:vPro, desvios:vDesvios,
+    verAud:()=>vVerAud(P.verId), pro:vPro, desvios:vDesvios, desvioGestion:vDesvioGestion,
     inicioMtto:vInicioMtto, mttoEdit:vMttoEdit, verMtto:vVerMtto, gestionMtto:vGestionMtto, mttoGestion:vMttoGestion,
     agenda:vAgenda, agendaEdit:vAgendaEdit}[P.page] || vInicio;
   const enAuth = (P.page==="login" || P.page==="onboarding");
@@ -1379,7 +1379,7 @@ function vInicio(){
   const audNC  = audR.reduce((a,r)=>a+(r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0),0);
   const mes = S.insp.filter(i=>i.fecha>=hoy().slice(0,7)+"-01").length
             + eppR.filter(i=>i.fecha>=hoy().slice(0,7)+"-01").length;
-  const nc  = S.insp.reduce((a,i)=>a+(i.nc||0),0) + eppR.reduce((a,i)=>a+(i.faltas||0),0)
+  const nc  = S.insp.reduce((a,i)=>a+inspNcAbiertos(i),0) + eppR.reduce((a,i)=>a+(i.faltas||0),0)
             + (S.aud||[]).reduce((a,r)=>a+(r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0),0);
   return `
   ${bandaMundo()}
@@ -1394,7 +1394,7 @@ function vInicio(){
         <button class="kpi" onclick="go('historial','mes')"><b>${mes+audMes}</b><span class="tiny muted">${t("home.mes")}</span></button>
         <button class="kpi" style="border-color:${nc?"var(--no)":"var(--line)"}" onclick="go('desvios')"><b style="color:${nc?"var(--no)":"inherit"}">${nc}</b><span class="tiny muted">${t("home.desvios")}</span></button>
       </div>
-      ${nc?`<p class="tiny muted" style="margin:8px 2px 0;text-align:center">${tx("Desvíos suma todo lo marcado \"No cumple\" en cualquier inspección. El Plan de acción solo muestra los que tienen seguimiento propio: investigaciones, matriz de riesgos y auditorías.")}</p>`:""}
+      ${nc?`<p class="tiny muted" style="margin:8px 2px 0;text-align:center">${tx("Desvíos suma lo marcado \"No cumple\" que todavía sigue abierto. Podés gestionarlo y cerrarlo desde el Plan de acción.")}</p>`:""}
     </div>
   </section>
 
@@ -4018,6 +4018,32 @@ function accionesTodas(){
         ref:{t:"auditp", id:r.id, k:bi, i:ii}});
     }));
   });
+  /* "No cumple" de las inspecciones de checklist (extintores, autoelevador,
+     escaleras, arnés, tableros eléctricos, etc.): cada ítem así marcado pasa
+     al plan de acción para poder gestionarlo, pero SIN tocar el registro de
+     la inspección — son relevamientos periódicos sobre el mismo equipo y
+     deben quedar intactos. El seguimiento (responsable, estado, cierre) vive
+     aparte, en accSeguimiento, igual que con auditorías o matriz de riesgos.
+     La auditoría diaria (tpl "auditoria") no entra acá: ya tiene su propio
+     circuito más arriba, con hallazgos individuales. */
+  (S.insp||[]).filter(r=>r.tpl && r.tpl!=="auditoria").forEach(r=>{
+    const t = TPL[r.tpl];
+    if(!t || !t.secs) return;
+    let n = 0;
+    t.secs.forEach(s=>s.items.forEach(it=>{
+      n++; const id = "i"+n;
+      if((r.resp||{})[id]!=="no") return;
+      const ref = {t:"insp", id:r.id, k:id};
+      const seg = S.accSeguimiento && S.accSeguimiento[accClave(ref)];
+      const refTxt = r.cab && (r.cab.nro||r.cab.interno||r.cab.ubic||r.cab.sector||r.cab.marca) || "";
+      out.push({origen:(t.ic||"📝")+" "+tx(t.nombre||"Inspección")+(refTxt?" · "+refTxt:""), fuente:fecha(r.fecha),
+        mod:"Inspecciones", donde:(r.cab&&(r.cab.sector||r.cab.area||r.cab.ubic))||"", detecta:fecha(r.fecha),
+        clas:"No cumple", detalle:it.x,
+        texto:(r.obs&&(r.obs[id]||"").trim()) || it.x, resp:r.inspector||"",
+        vence:"", hecha:!!(seg && seg.estado==="Finalizado"), cierre:(seg&&seg.cerradoFecha)||"",
+        ref});
+    }));
+  });
   /* hallazgos de mantenimiento derivados a EHS: se cargaron como un hallazgo
      de la planilla de mantenimiento, pero se detectó que en realidad le
      corresponde gestionarlos acá */
@@ -4052,6 +4078,15 @@ function cerrarAccion(t,id,k,i){
     const r=(S.mtto||[]).find(x=>x.id===id); if(!r) return;
     r.estado = r.estado==="Finalizado" ? "Reportado" : "Finalizado";
     r.fechaCump = r.estado==="Finalizado" ? hoy() : "";
+    guardar(); render(); return;
+  }
+  if(t==="insp"){
+    // ítem "No cumple" de una inspección de checklist: el seguimiento vive
+    // solo en accSeguimiento, el registro de la inspección no se toca
+    const seg = accSeg({t:"insp", id:id, k:k});
+    seg.estado = seg.estado==="Finalizado" ? "Abierto" : "Finalizado";
+    if(seg.estado==="Finalizado"){ seg.cerradoFecha = hoy(); seg.cerradoPor = (S.sesion && (S.sesion.nombre||S.sesion.email))||""; }
+    else { seg.cerradoFecha = ""; seg.cerradoPor = ""; }
     guardar(); render(); return;
   }
   if(t==="inv"){
@@ -4263,6 +4298,7 @@ const ACC_MOD_ORDEN = [
   {mod:"Matriz de riesgos", icono:"📊"},
   {mod:"Auditoría diaria", icono:"🔍"},
   {mod:"Auditoría mensual", icono:"📋"},
+  {mod:"Inspecciones", icono:"📝"},
   {mod:"Derivado de mantenimiento", icono:"🔧"}
 ];
 function bloqueAccionesMod(key, icono, nombre, items){
@@ -4295,7 +4331,7 @@ function vAcciones(){
   const vencidas = todas.filter(a=>!a.hecha && a.vence && a.vence < hoy()).length;
   if(!todas.length) return `<section class="block"><div class="card empty"><span class="ic">🗂</span>
     ${tx("Todavía no hay acciones correctivas cargadas.")}<br>
-    <span class="small">${tx("Salen de las investigaciones, la matriz de riesgos y las auditorías (diaria y mensual). Los desvíos de otras inspecciones no generan acción por sí solos.")}</span></div></section>`;
+    <span class="small">${tx("Salen de las investigaciones, la matriz de riesgos, las auditorías (diaria y mensual) y de los ítems \"No cumple\" de cualquier inspección.")}</span></div></section>`;
   const porMod = {};
   lista.forEach(a=>{ (porMod[a.mod]=porMod[a.mod]||[]).push(a); });
   const tiposConDatos = tiposConDatosAcciones();
@@ -4325,11 +4361,69 @@ function vAcciones(){
    igual que el número que se muestra en el inicio, para que acá
    siempre coincidan.
    ============================================================ */
+/* todas las acciones del Plan de acción que corresponden a UN registro
+   puntual (identificado como en Desvíos: page + id), para poder gestionarlas
+   desde ahí sin tener que ir a buscarlas en el plan de acción general. */
+function accionesDeRegistro(page, id){
+  return accionesTodas().filter(a=>{
+    if(page==="ver") return (a.ref.t==="insp"||a.ref.t==="aud") && a.ref.id===id;
+    if(page==="verAud") return a.ref.t==="auditp" && a.ref.id===id;
+    if(page==="verInv") return a.ref.t==="inv" && a.ref.id===id;
+    return false; // EPP (verEpp) todavía no tiene seguimiento propio en el plan de acción
+  });
+}
+function verGestionDesvio(page, id){
+  P.desvioVer = {page, id};
+  go("desvioGestion");
+}
+function vDesvioGestion(){
+  const ctx = P.desvioVer;
+  if(!ctx) return `<section class="block"><div class="card empty">${tx("No se encontró el desvío.")}</div></section>`;
+  if(!puedeAdministrar()) return `<section class="block"><div class="card empty">🔒 ${tx("Solo el administrador puede gestionar el plan de acción.")}</div></section>`;
+  const items = accionesDeRegistro(ctx.page, ctx.id);
+  const abiertos = items.filter(a=>!a.hecha).length;
+  return `
+  <section class="block">
+    <div class="section-title"><h2>${tx("Gestionar desvíos")}</h2></div>
+    <p class="tiny muted" style="margin:-4px 2px 12px">${esc(items[0]?items[0].origen:"")}</p>
+    <div class="kpis">
+      <div class="kpi"><b>${items.length}</b><span class="tiny muted">${tx("Totales")}</span></div>
+      <div class="kpi"><b style="color:var(--warn)">${abiertos}</b><span class="tiny muted">${tx("Abiertos")}</span></div>
+    </div>
+  </section>
+  <section class="block">
+    <button class="btn ghost sm" onclick="go('${ctx.page}','${ctx.id}')">${tx("Ver informe completo")}</button>
+  </section>
+  <section class="block">
+    <div class="card pad">
+      ${items.length ? items.map(filaAccionItem).join("") : `<p class="small muted" style="text-align:center;margin:14px 0">${tx("No hay ítems para gestionar acá.")}</p>`}
+    </div>
+  </section>
+  <div style="height:10px"></div>`;
+}
+/* cantidad de "No cumple" de una inspección que TODAVÍA siguen abiertos
+   (sin cerrar desde el Plan de acción). En la auditoría diaria (tpl
+   "auditoria") ya se recalcula r.nc al cerrar cada hallazgo, así que ahí se
+   usa directo; en el resto (checklists), se compara ítem por ítem contra
+   accSeguimiento, sin tocar el registro de la inspección. */
+function inspNcAbiertos(r){
+  if(r.tpl==="auditoria") return r.nc||0;
+  const t = TPL[r.tpl];
+  if(!t || !t.secs) return r.nc||0;
+  let n=0, abiertos=0;
+  t.secs.forEach(s=>s.items.forEach(it=>{
+    n++; const id="i"+n;
+    if((r.resp||{})[id]!=="no") return;
+    const seg = S.accSeguimiento && S.accSeguimiento[accClave({t:"insp", id:r.id, k:id})];
+    if(!(seg && seg.estado==="Finalizado")) abiertos++;
+  }));
+  return abiertos;
+}
 function desviosGrupos(){
-  const gInsp = (S.insp||[]).filter(r=>(r.nc||0)>0).map(r=>{
+  const gInsp = (S.insp||[]).map(r=>({r, n:inspNcAbiertos(r)})).filter(x=>x.n>0).map(({r,n})=>{
     const t = TPL[r.tpl]||{ic:"📋", nombre:tx("Inspección")};
     const ref = r.cab && (r.cab.nro||r.cab.interno||r.cab.ubic||r.cab.sector||r.cab.marca) || "";
-    return { n:r.nc, ic:t.ic||"📋", titulo:esc(t.nombre)+(ref?" · "+esc(ref):""),
+    return { n, ic:t.ic||"📋", titulo:esc(t.nombre)+(ref?" · "+esc(ref):""),
       sub:fecha(r.fecha)+(r.inspector?" · "+esc(r.inspector):""), page:"ver", id:r.id };
   });
   const gEpp = (S.epp||[]).filter(r=>(r.faltas||0)>0).map(r=>({
@@ -4352,13 +4446,18 @@ function desviosGrupos(){
   ].filter(g=>g.items.length);
 }
 function filaDesvioItem(it){
-  return `<div class="row" onclick="go('${it.page}','${it.id}')">
-    <span style="font-size:17px;flex:none">${it.ic}</span>
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:600;font-size:14.5px">${it.titulo}</div>
-      <div class="tiny muted">${it.sub}</div>
+  const gest = accionesDeRegistro(it.page, it.id);
+  const abiertos = gest.filter(a=>!a.hecha).length;
+  return `<div class="row">
+    <div style="flex:1;min-width:0;display:flex;gap:12px;align-items:center;cursor:pointer" onclick="go('${it.page}','${it.id}')">
+      <span style="font-size:17px;flex:none">${it.ic}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14.5px">${it.titulo}</div>
+        <div class="tiny muted">${it.sub}</div>
+      </div>
+      <span class="pill" style="border-color:var(--no);color:var(--no);flex:none">${it.n}</span>
     </div>
-    <span class="pill" style="border-color:var(--no);color:var(--no);flex:none">${it.n}</span>
+    ${gest.length?`<button class="btn soft sm" style="width:auto;flex:none;padding:6px 10px;margin-left:10px" onclick="event.stopPropagation();verGestionDesvio('${it.page}','${it.id}')">${tx("Gestionar")}${abiertos?` (${abiertos})`:""}</button>`:""}
   </div>`;
 }
 function bloqueDesviosMod(g){
@@ -6425,12 +6524,12 @@ const DIC = {
 "Hojas de datos de seguridad (SDS)":["Safety Data Sheets (SDS)","Fichas de Dados de Segurança (SDS)"],
 "Formulario W-9 / habilitación comercial":["W-9 / business license","Formulário W-9 / licença comercial"],
 "Nómina de personal en el sitio":["Crew roster on site","Lista de pessoal no local"],
-"Salen de las investigaciones, la matriz de riesgos y las auditorías (diaria y mensual). Los desvíos de otras inspecciones no generan acción por sí solos.":
-  ["They come from investigations, the risk matrix and the audits (daily and monthly). Findings from other inspections don't create an action on their own.",
-   "Vêm das investigações, da matriz de riscos e das auditorias (diária e mensal). Os desvios de outras inspeções não geram ação por conta própria."],
-"Desvíos suma todo lo marcado \"No cumple\" en cualquier inspección. El Plan de acción solo muestra los que tienen seguimiento propio: investigaciones, matriz de riesgos y auditorías.":
-  ["Deviations adds up everything marked \"Non-compliant\" in any inspection. The action plan only shows the ones with their own follow-up: investigations, the risk matrix and audits.",
-   "Desvios soma tudo o que foi marcado \"Não cumpre\" em qualquer inspeção. O plano de ação só mostra os que têm acompanhamento próprio: investigações, matriz de riscos e auditorias."],
+"Salen de las investigaciones, la matriz de riesgos, las auditorías (diaria y mensual) y de los ítems \"No cumple\" de cualquier inspección.":
+  ["They come from investigations, the risk matrix, the audits (daily and monthly) and the \"Non-compliant\" items from any inspection.",
+   "Vêm das investigações, da matriz de riscos, das auditorias (diária e mensal) e dos itens \"Não cumpre\" de qualquer inspeção."],
+"Desvíos suma lo marcado \"No cumple\" que todavía sigue abierto. Podés gestionarlo y cerrarlo desde el Plan de acción.":
+  ["Deviations adds up everything marked \"Non-compliant\" that's still open. You can manage and close it from the action plan.",
+   "Desvios soma tudo o que foi marcado \"Não cumpre\" e ainda está em aberto. Você pode gerenciar e fechar pelo Plano de ação."],
 "Persona agregada. El correo no salió":["Person added. The email didn't go out","Pessoa adicionada. O e-mail não saiu"],
 "Podés pasarle el código directamente.":["You can share the code directly.","Você pode passar o código diretamente."],
 "Documento de identidad":["Social Security Number (SSN)","Documento de identidade"],
@@ -10398,6 +10497,50 @@ function dataUriABytes(uri){
   for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
   return { bytes, ext };
 }
+/* ancho y alto reales (en píxeles) de una imagen PNG/GIF/JPEG, leídos directo
+   de sus bytes (sin depender de cargarla en un <img> ni de nada asíncrono).
+   Se usa para no deformar el logo al incrustarlo en el Excel: si no se puede
+   leer, se devuelve null y quien llama usa un tamaño por defecto razonable. */
+function xlsxImgSize(bytes, ext){
+  try{
+    if(ext==="png"){
+      // firma (8 bytes) + chunk IHDR: ancho en los bytes 16-19, alto en 20-23 (big-endian)
+      const w = ((bytes[16]<<24)|(bytes[17]<<16)|(bytes[18]<<8)|bytes[19])>>>0;
+      const h = ((bytes[20]<<24)|(bytes[21]<<16)|(bytes[22]<<8)|bytes[23])>>>0;
+      if(w>0 && h>0) return {w,h};
+    }else if(ext==="gif"){
+      // cabecera "GIF8Xa" (6 bytes) + ancho/alto en 2 bytes cada uno (little-endian)
+      const w = bytes[6]|(bytes[7]<<8);
+      const h = bytes[8]|(bytes[9]<<8);
+      if(w>0 && h>0) return {w,h};
+    }else{
+      // JPEG: recorre los marcadores hasta encontrar un SOFn, que trae el
+      // tamaño real de la imagen (a diferencia de las miniaturas EXIF)
+      let i = 2, n = bytes.length;
+      while(i < n-9){
+        if(bytes[i]!==0xFF){ i++; continue; }
+        const marker = bytes[i+1];
+        if(marker===0xD8 || marker===0x01 || (marker>=0xD0 && marker<=0xD7)){ i+=2; continue; }
+        const len = (bytes[i+2]<<8)|bytes[i+3];
+        const esSOF = marker>=0xC0 && marker<=0xCF && marker!==0xC4 && marker!==0xC8 && marker!==0xCC;
+        if(esSOF){
+          const h = (bytes[i+5]<<8)|bytes[i+6];
+          const w = (bytes[i+7]<<8)|bytes[i+8];
+          if(w>0 && h>0) return {w,h};
+          break;
+        }
+        if(marker===0xD9 || len<2) break; // fin de imagen o marcador sin longitud válida
+        i += 2 + len;
+      }
+    }
+  }catch(e){}
+  return null;
+}
+/* ancho de columna (unidad "caracteres" de Excel, la que ya usa xlsxHojaCuerpo)
+   convertido a píxeles, con la fórmula estándar para la fuente por defecto */
+function xlsxColAPx(anchoCol){
+  return Math.floor(((256*anchoCol + Math.floor(128/7))/256)*7);
+}
 function xlsxColLetra(n){
   let s = "";
   while(n>0){ const r=(n-1)%26; s = String.fromCharCode(65+r) + s; n = Math.floor((n-1)/26); }
@@ -10539,19 +10682,32 @@ function xlsxHojaCuerpo(bloques, empresa, titulo, fechaVal, logoInfo, colsGrafic
   const colsXml = `<cols>${Array.from({length:numCols}).map((_,i)=>`<col min="${i+1}" max="${i+1}" width="${anchoCol}" customWidth="1"/>`).join("")}</cols>`;
   return { rowsXml: rows, mergeXml, dim, colsXml, lastRow, fotos };
 }
-/* El logo se ancla siempre igual (arriba a la izquierda, filas 1-2); el XML
-   del dibujo es idéntico en cada solapa, solo cambia el nombre del archivo. */
-function xlsxLogoAnchorXml(){
-  return `<xdr:twoCellAnchor editAs="oneCell">
-<xdr:from><xdr:col>0</xdr:col><xdr:colOff>19050</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>19050</xdr:rowOff></xdr:from>
-<xdr:to><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+/* El logo se ancla siempre arriba a la izquierda, en el espacio de las
+   columnas/filas 1-2 (igual que antes). La diferencia es que ya no se estira
+   para llenar ese espacio (eso lo deformaba, sobre todo porque ese hueco es
+   bien ancho y bajo) sino que se calcula su tamaño real y se lo escala
+   "contain" — como el logo en cualquier pantalla de la app — quedando
+   centrado adentro del mismo hueco, sin recortarse ni deformarse.
+   anchoCol es el ancho de columna (en "caracteres") que usa esa solapa. */
+function xlsxLogoAnchorXml(logoInfo, anchoCol){
+  const EMU_PX = 9525; // 1 píxel a 96 dpi
+  const boxW = xlsxColAPx(anchoCol)*2, boxH = Math.round(15*4/3)*2; // 2 columnas x 2 filas (15pt c/u)
+  const nat = logoInfo ? xlsxImgSize(logoInfo.bytes, logoInfo.ext) : null;
+  const w0 = nat ? nat.w : boxW, h0 = nat ? nat.h : boxH;
+  const escala = Math.min(boxW/w0, boxH/h0, 1); // nunca se agranda más allá de su tamaño real
+  const dispW = Math.max(1, Math.round(w0*escala)), dispH = Math.max(1, Math.round(h0*escala));
+  const offX = Math.max(0, Math.round((boxW-dispW)/2)), offY = Math.max(0, Math.round((boxH-dispH)/2));
+  const cx = dispW*EMU_PX, cy = dispH*EMU_PX;
+  return `<xdr:oneCellAnchor>
+<xdr:from><xdr:col>0</xdr:col><xdr:colOff>${offX*EMU_PX}</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>${offY*EMU_PX}</xdr:rowOff></xdr:from>
+<xdr:ext cx="${cx}" cy="${cy}"/>
 <xdr:pic>
 <xdr:nvPicPr><xdr:cNvPr id="2" name="Logo"/><xdr:cNvPicPr/></xdr:nvPicPr>
 <xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rIdLogo"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
-<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
+<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
 </xdr:pic>
 <xdr:clientData/>
-</xdr:twoCellAnchor>`;
+</xdr:oneCellAnchor>`;
 }
 /* Una foto de fila de tabla (p.ej. el hallazgo de mantenimiento), anclada como
    una miniatura del tamaño de su celda. col/fila son índices base-0 (los de
@@ -10704,7 +10860,7 @@ ${hayDrawing?`<drawing r:id="rIdDrawing"/>`:""}
     if(hayDrawing){
       let anchors = "", drawingRels = "", idNum = 2;
       if(logoInfo){
-        anchors += xlsxLogoAnchorXml();
+        anchors += xlsxLogoAnchorXml(logoInfo, graficos.length ? 10.5 : 22);
         drawingRels += `<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.${logoInfo.ext}"/>`;
         idNum = 3;
       }
