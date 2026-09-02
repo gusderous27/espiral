@@ -1496,7 +1496,7 @@ function vInicio(){
   // el no uso de EPP no suma acá: es un registro de cumplimiento, no un
   // desvío para gestionar (ver desviosGrupos())
   const nc  = S.insp.reduce((a,i)=>a+inspNcAbiertos(i),0) + (S.inv||[]).reduce((a,i)=>a+(i.faltas||0),0)
-            + (S.aud||[]).reduce((a,r)=>a+(r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0),0);
+            + (S.aud||[]).reduce((a,r)=>a+auditpAbiertos(r),0);
   return `
   ${bandaMundo()}
   <section class="block">
@@ -4240,6 +4240,23 @@ function accSeg(ref){
   if(!S.accSeguimiento[c]) S.accSeguimiento[c] = { estado:"Abierto", bitacora:[], cerradoPor:"", cerradoFecha:"" };
   return S.accSeguimiento[c];
 }
+/* un desvío derivado a Mantenimiento ya se está gestionando y contando
+   allá (ver derivarAccion): los contadores de "Desvíos" de Seguridad e
+   Higiene (inspNcAbiertos, auditpAbiertos, el KPI de vInicio) tienen que
+   dejar de sumarlo mientras esté derivado, igual que ya lo excluye
+   accionesTodas() de la lista para gestionar — si no, quedaba contando
+   como desvío abierto en EHS sin aparecer en ningún lado para poder
+   gestionarlo ahí (reportado 01/09/2026). */
+function derivadoAMtto(ref){
+  const seg = S.accSeguimiento && S.accSeguimiento[accClave(ref)];
+  return !!(seg && seg.derivadoMtto);
+}
+/* cantidad de puntos "No cumple" de una auditoría mensual que todavía
+   cuentan como desvío abierto de Seguridad e Higiene: no los que ya se
+   cerraron (it.hecho) ni los que se derivaron a Mantenimiento. */
+function auditpAbiertos(r){
+  return (r.bloques||[]).reduce((x,b,bi)=>x+b.items.filter((i,ii)=>i.r==="NO" && !i.hecho && !derivadoAMtto({t:"auditp",id:r.id,k:bi,i:ii})).length,0);
+}
 /* qué tan avanzado está un seguimiento, para decidir cuál de dos versiones
    de un mismo desvío "gana" al fusionar (nunca reabrimos algo que en otro
    lado ya se cerró). */
@@ -4629,7 +4646,11 @@ function vDesvioGestion(){
    (sin cerrar desde el Plan de acción). En la auditoría diaria (tpl
    "auditoria") ya se recalcula r.nc al cerrar cada hallazgo, así que ahí se
    usa directo; en el resto (checklists), se compara ítem por ítem contra
-   accSeguimiento, sin tocar el registro de la inspección. */
+   accSeguimiento, sin tocar el registro de la inspección. Los que se
+   derivaron a Mantenimiento tampoco cuentan acá: ya se gestionan (y se
+   cuentan) allá — si no, quedaban sumando en el contador de Desvíos sin
+   aparecer en ningún lado de Seguridad e Higiene para poder gestionarlos
+   (reportado 01/09/2026). */
 function inspNcAbiertos(r){
   if(r.tpl==="auditoria") return r.nc||0;
   const t = TPL[r.tpl];
@@ -4638,7 +4659,9 @@ function inspNcAbiertos(r){
   t.secs.forEach(s=>s.items.forEach(it=>{
     n++; const id="i"+n;
     if((r.resp||{})[id]!=="no") return;
-    const seg = S.accSeguimiento && S.accSeguimiento[accClave({t:"insp", id:r.id, k:id})];
+    const ref = {t:"insp", id:r.id, k:id};
+    if(derivadoAMtto(ref)) return;
+    const seg = S.accSeguimiento && S.accSeguimiento[accClave(ref)];
     if(!(seg && seg.estado==="Finalizado")) abiertos++;
   }));
   return abiertos;
@@ -4659,7 +4682,7 @@ function desviosGrupos(){
     n:r.faltas, ic:"🔎", titulo:tx("Investigación de accidentes"), sub:fecha(r.fecha), page:"verInv", id:r.id
   }));
   const gAud = (S.aud||[]).map(r=>{
-    const n = (r.bloques||[]).reduce((x,b)=>x+b.items.filter(i=>i.r==="NO"&&!i.hecho).length,0);
+    const n = auditpAbiertos(r);
     return n>0 ? { n, ic:"📋", titulo:esc(tx(r.nombre||"Auditoría mensual"))+(r.area?" · "+esc(r.area):""),
       sub:fecha(r.fecha)+(r.auditor?" · "+esc(r.auditor):""), page:"verAud", id:r.id } : null;
   }).filter(Boolean);
